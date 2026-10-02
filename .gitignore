@@ -1,0 +1,18 @@
+# macOS (basura de zip)
+__MACOSX/
+.DS_Store
+
+# Dependencias
+node_modules/
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Entornos y secretos
+.env
+.env.local
+
+# Editores
+.idea/
+.vscode/

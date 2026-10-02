@@ -1,0 +1,761 @@
+
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>EduCoins</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: var(--font-sans, 'Inter', system-ui, sans-serif); background: var(--surface-0, #f5f4f0); color: var(--text-primary, #1a1a18); min-height: 100vh; }
+
+  /* TOKENS */
+  :root {
+    --gold: #c8930a; --gold-bg: #fdf4dc; --gold-border: #f0c84a;
+    --ink: #1c1b18; --ink2: #3d3c38; --muted: #7a7971;
+    --surface: #ffffff; --page: #f5f4f0;
+    --accent: #1860a5; --accent-bg: #e6f1fb;
+    --success: #2d7a2d; --success-bg: #eaf3de;
+    --danger: #a32d2d; --danger-bg: #fcebeb;
+    --radius: 10px; --radius-lg: 16px;
+    --shadow: 0 1px 3px rgba(0,0,0,0.08), 0 1px 2px rgba(0,0,0,0.04);
+  }
+
+  /* LAYOUT */
+  .app { display: flex; flex-direction: column; min-height: 100vh; }
+  .screen { display: none; }
+  .screen.active { display: flex; flex-direction: column; min-height: 100vh; }
+
+  /* NAV */
+  .nav { background: var(--surface); border-bottom: 1px solid #e8e6e0; padding: 0 24px; height: 56px; display: flex; align-items: center; justify-content: space-between; position: sticky; top: 0; z-index: 10; }
+  .nav-brand { display: flex; align-items: center; gap: 10px; font-size: 18px; font-weight: 600; color: var(--ink); }
+  .coin-icon { width: 28px; height: 28px; background: var(--gold); border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 14px; color: white; font-weight: 700; }
+  .nav-right { display: flex; align-items: center; gap: 12px; }
+  .badge-coins { background: var(--gold-bg); border: 1px solid var(--gold-border); color: var(--gold); border-radius: 20px; padding: 4px 12px; font-size: 13px; font-weight: 600; display: flex; align-items: center; gap: 5px; }
+  .avatar { width: 32px; height: 32px; background: var(--accent-bg); border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 13px; font-weight: 600; color: var(--accent); cursor: pointer; }
+  .btn-logout { background: none; border: 1px solid #d8d6d0; color: var(--muted); border-radius: var(--radius); padding: 6px 12px; font-size: 13px; cursor: pointer; transition: all .15s; }
+  .btn-logout:hover { background: var(--page); color: var(--ink); }
+
+  /* TABS */
+  .tabs { display: flex; gap: 2px; background: var(--page); padding: 4px; border-radius: var(--radius); }
+  .tab { padding: 7px 16px; border-radius: 8px; font-size: 13px; font-weight: 500; cursor: pointer; border: none; background: none; color: var(--muted); transition: all .15s; }
+  .tab.active { background: var(--surface); color: var(--ink); box-shadow: var(--shadow); }
+
+  /* MAIN CONTENT */
+  .main { flex: 1; padding: 24px; max-width: 960px; margin: 0 auto; width: 100%; }
+
+  /* CARDS */
+  .card { background: var(--surface); border-radius: var(--radius-lg); border: 1px solid #e8e6e0; padding: 20px; box-shadow: var(--shadow); }
+  .card-sm { padding: 16px; }
+  .card + .card { margin-top: 16px; }
+
+  /* GRID */
+  .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  .grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+  .grid-auto { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 12px; }
+
+  /* STAT CARDS */
+  .stat { background: var(--surface); border-radius: var(--radius); padding: 16px; border: 1px solid #e8e6e0; }
+  .stat-label { font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; font-weight: 500; margin-bottom: 6px; }
+  .stat-value { font-size: 28px; font-weight: 600; color: var(--ink); line-height: 1; }
+  .stat-value.gold { color: var(--gold); }
+  .stat-sub { font-size: 12px; color: var(--muted); margin-top: 4px; }
+
+  /* ACTIVITY CARD */
+  .activity-card { background: var(--surface); border-radius: var(--radius-lg); border: 1px solid #e8e6e0; padding: 20px; box-shadow: var(--shadow); display: flex; flex-direction: column; gap: 12px; transition: box-shadow .2s, transform .2s; cursor: pointer; }
+  .activity-card:hover { box-shadow: 0 4px 12px rgba(0,0,0,0.1); transform: translateY(-1px); }
+  .activity-card.solved { border-color: #b0d8b0; background: #f8fdf8; }
+  .activity-card.solved .solve-btn { background: var(--success-bg); color: var(--success); border-color: #b0d8b0; cursor: default; }
+  .area-tag { display: inline-flex; align-items: center; gap: 5px; padding: 3px 10px; border-radius: 20px; font-size: 11px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; }
+  .area-math { background: #e6f1fb; color: #1860a5; }
+  .area-lit { background: #fdf4dc; color: #8a6500; }
+  .area-phil { background: #f0ecfb; color: #5a3bb5; }
+  .area-sci { background: #eaf3de; color: #2d7a2d; }
+  .area-hist { background: #feece7; color: #993c1d; }
+  .area-other { background: #f1efe8; color: #5f5e5a; }
+  .activity-title { font-size: 16px; font-weight: 600; color: var(--ink); line-height: 1.35; }
+  .activity-desc { font-size: 14px; color: var(--ink2); line-height: 1.6; }
+  .activity-footer { display: flex; align-items: center; justify-content: space-between; }
+  .reward { display: flex; align-items: center; gap: 6px; font-size: 15px; font-weight: 700; color: var(--gold); }
+  .solve-btn { border: 1px solid #d8d6d0; background: var(--page); color: var(--ink); border-radius: var(--radius); padding: 8px 18px; font-size: 13px; font-weight: 500; cursor: pointer; transition: all .15s; }
+  .solve-btn:hover:not([disabled]) { background: var(--accent); color: white; border-color: var(--accent); }
+
+  /* FORMS */
+  .form-row { display: flex; flex-direction: column; gap: 6px; margin-bottom: 16px; }
+  .form-label { font-size: 13px; font-weight: 500; color: var(--ink2); }
+  input, textarea, select { width: 100%; padding: 10px 14px; border: 1px solid #d8d6d0; border-radius: var(--radius); font-size: 14px; font-family: inherit; color: var(--ink); background: var(--surface); transition: border-color .15s, box-shadow .15s; outline: none; resize: none; }
+  input:focus, textarea:focus, select:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(24,96,165,0.12); }
+  textarea { min-height: 100px; }
+
+  /* BUTTONS */
+  .btn { padding: 10px 20px; border-radius: var(--radius); font-size: 14px; font-weight: 500; cursor: pointer; border: none; transition: all .15s; font-family: inherit; }
+  .btn-primary { background: var(--accent); color: white; }
+  .btn-primary:hover { background: #134f8a; }
+  .btn-gold { background: var(--gold); color: white; }
+  .btn-gold:hover { background: #a87808; }
+  .btn-danger { background: var(--danger); color: white; }
+  .btn-danger:hover { background: #861d1d; }
+  .btn-ghost { background: none; border: 1px solid #d8d6d0; color: var(--ink2); }
+  .btn-ghost:hover { background: var(--page); }
+  .btn-full { width: 100%; }
+  .btn-sm { padding: 7px 14px; font-size: 13px; }
+
+  /* LOGIN */
+  .login-wrap { display: flex; align-items: center; justify-content: center; min-height: 100vh; background: var(--page); }
+  .login-card { background: var(--surface); border-radius: var(--radius-lg); border: 1px solid #e8e6e0; padding: 36px 32px; width: 100%; max-width: 400px; box-shadow: 0 4px 20px rgba(0,0,0,0.08); }
+  .login-logo { text-align: center; margin-bottom: 28px; }
+  .login-logo .big-coin { width: 60px; height: 60px; background: var(--gold); border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 28px; color: white; font-weight: 800; margin: 0 auto 12px; }
+  .login-logo h1 { font-size: 24px; font-weight: 700; color: var(--ink); }
+  .login-logo p { font-size: 13px; color: var(--muted); margin-top: 4px; }
+  .role-toggle { display: flex; gap: 8px; margin-bottom: 20px; }
+  .role-btn { flex: 1; padding: 10px; border: 1.5px solid #d8d6d0; background: var(--page); border-radius: var(--radius); font-size: 14px; font-weight: 500; cursor: pointer; color: var(--muted); transition: all .15s; font-family: inherit; }
+  .role-btn.active { border-color: var(--accent); background: var(--accent-bg); color: var(--accent); }
+  .error-msg { background: var(--danger-bg); color: var(--danger); padding: 10px 14px; border-radius: var(--radius); font-size: 13px; margin-bottom: 14px; display: none; }
+  .error-msg.show { display: block; }
+
+  /* SECTION HEADERS */
+  .section-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; }
+  .section-title { font-size: 18px; font-weight: 600; color: var(--ink); }
+  .section-sub { font-size: 13px; color: var(--muted); margin-top: 2px; }
+
+  /* EXCHANGE UI */
+  .exchange-wrap { background: var(--gold-bg); border: 1px solid var(--gold-border); border-radius: var(--radius-lg); padding: 20px; }
+  .exchange-title { font-size: 16px; font-weight: 600; color: var(--gold); margin-bottom: 14px; display: flex; align-items: center; gap: 8px; }
+  .exchange-row { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; }
+  .exchange-input { max-width: 100px; }
+  .exchange-result { font-size: 15px; font-weight: 600; color: var(--ink); }
+
+  /* MODAL */
+  .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.45); display: flex; align-items: center; justify-content: center; z-index: 100; }
+  .modal-box { background: var(--surface); border-radius: var(--radius-lg); padding: 28px; width: 100%; max-width: 500px; box-shadow: 0 8px 32px rgba(0,0,0,0.18); }
+  .modal-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 20px; }
+  .modal-title { font-size: 18px; font-weight: 600; }
+  .modal-close { background: none; border: none; font-size: 20px; cursor: pointer; color: var(--muted); width: 32px; height: 32px; display: flex; align-items: center; justify-content: center; border-radius: 50%; transition: background .15s; }
+  .modal-close:hover { background: var(--page); }
+
+  /* LEADERBOARD */
+  .lb-row { display: flex; align-items: center; gap: 14px; padding: 12px 0; border-bottom: 1px solid #f0ede6; }
+  .lb-row:last-child { border: none; }
+  .lb-rank { font-size: 18px; font-weight: 700; width: 28px; color: var(--muted); }
+  .lb-rank.gold-rank { color: #c8930a; }
+  .lb-rank.silver-rank { color: #8a8a8a; }
+  .lb-rank.bronze-rank { color: #9c6b3a; }
+  .lb-name { flex: 1; font-weight: 500; }
+  .lb-coins { font-weight: 700; color: var(--gold); font-size: 15px; display: flex; align-items: center; gap: 4px; }
+
+  /* PROGRESS */
+  .progress-bar-wrap { height: 8px; background: #e8e6e0; border-radius: 4px; overflow: hidden; margin-top: 6px; }
+  .progress-bar-fill { height: 100%; background: var(--gold); border-radius: 4px; transition: width .4s ease; }
+
+  /* EMPTY */
+  .empty { text-align: center; padding: 48px 24px; }
+  .empty-icon { font-size: 40px; margin-bottom: 12px; }
+  .empty-title { font-size: 16px; font-weight: 600; color: var(--ink); margin-bottom: 6px; }
+  .empty-sub { font-size: 14px; color: var(--muted); }
+
+  /* TOAST */
+  .toast { position: fixed; bottom: 24px; right: 24px; background: var(--ink); color: white; padding: 12px 18px; border-radius: var(--radius); font-size: 14px; font-weight: 500; box-shadow: 0 4px 16px rgba(0,0,0,0.2); opacity: 0; transform: translateY(8px); transition: all .25s; pointer-events: none; z-index: 999; max-width: 320px; }
+  .toast.show { opacity: 1; transform: translateY(0); }
+  .toast.success { background: var(--success); }
+  .toast.gold-toast { background: #7a5c00; }
+
+  /* SOLVE MODAL */
+  .answer-area { display: flex; flex-direction: column; gap: 12px; }
+  .answer-hint { font-size: 13px; color: var(--muted); }
+
+  /* SUBJECTS picker */
+  .subjects-grid { display: flex; flex-wrap: wrap; gap: 6px; }
+  .subject-chip { padding: 5px 12px; border: 1.5px solid #d8d6d0; border-radius: 20px; font-size: 12px; font-weight: 500; cursor: pointer; color: var(--muted); transition: all .12s; background: var(--page); }
+  .subject-chip.active { border-color: var(--accent); background: var(--accent-bg); color: var(--accent); }
+
+  /* DIVIDER */
+  .divider { height: 1px; background: #e8e6e0; margin: 20px 0; }
+
+  .flex { display: flex; }
+  .flex-between { display: flex; justify-content: space-between; align-items: center; }
+  .flex-center { display: flex; align-items: center; justify-content: center; }
+  .gap-8 { gap: 8px; }
+  .gap-12 { gap: 12px; }
+  .mb-4 { margin-bottom: 4px; }
+  .mb-8 { margin-bottom: 8px; }
+  .mb-16 { margin-bottom: 16px; }
+  .mt-16 { margin-top: 16px; }
+  .text-sm { font-size: 13px; }
+  .text-muted { color: var(--muted); }
+  .text-gold { color: var(--gold); font-weight: 600; }
+  .fw600 { font-weight: 600; }
+  .hidden { display: none !important; }
+</style>
+
+<div class="app" id="app">
+  <!-- TOAST -->
+  <div class="toast" id="toast"></div>
+
+  <!-- LOGIN SCREEN -->
+  <div class="screen active" id="screen-login">
+    <div class="login-wrap">
+      <div class="login-card">
+        <div class="login-logo">
+          <div class="big-coin">E</div>
+          <h1>EduCoins</h1>
+          <p>Aprende, resuelve y gana recompensas</p>
+        </div>
+
+        <div class="role-toggle">
+          <button class="role-btn active" id="role-teacher" onclick="setRole('teacher')">📚 Profesor</button>
+          <button class="role-btn" id="role-student" onclick="setRole('student')">🎓 Estudiante</button>
+        </div>
+
+        <div class="error-msg" id="login-error"></div>
+
+        <div class="form-row">
+          <label class="form-label">Correo electrónico</label>
+          <input type="email" id="login-email" placeholder="nombre@escuela.edu" />
+        </div>
+        <div class="form-row">
+          <label class="form-label">Contraseña</label>
+          <input type="password" id="login-password" placeholder="Mínimo 6 caracteres" />
+        </div>
+
+        <div id="register-fields" class="hidden">
+          <div class="form-row">
+            <label class="form-label">Nombre completo</label>
+            <input type="text" id="login-name" placeholder="Tu nombre" />
+          </div>
+          <div id="teacher-code-field" class="hidden">
+            <div class="form-row">
+              <label class="form-label">Código de clase</label>
+              <input type="text" id="login-code" placeholder="Ej: MAT101" />
+            </div>
+          </div>
+        </div>
+
+        <div class="flex gap-8 mt-16">
+          <button class="btn btn-primary btn-full" onclick="doLogin()">Ingresar</button>
+        </div>
+
+        <div class="text-center mt-16">
+          <span class="text-sm text-muted" id="toggle-mode-text">¿No tienes cuenta?</span>
+          <button onclick="toggleMode()" class="btn btn-ghost btn-sm" style="margin-left:6px;" id="toggle-mode-btn">Registrarse</button>
+        </div>
+
+        <div class="divider"></div>
+        <div class="text-sm text-muted" style="text-align:center; font-size:12px;">
+          <strong>Demo rápida:</strong> profe@demo.com / 123456 (profesor) · alumno@demo.com / 123456 (estudiante)
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- TEACHER SCREEN -->
+  <div class="screen" id="screen-teacher">
+    <div class="nav">
+      <div class="nav-brand">
+        <div class="coin-icon">E</div>
+        EduCoins
+        <span class="text-sm text-muted" style="font-weight:400">— Panel Docente</span>
+      </div>
+      <div class="nav-right">
+        <div class="tabs" id="teacher-tabs">
+          <button class="tab active" onclick="teacherTab('dashboard')">Inicio</button>
+          <button class="tab" onclick="teacherTab('activities')">Actividades</button>
+          <button class="tab" onclick="teacherTab('students')">Estudiantes</button>
+        </div>
+        <div class="avatar" id="teacher-avatar">P</div>
+        <button class="btn-logout" onclick="doLogout()">Salir</button>
+      </div>
+    </div>
+    <div class="main" id="teacher-content"></div>
+  </div>
+
+  <!-- STUDENT SCREEN -->
+  <div class="screen" id="screen-student">
+    <div class="nav">
+      <div class="nav-brand">
+        <div class="coin-icon">E</div>
+        EduCoins
+      </div>
+      <div class="nav-right">
+        <div class="badge-coins">🪙 <span id="student-coins-nav">0</span></div>
+        <div class="tabs" id="student-tabs">
+          <button class="tab active" onclick="studentTab('home')">Actividades</button>
+          <button class="tab" onclick="studentTab('wallet')">Mi billetera</button>
+          <button class="tab" onclick="studentTab('ranking')">Ranking</button>
+        </div>
+        <div class="avatar" id="student-avatar">A</div>
+        <button class="btn-logout" onclick="doLogout()">Salir</button>
+      </div>
+    </div>
+    <div class="main" id="student-content"></div>
+  </div>
+
+  <!-- MODAL: Nueva actividad -->
+  <div class="modal-overlay hidden" id="modal-activity">
+    <div class="modal-box">
+      <div class="modal-header">
+        <div class="modal-title">Nueva actividad</div>
+        <button class="modal-close" onclick="closeModal('modal-activity')">✕</button>
+      </div>
+
+      <div class="form-row">
+        <label class="form-label">Título</label>
+        <input type="text" id="act-title" placeholder="Ej: Derivadas de funciones compuestas" />
+      </div>
+
+      <div class="form-row">
+        <label class="form-label">Área</label>
+        <div class="subjects-grid" id="subjects-grid">
+          <div class="subject-chip active" onclick="selectSubject(this,'Matemáticas')">Matemáticas</div>
+          <div class="subject-chip" onclick="selectSubject(this,'Literatura')">Literatura</div>
+          <div class="subject-chip" onclick="selectSubject(this,'Filosofía')">Filosofía</div>
+          <div class="subject-chip" onclick="selectSubject(this,'Ciencias')">Ciencias</div>
+          <div class="subject-chip" onclick="selectSubject(this,'Historia')">Historia</div>
+          <div class="subject-chip" onclick="selectSubject(this,'Cálculo')">Cálculo</div>
+          <div class="subject-chip" onclick="selectSubject(this,'Física')">Física</div>
+          <div class="subject-chip" onclick="selectSubject(this,'Lenguaje')">Lenguaje</div>
+          <div class="subject-chip" onclick="selectSubject(this,'Otra')">Otra</div>
+        </div>
+      </div>
+
+      <div class="form-row">
+        <label class="form-label">Enunciado del problema</label>
+        <textarea id="act-desc" placeholder="Describe el problema o actividad con detalle. Puede incluir ecuaciones, contexto, preguntas..."></textarea>
+      </div>
+
+      <div class="form-row">
+        <label class="form-label">Respuesta correcta (para verificación automática)</label>
+        <input type="text" id="act-answer" placeholder="Ej: 6x, 42, Sócrates, verdadero..." />
+      </div>
+
+      <div class="form-row">
+        <label class="form-label">Monedas por resolver 🪙</label>
+        <input type="number" id="act-coins" value="50" min="10" max="500" />
+        <span class="text-sm text-muted" style="margin-top:4px;">Entre 10 y 500 monedas</span>
+      </div>
+
+      <div class="flex gap-8" style="justify-content:flex-end; margin-top:8px;">
+        <button class="btn btn-ghost" onclick="closeModal('modal-activity')">Cancelar</button>
+        <button class="btn btn-gold" onclick="saveActivity()">Publicar actividad</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL: Resolver actividad -->
+  <div class="modal-overlay hidden" id="modal-solve">
+    <div class="modal-box">
+      <div class="modal-header">
+        <div class="modal-title" id="solve-title">Resolver actividad</div>
+        <button class="modal-close" onclick="closeModal('modal-solve')">✕</button>
+      </div>
+      <div style="background:var(--page); border-radius:var(--radius); padding:16px; margin-bottom:20px;">
+        <div class="text-sm text-muted mb-8">Enunciado</div>
+        <div id="solve-desc" style="font-size:15px; line-height:1.65; color:var(--ink);"></div>
+        <div style="margin-top:12px; display:flex; align-items:center; gap:6px;" class="text-gold">🪙 <span id="solve-coins-label">50</span> monedas al resolver</div>
+      </div>
+      <div class="form-row">
+        <label class="form-label">Tu respuesta</label>
+        <textarea id="solve-input" placeholder="Escribe tu respuesta aquí..." style="min-height:80px;"></textarea>
+      </div>
+      <div class="error-msg" id="solve-error"></div>
+      <div style="display:flex; justify-content:flex-end; gap:8px;">
+        <button class="btn btn-ghost" onclick="closeModal('modal-solve')">Cancelar</button>
+        <button class="btn btn-primary" onclick="submitAnswer()">Enviar respuesta</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL: Canjear monedas -->
+  <div class="modal-overlay hidden" id="modal-exchange">
+    <div class="modal-box">
+      <div class="modal-header">
+        <div class="modal-title">Canjear monedas por nota</div>
+        <button class="modal-close" onclick="closeModal('modal-exchange')">✕</button>
+      </div>
+      <div class="exchange-wrap" style="margin-bottom:20px;">
+        <div class="exchange-title">🪙 Tasa de cambio</div>
+        <div class="text-sm" style="color:var(--ink2);">200 monedas = +0.5 puntos en tu nota</div>
+      </div>
+      <div class="form-row">
+        <label class="form-label">Monedas a canjear</label>
+        <input type="number" id="exchange-amount" value="200" min="200" step="200" oninput="calcExchange()" />
+      </div>
+      <div style="background:var(--success-bg); border-radius:var(--radius); padding:14px; margin-bottom:20px;" id="exchange-preview">
+        <div class="text-sm text-muted mb-4">Ganarás</div>
+        <div style="font-size:22px; font-weight:700; color:var(--success);" id="exchange-points-preview">+0.5 puntos</div>
+        <div class="text-sm text-muted mt-4" id="exchange-coins-remaining">Te quedarán <strong>0</strong> monedas</div>
+      </div>
+      <div class="flex gap-8" style="justify-content:flex-end;">
+        <button class="btn btn-ghost" onclick="closeModal('modal-exchange')">Cancelar</button>
+        <button class="btn btn-gold" onclick="doExchange()">Confirmar canje</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+const DB_KEY = 'educoins_data';
+let state = { users: [], activities: [], session: null };
+let currentSolveId = null;
+let selectedSubject = 'Matemáticas';
+let isRegisterMode = false;
+let currentRole = 'teacher';
+let teacherCurrentTab = 'dashboard';
+let studentCurrentTab = 'home';
+
+function loadData() {
+  const raw = localStorage.getItem(DB_KEY);
+  if (raw) state = JSON.parse(raw);
+  if (!state.users) state.users = [];
+  if (!state.activities) state.activities = [];
+
+  // Demo users
+  if (!state.users.find(u => u.email === 'profe@demo.com')) {
+    state.users.push({ id: 'u1', email: 'profe@demo.com', password: '123456', name: 'Prof. García', role: 'teacher', coins: 0, noteBonus: 0, classCode: 'MAT101' });
+  }
+  if (!state.users.find(u => u.email === 'alumno@demo.com')) {
+    state.users.push({ id: 'u2', email: 'alumno@demo.com', password: '123456', name: 'Ana López', role: 'student', coins: 340, noteBonus: 1.0, classCode: 'MAT101', solved: ['act1', 'act2'] });
+  }
+  if (!state.activities.find(a => a.id === 'act1')) {
+    state.activities.push(
+      { id: 'act1', title: 'Derivada de f(x) = 3x²', area: 'Cálculo', desc: 'Calcula la derivada de la función f(x) = 3x² usando la regla de la potencia.\n\nRecuerda: d/dx(xⁿ) = n·xⁿ⁻¹', answer: '6x', coins: 80, authorId: 'u1', createdAt: Date.now()-86400000 },
+      { id: 'act2', title: 'El cogito de Descartes', area: 'Filosofía', desc: '¿Cuál es la frase exacta (en español) con la que Descartes resume su argumento del cogito? Explica qué significa en el contexto de la duda metódica.', answer: 'pienso luego existo', coins: 60, authorId: 'u1', createdAt: Date.now()-72000000 },
+      { id: 'act3', title: 'Análisis de Cien años de soledad', area: 'Literatura', desc: 'Identifica el recurso literario predominante en el realismo mágico de García Márquez y da un ejemplo de la novela "Cien años de soledad".', answer: 'realismo mágico', coins: 100, authorId: 'u1', createdAt: Date.now()-3600000 },
+      { id: 'act4', title: 'Segunda Ley de Newton', area: 'Ciencias', desc: 'Un objeto de 5 kg es acelerado a 3 m/s². ¿Cuál es la fuerza neta aplicada? Expresa el resultado en Newtons.', answer: '15', coins: 70, authorId: 'u1', createdAt: Date.now()-1800000 }
+    );
+  }
+  saveData();
+}
+
+function saveData() { localStorage.setItem(DB_KEY, JSON.stringify(state)); }
+
+function setRole(role) {
+  currentRole = role;
+  document.getElementById('role-teacher').classList.toggle('active', role === 'teacher');
+  document.getElementById('role-student').classList.toggle('active', role === 'student');
+  document.getElementById('teacher-code-field').classList.toggle('hidden', role !== 'student');
+}
+
+function toggleMode() {
+  isRegisterMode = !isRegisterMode;
+  document.getElementById('register-fields').classList.toggle('hidden', !isRegisterMode);
+  document.getElementById('toggle-mode-btn').textContent = isRegisterMode ? 'Iniciar sesión' : 'Registrarse';
+  document.getElementById('toggle-mode-text').textContent = isRegisterMode ? '¿Ya tienes cuenta?' : '¿No tienes cuenta?';
+  if (currentRole === 'student') document.getElementById('teacher-code-field').classList.toggle('hidden', !isRegisterMode);
+}
+
+function showError(id, msg) {
+  const el = document.getElementById(id);
+  el.textContent = msg;
+  el.classList.add('show');
+  setTimeout(() => el.classList.remove('show'), 3500);
+}
+
+function doLogin() {
+  const email = document.getElementById('login-email').value.trim();
+  const pass = document.getElementById('login-password').value;
+
+  if (!email || !pass) return showError('login-error', 'Ingresa tu correo y contraseña.');
+
+  if (isRegisterMode) {
+    const name = document.getElementById('login-name').value.trim();
+    if (!name) return showError('login-error', 'Ingresa tu nombre completo.');
+    if (state.users.find(u => u.email === email)) return showError('login-error', 'Ya existe una cuenta con ese correo.');
+    const user = { id: 'u' + Date.now(), email, password: pass, name, role: currentRole, coins: 0, noteBonus: 0, classCode: currentRole === 'student' ? document.getElementById('login-code').value.trim() || 'MAT101' : '', solved: [] };
+    state.users.push(user);
+    saveData();
+    state.session = user;
+  } else {
+    const user = state.users.find(u => u.email === email && u.password === pass);
+    if (!user) return showError('login-error', 'Correo o contraseña incorrectos.');
+    state.session = user;
+  }
+
+  showScreen(state.session.role === 'teacher' ? 'teacher' : 'student');
+}
+
+function doLogout() {
+  state.session = null;
+  showScreen('login');
+}
+
+function showScreen(name) {
+  document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+  document.getElementById('screen-' + name).classList.add('active');
+  if (name === 'teacher') renderTeacher();
+  if (name === 'student') renderStudent();
+}
+
+function getAreaClass(area) {
+  const map = { 'Matemáticas': 'area-math', 'Cálculo': 'area-math', 'Física': 'area-math', 'Literatura': 'area-lit', 'Lenguaje': 'area-lit', 'Filosofía': 'area-phil', 'Ciencias': 'area-sci', 'Biología': 'area-sci', 'Historia': 'area-hist' };
+  return map[area] || 'area-other';
+}
+
+// ─── TEACHER ────────────────────────────────────────────────────────────────────
+function teacherTab(tab) {
+  teacherCurrentTab = tab;
+  document.querySelectorAll('#teacher-tabs .tab').forEach((t, i) => {
+    t.classList.toggle('active', ['dashboard','activities','students'][i] === tab);
+  });
+  renderTeacher();
+}
+
+function renderTeacher() {
+  const u = state.session;
+  if (!u) return;
+  document.getElementById('teacher-avatar').textContent = u.name.charAt(0).toUpperCase();
+  const acts = state.activities.filter(a => a.authorId === u.id);
+  const students = state.users.filter(s => s.role === 'student');
+  const el = document.getElementById('teacher-content');
+
+  if (teacherCurrentTab === 'dashboard') {
+    const totalSolves = students.reduce((acc, s) => acc + (s.solved ? s.solved.filter(id => acts.find(a => a.id === id)).length : 0), 0);
+    el.innerHTML = `
+      <div class="section-header"><div><div class="section-title">Hola, ${u.name.split(' ')[0]} 👋</div><div class="section-sub">Resumen de tu clase</div></div>
+      <button class="btn btn-gold" onclick="openModal('modal-activity')">+ Nueva actividad</button></div>
+      <div class="grid-3 mb-16">
+        <div class="stat"><div class="stat-label">Actividades publicadas</div><div class="stat-value">${acts.length}</div></div>
+        <div class="stat"><div class="stat-label">Estudiantes</div><div class="stat-value">${students.length}</div></div>
+        <div class="stat"><div class="stat-label">Soluciones entregadas</div><div class="stat-value">${totalSolves}</div></div>
+      </div>
+      <div class="section-header"><div class="section-title">Actividades recientes</div></div>
+      ${acts.length === 0 ? `<div class="empty"><div class="empty-icon">📋</div><div class="empty-title">Sin actividades</div><div class="empty-sub">Crea tu primera actividad para que los estudiantes la resuelvan.</div></div>` : acts.slice(-3).reverse().map(a => actCard(a, 'teacher')).join('')}
+    `;
+  } else if (teacherCurrentTab === 'activities') {
+    el.innerHTML = `
+      <div class="section-header"><div class="section-title">Mis actividades</div>
+      <button class="btn btn-gold" onclick="openModal('modal-activity')">+ Nueva actividad</button></div>
+      ${acts.length === 0 ? `<div class="empty"><div class="empty-icon">📋</div><div class="empty-title">Sin actividades</div><div class="empty-sub">Publica tu primer reto para los estudiantes.</div></div>` : acts.reverse().map(a => actCard(a, 'teacher')).join('')}
+    `;
+  } else {
+    el.innerHTML = `
+      <div class="section-header"><div class="section-title">Estudiantes registrados</div></div>
+      ${students.length === 0 ? `<div class="empty"><div class="empty-icon">🎓</div><div class="empty-title">Sin estudiantes</div><div class="empty-sub">Los estudiantes que se registren aparecerán aquí.</div></div>` : `
+      <div class="card">
+        ${students.map((s, i) => {
+          const solved = (s.solved || []).filter(id => acts.find(a => a.id === id)).length;
+          return `<div class="lb-row">
+            <div class="lb-rank ${i===0?'gold-rank':i===1?'silver-rank':i===2?'bronze-rank':''}">${i+1}</div>
+            <div class="avatar">${s.name.charAt(0)}</div>
+            <div style="flex:1"><div class="fw600">${s.name}</div><div class="text-sm text-muted">${s.email} · ${solved} resueltas</div></div>
+            <div class="lb-coins">🪙 ${s.coins}</div>
+            <div style="font-size:12px; color:var(--success); font-weight:600; min-width:60px; text-align:right">+${(s.noteBonus||0).toFixed(1)} pts</div>
+          </div>`;
+        }).join('')}
+      </div>`}
+    `;
+  }
+}
+
+function actCard(a, mode) {
+  const students = state.users.filter(s => s.role === 'student');
+  const solveCount = students.filter(s => (s.solved||[]).includes(a.id)).length;
+  return `<div class="activity-card" style="margin-bottom:14px;">
+    <div style="display:flex;align-items:center;justify-content:space-between;">
+      <span class="area-tag ${getAreaClass(a.area)}">${a.area}</span>
+      ${mode==='teacher' ? `<span class="text-sm text-muted">${solveCount} soluciones</span>` : ''}
+    </div>
+    <div class="activity-title">${a.title}</div>
+    <div class="activity-desc" style="display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;">${a.desc}</div>
+    <div class="activity-footer">
+      <div class="reward">🪙 ${a.coins} monedas</div>
+      ${mode==='teacher' ? `<button class="solve-btn" onclick="deleteActivity('${a.id}')">Eliminar</button>` : ''}
+    </div>
+  </div>`;
+}
+
+function deleteActivity(id) {
+  state.activities = state.activities.filter(a => a.id !== id);
+  saveData();
+  renderTeacher();
+  showToast('Actividad eliminada', '');
+}
+
+function selectSubject(el, name) {
+  selectedSubject = name;
+  document.querySelectorAll('.subject-chip').forEach(c => c.classList.remove('active'));
+  el.classList.add('active');
+}
+
+function saveActivity() {
+  const title = document.getElementById('act-title').value.trim();
+  const desc = document.getElementById('act-desc').value.trim();
+  const answer = document.getElementById('act-answer').value.trim();
+  const coins = parseInt(document.getElementById('act-coins').value) || 50;
+  if (!title) return showToast('El título es obligatorio', 'error');
+  if (!desc) return showToast('El enunciado es obligatorio', 'error');
+  if (!answer) return showToast('La respuesta correcta es obligatoria', 'error');
+  const act = { id: 'act' + Date.now(), title, area: selectedSubject, desc, answer: answer.toLowerCase(), coins: Math.min(500, Math.max(10, coins)), authorId: state.session.id, createdAt: Date.now() };
+  state.activities.push(act);
+  saveData();
+  closeModal('modal-activity');
+  document.getElementById('act-title').value = '';
+  document.getElementById('act-desc').value = '';
+  document.getElementById('act-answer').value = '';
+  document.getElementById('act-coins').value = '50';
+  renderTeacher();
+  showToast('🎉 Actividad publicada', 'success');
+}
+
+// ─── STUDENT ─────────────────────────────────────────────────────────────────
+function studentTab(tab) {
+  studentCurrentTab = tab;
+  document.querySelectorAll('#student-tabs .tab').forEach((t, i) => {
+    t.classList.toggle('active', ['home','wallet','ranking'][i] === tab);
+  });
+  renderStudent();
+}
+
+function renderStudent() {
+  const u = state.session;
+  if (!u) return;
+  document.getElementById('student-avatar').textContent = u.name.charAt(0).toUpperCase();
+  document.getElementById('student-coins-nav').textContent = u.coins;
+  const el = document.getElementById('student-content');
+
+  if (studentCurrentTab === 'home') {
+    const solved = u.solved || [];
+    const available = state.activities.filter(a => !solved.includes(a.id));
+    const done = state.activities.filter(a => solved.includes(a.id));
+    el.innerHTML = `
+      <div class="section-header"><div><div class="section-title">Actividades disponibles</div><div class="section-sub">${available.length} por resolver · ${done.length} completadas</div></div></div>
+      ${available.length === 0 && done.length === 0 ? `<div class="empty"><div class="empty-icon">📚</div><div class="empty-title">Sin actividades</div><div class="empty-sub">Tu profesor aún no ha publicado actividades.</div></div>` : ''}
+      ${available.map(a => studentActCard(a, false)).join('')}
+      ${done.length > 0 ? `<div class="section-header" style="margin-top:24px;"><div class="section-title" style="font-size:15px;color:var(--muted);">Completadas ✓</div></div>${done.map(a => studentActCard(a, true)).join('')}` : ''}
+    `;
+  } else if (studentCurrentTab === 'wallet') {
+    const nextExchange = 200 - (u.coins % 200 === 0 && u.coins > 0 ? 200 : u.coins % 200);
+    el.innerHTML = `
+      <div class="section-header"><div class="section-title">Mi billetera</div></div>
+      <div class="grid-3 mb-16">
+        <div class="stat"><div class="stat-label">Monedas acumuladas</div><div class="stat-value gold">${u.coins}</div></div>
+        <div class="stat"><div class="stat-label">Puntos ganados</div><div class="stat-value">${(u.noteBonus||0).toFixed(1)}</div><div class="stat-sub">de bonificación</div></div>
+        <div class="stat"><div class="stat-label">Actividades resueltas</div><div class="stat-value">${(u.solved||[]).length}</div></div>
+      </div>
+      <div class="exchange-wrap mb-16">
+        <div class="exchange-title">🪙 Canjear monedas por puntos</div>
+        <div class="text-sm mb-8" style="color:var(--ink2);">200 monedas = +0.5 puntos en tu nota acumulativa.</div>
+        <div class="text-sm text-muted mb-16">Tienes <strong class="text-gold">${u.coins} monedas</strong>. Puedes canjear <strong>${Math.floor(u.coins/200)*200}</strong> monedas por <strong>+${(Math.floor(u.coins/200)*0.5).toFixed(1)} puntos</strong>.</div>
+        ${u.coins >= 200 ? `<button class="btn btn-gold" onclick="openExchange()">Canjear ahora</button>` : `<div class="text-sm text-muted">Necesitas al menos 200 monedas para canjear. Te faltan <strong>${200-u.coins}</strong>.</div>`}
+      </div>
+      ${u.noteBonus > 0 ? `<div class="card" style="border-color:#b0d8b0; background:#f8fdf8;">
+        <div style="font-size:15px; font-weight:600; color:var(--success); margin-bottom:6px;">✅ Nota bonificada</div>
+        <div class="text-sm" style="color:var(--ink2);">Has acumulado +${(u.noteBonus).toFixed(1)} puntos de bonificación para tus notas. Preséntalo a tu profesor.</div>
+      </div>` : ''}
+    `;
+  } else {
+    const students = state.users.filter(s => s.role === 'student').sort((a, b) => b.coins - a.coins);
+    const myRank = students.findIndex(s => s.id === u.id) + 1;
+    el.innerHTML = `
+      <div class="section-header"><div><div class="section-title">Ranking de la clase</div><div class="section-sub">Tú estás en el puesto #${myRank}</div></div></div>
+      <div class="card">
+        ${students.length === 0 ? '<div class="text-muted text-sm">Sin estudiantes aún.</div>' : students.map((s, i) => `
+          <div class="lb-row" style="${s.id===u.id?'background:var(--gold-bg); margin:-1px -16px; padding:12px 16px; border-radius:var(--radius);':''}">
+            <div class="lb-rank ${i===0?'gold-rank':i===1?'silver-rank':i===2?'bronze-rank':''}">${i===0?'🥇':i===1?'🥈':i===2?'🥉':i+1}</div>
+            <div class="avatar" style="${s.id===u.id?'background:var(--gold-bg); color:var(--gold);':''}">${s.name.charAt(0)}</div>
+            <div style="flex:1"><div class="fw600">${s.name}${s.id===u.id?' (tú)':''}</div><div class="text-sm text-muted">${(s.solved||[]).length} actividades resueltas</div></div>
+            <div class="lb-coins">🪙 ${s.coins}</div>
+          </div>
+        `).join('')}
+      </div>
+    `;
+  }
+}
+
+function studentActCard(a, isSolved) {
+  return `<div class="activity-card ${isSolved?'solved':''}" style="margin-bottom:14px;" ${!isSolved?`onclick="openSolve('${a.id}')"`:''}>
+    <div style="display:flex;align-items:center;gap:8px;">
+      <span class="area-tag ${getAreaClass(a.area)}">${a.area}</span>
+      ${isSolved ? '<span style="font-size:12px;color:var(--success);font-weight:600;">✓ Completada</span>' : ''}
+    </div>
+    <div class="activity-title">${a.title}</div>
+    <div class="activity-desc" style="display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;">${a.desc}</div>
+    <div class="activity-footer">
+      <div class="reward">🪙 ${a.coins} monedas</div>
+      <button class="solve-btn" ${isSolved?'disabled':''} onclick="${!isSolved?`event.stopPropagation(); openSolve('${a.id}')`:''}">${isSolved ? '✓ Resuelta' : 'Resolver'}</button>
+    </div>
+  </div>`;
+}
+
+function openSolve(id) {
+  const a = state.activities.find(x => x.id === id);
+  if (!a) return;
+  currentSolveId = id;
+  document.getElementById('solve-title').textContent = a.title;
+  document.getElementById('solve-desc').textContent = a.desc;
+  document.getElementById('solve-coins-label').textContent = a.coins;
+  document.getElementById('solve-input').value = '';
+  document.getElementById('solve-error').classList.remove('show');
+  openModal('modal-solve');
+}
+
+function submitAnswer() {
+  const input = document.getElementById('solve-input').value.trim();
+  const errEl = document.getElementById('solve-error');
+  if (!input) { errEl.textContent = 'Escribe tu respuesta antes de enviar.'; errEl.classList.add('show'); return; }
+  errEl.classList.remove('show');
+  const a = state.activities.find(x => x.id === currentSolveId);
+  if (!a) return;
+  const correct = input.toLowerCase().includes(a.answer.toLowerCase()) || a.answer.toLowerCase().includes(input.toLowerCase().split(' ')[0]);
+  if (!correct) { errEl.textContent = '❌ Respuesta incorrecta. Revisa el enunciado e intenta de nuevo.'; errEl.classList.add('show'); return; }
+
+  const u = state.users.find(x => x.id === state.session.id);
+  if (!u.solved) u.solved = [];
+  u.solved.push(currentSolveId);
+  u.coins += a.coins;
+  state.session = u;
+  saveData();
+  closeModal('modal-solve');
+  document.getElementById('student-coins-nav').textContent = u.coins;
+  showToast(`🎉 ¡Correcto! +${a.coins} monedas ganadas`, 'success');
+  renderStudent();
+}
+
+function openExchange() {
+  const u = state.session;
+  document.getElementById('exchange-amount').value = '200';
+  calcExchange();
+  openModal('modal-exchange');
+}
+
+function calcExchange() {
+  const u = state.session;
+  const amt = parseInt(document.getElementById('exchange-amount').value) || 0;
+  const capped = Math.min(amt, Math.floor(u.coins / 200) * 200);
+  const points = (capped / 200) * 0.5;
+  const remaining = u.coins - capped;
+  document.getElementById('exchange-points-preview').textContent = '+' + points.toFixed(1) + ' puntos';
+  document.getElementById('exchange-coins-remaining').innerHTML = `Te quedarán <strong>${remaining}</strong> monedas`;
+}
+
+function doExchange() {
+  const u = state.users.find(x => x.id === state.session.id);
+  const amt = parseInt(document.getElementById('exchange-amount').value) || 0;
+  const capped = Math.min(amt, Math.floor(u.coins / 200) * 200);
+  if (capped < 200) return showToast('Mínimo 200 monedas para canjear', 'error');
+  const points = (capped / 200) * 0.5;
+  u.coins -= capped;
+  u.noteBonus = (u.noteBonus || 0) + points;
+  state.session = u;
+  saveData();
+  closeModal('modal-exchange');
+  showToast(`✅ ¡Canjeaste ${capped} monedas por +${points.toFixed(1)} puntos!`, 'success');
+  renderStudent();
+}
+
+// ─── MODALS & UTILS ───────────────────────────────────────────────────────────
+function openModal(id) { document.getElementById(id).classList.remove('hidden'); }
+function closeModal(id) { document.getElementById(id).classList.add('hidden'); }
+
+let toastTimer;
+function showToast(msg, type) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.className = 'toast show' + (type === 'success' ? ' success' : type === 'error' ? '' : '');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => t.classList.remove('show'), 3000);
+}
+
+// Init
+loadData();
+if (state.session) showScreen(state.session.role === 'teacher' ? 'teacher' : 'student');
+</script>
