@@ -31,28 +31,41 @@
 
 ## 2. Stack tecnológico
 
-> ⚠️ **[PENDIENTE DE CONFIRMACIÓN DEL EQUIPO]** — el PDF del proyecto dice *"libre elección"* y todavía no
-> existe `package.json` en el repo. **No instales dependencias ni generes andamiaje** hasta que el equipo
-> confirme estas decisiones. La tabla es la propuesta de trabajo hasta entonces.
+> ✅ **[DECISIONES YA TOMADAS — rama `Alejandro`]** Existe `package.json` con el andamiaje de
+> NestJS instalado. Gestor de paquetes: **pnpm** (lockfile `pnpm-lock.yaml`; **prohibido** commitar
+> `package-lock.json`). **Node ≥ 22** (`engines`). Todavía **no** hay Prisma, ni frontend, ni módulos
+> de dominio.
 
-| Capa | Tecnología (propuesta) |
-|---|---|
-| Lenguaje | **TypeScript** (modo `strict`) en backend y frontend |
-| Backend | **NestJS** (API REST) |
-| Frontend | **Next.js** (App Router) |
-| ORM | **Prisma** |
-| Base de datos | **PostgreSQL 14+** (extensiones `citext` y `pg_trgm`) ✅ *ya usadas por `db/001_schema.sql`* |
-| Ecuaciones | **KaTeX** en el frontend (para enunciados) |
-| Hash de contraseñas | **argon2** (o bcrypt). Nunca texto plano |
+| Capa | Tecnología | Estado |
+|---|---|---|
+| Lenguaje | **TypeScript 6** (modo `strict`) | ✅ |
+| Runtime | **Node ≥ 22** | ✅ |
+| Backend | **NestJS 12** (API REST) — paquetes **ESM-only** | 🟡 solo scaffold (`GET /` → "Hello World!") |
+| ORM | **Prisma** | ❌ no instalado (instalar solo con aprobación) |
+| Frontend | **Next.js** (App Router) | ❌ no existe en el repo |
+| Base de datos | **PostgreSQL 14+** (extensiones `citext` y `pg_trgm`) | ✅ esquema en `db/001_schema.sql` |
+| Tests | **Jest 30** + Supertest (unit + e2e) | ✅ en verde; corren en **modo ESM** |
+| Lint / formato | **oxlint** (type-aware) + **Prettier** | ✅ |
+| Ecuaciones | **KaTeX** en el frontend | ❌ pendiente |
+| Hash de contraseñas | **argon2** (o bcrypt). Nunca texto plano | ❌ no instalado |
+
+**Detalles críticos del andamiaje (léelos antes de tocar config):**
+- NestJS 12 publica **solo ESM** (`"type": "module"` en sus paquetes) y usa `import.meta.url`.
+  Por eso Jest está configurado en **modo ESM** (`extensionsToTreatAsEsm` + `useESM: true` en
+  `jest.config.ts` y `test/jest-e2e.json`). **No lo pases a CommonJS**: los tests dejan de pasar
+  (Nest 12 rompe con `import.meta` compilado a CJS) y no funciona en Node < 24.9.
+- Los tests se ejecutan con `--experimental-vm-modules`; usa siempre `pnpm test` / `pnpm test:e2e`.
+- El código compilado (`pnpm build`) sale en CommonJS y arranca bien en Node 22
+  (`require(esm)` nativo). No "arregles" eso agregando `"type": "module"` a `package.json`
+  sin avisar: rompería las rutas relativas sin extensión (`moduleResolution: nodenext`).
 
 **Versiones:** no asumas versiones de memoria. Lee `package.json` / `pnpm-lock.yaml` y usa la API de **la versión instalada**. Si dudas de cómo funciona una función de una librería, revisa sus tipos en `node_modules` o la documentación oficial antes de escribir código.
 
 **Decisiones aún NO definidas** (pregunta antes de elegir; no las decidas tú):
-- Confirmar el stack de arriba y la forma del repo (plano vs monorepo — ver `docs/post_mvp.md`).
+- Forma del repo (plano vs monorepo — ver `docs/post_mvp.md`) y estructura del frontend.
 - Librería de UI / CSS (Tailwind, shadcn, etc.).
 - Almacenamiento de archivos (disco local, S3, Supabase Storage…).
-- Gestor de paquetes si no existe lockfile (regla global del equipo: **pnpm**).
-- Estrategia de despliegue.
+- Estrategia de despliegue (`pnpm deploy` existe pero no está configurado).
 
 ---
 
@@ -76,8 +89,23 @@ Estructura **actual** (real, verificada):
 
 ```
 .
-├── README.md                        # overview, comandos de creación de la BD
+├── README.md                        # overview, comandos de la BD y del backend
+├── package.json                     # backend NestJS (scripts + dependencias)
+├── pnpm-lock.yaml                   # lockfile (pnpm) — NO usar npm
+├── jest.config.ts                   # Jest unitario (modo ESM)
+├── nest-cli.json / tsconfig*.json   # config de Nest y TypeScript
+├── .oxlintrc.json / .prettierrc     # lint y formato
+├── .env.example                     # nombres de variables de entorno (copiar a .env)
 ├── educoins_platform.html           # demo principal (prototipo UI autocontenido)
+├── src/                             # backend NestJS
+│   ├── main.ts                      # bootstrap (PORT ?? 3000)
+│   ├── app.module.ts                # módulo raíz
+│   ├── app.controller.ts            # GET /
+│   ├── app.service.ts
+│   └── app.controller.spec.ts       # test unitario
+├── test/
+│   ├── app.e2e-spec.ts              # test e2e
+│   └── jest-e2e.json                # config Jest e2e (modo ESM)
 ├── db/
 │   ├── 001_schema.sql               # esquema completo (MVP) + docstring
 │   └── 002_seed.sql                 # datos de prueba + docstring
@@ -90,13 +118,15 @@ Estructura **actual** (real, verificada):
 ```
 
 - **No crees carpetas ni archivos raíz nuevos sin aprobación** (excepto los que el plan de la tarea incluya).
-- Cuando el backend exista, la propuesta de estructura (monorepo `apps/api` + `apps/web`) está en
-  `docs/post_mvp.md` — **hasta que se confirme, no crees esa estructura**.
+- **No modifiques `jest.config.ts`, `test/jest-e2e.json`, `tsconfig.json` ni los scripts de
+  `package.json` sin aprobación** (ver §2: el modo ESM de Jest es frágil y necesario).
+- La propuesta de estructura (monorepo `apps/api` + `apps/web`) está en `docs/post_mvp.md` —
+  **hasta que se confirme, no crees esa estructura**.
 
 Convención de módulos del backend (cuando exista), siguiendo el nombre **real** de las tablas en inglés:
 
 ```
-modules/<tabla>/            # p. ej. modules/enrollments/, modules/submissions/
+src/modules/<tabla>/            # p. ej. src/modules/enrollments/, src/modules/submissions/
 ├── <tabla>.module.ts
 ├── <tabla>.controller.ts
 ├── <tabla>.service.ts
@@ -213,7 +243,9 @@ Crea un `ExceptionFilter` en `common/filters` que traduzca:
 
 ### Generales
 - `strict: true`. **Prohibido `any`** (usa `unknown` + validación o tipos concretos). Prohibido `// @ts-ignore` sin comentario justificado.
-- ESLint + Prettier del repo. No cambies su configuración sin aprobación.
+- **oxlint** (`pnpm lint`, type-aware) + **Prettier** (`pnpm format`). No cambies su configuración sin aprobación.
+  > Nota: `.oxlintrc.json` trae `typescript/no-explicit-any: "off"` (heredado del scaffold), pero **`any`
+  > sigue prohibido por convención de este archivo** — usa `unknown` + validación.
 - Funciones pequeñas, una responsabilidad. Preferir `async/await`. Sin código muerto ni `console.log` olvidados.
 - **Idioma:** términos del dominio en **español** en el código (`Actividad`, `Entrega`, `Inscripcion`); sufijos técnicos en inglés (`Service`, `Controller`, `Dto`, `Module`, `Guard`). Comentarios y mensajes de error al usuario en español. **En la BD y en `@@map` se usan los nombres reales en inglés.**
 - Nombres de archivo: `kebab-case` (`redeemable-items.service.ts`). Clases: `PascalCase`. Variables/funciones: `camelCase`. Constantes: `UPPER_SNAKE_CASE`.
@@ -245,8 +277,9 @@ Crea un `ExceptionFilter` en `common/filters` que traduzca:
 - Minijuegos: **aún no existen en la BD** (ver `docs/post_mvp.md`); cuando se implementen, un componente por tipo en `components/features/minijuegos/` con interfaz común, y el frontend **nunca** conoce la solución.
 
 ### Git
-- Ramas: `main` (solo Tech Lead) → `develop` → `feature/devX-nombre-tarea`.
-- **Prohibido commit directo a `main` o `develop`.** Trabaja en la rama `feature/...` indicada por el usuario.
+- Ramas del repo hoy: `main` y `Alejandro` (andamiaje NestJS). Convención prevista:
+  `main` (solo Tech Lead) → `develop` → `feature/devX-nombre-tarea`.
+- **Prohibido commit directo a `main` o `develop`.** Trabaja en la rama indicada por el usuario.
 - Commits en formato *Conventional Commits*: `feat(submissions): guardar respuestas JSONB`, `fix(redemptions): …`, `docs: …`.
 - No hagas `git push`, `merge`, `rebase` ni `reset --hard` salvo que el usuario lo pida explícitamente.
 - Nunca subas `.env`, secretos, llaves ni volcados de datos reales.
@@ -287,10 +320,11 @@ Crea un `ExceptionFilter` en `common/filters` que traduzca:
 
 ### Después de escribir código
 13. **Verifica con comandos reales**, no con "creo que funciona":
-    - `pnpm typecheck` / `tsc --noEmit`
+    - `pnpm typecheck`
     - `pnpm lint`
-    - `pnpm test` (y pruebas e2e si tocas endpoints)
-    - `pnpm prisma validate` / `prisma generate` si tocaste el schema
+    - `pnpm test` y `pnpm test:e2e` (siempre que toques código del backend)
+    - `pnpm build`
+    - `pnpm prisma validate` / `prisma generate` **solo cuando Prisma exista** (hoy no está instalado; si tocas el schema, dilo en vez de inventar el comando)
     *(Usa los scripts que existan en `package.json`; si un script no existe, no lo inventes: dilo.)*
 14. **Si un comando falla, lee el error completo** y corrige la causa. No silencies errores, no desactives reglas de lint, no uses `any` para "hacer que compile".
 15. **Informa con honestidad:** al terminar, resume qué hiciste, qué verificaste, qué **no** pudiste verificar y qué queda pendiente. Nunca afirmes que algo funciona si no lo ejecutaste.
@@ -340,9 +374,10 @@ Se basa en **monedas ganadas** (gastar no baja la posición). Leer de las vistas
 
 ---
 
-## 13. Variables de entorno (propuesta de nombres)
+## 13. Variables de entorno
 
-Define los nombres exactos en `.env.example` y valida al arrancar. Valores reales **nunca** en el repo.
+**Ya existe `.env.example`** con estos nombres. Cópialo a `.env` y rellena los valores.
+Valida los nombres al arrancar (`@nestjs/config`). Valores reales **nunca** en el repo.
 
 ```
 DATABASE_URL=
@@ -350,10 +385,14 @@ JWT_ACCESS_SECRET=
 JWT_REFRESH_SECRET=
 JWT_ACCESS_EXPIRES_IN=
 JWT_REFRESH_EXPIRES_IN=
+PORT=3000
 FRONTEND_URL=
 UPLOAD_MAX_BYTES=
 NEXT_PUBLIC_API_URL=
 ```
+
+> Hoy el backend **no lee** `.env` todavía (`@nestjs/config` no está instalado); `src/main.ts`
+> usa `process.env.PORT ?? 3000`. Se instala junto con Prisma.
 
 ---
 
