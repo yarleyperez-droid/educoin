@@ -16,48 +16,55 @@
 | [`db/002_seed.sql`](db/002_seed.sql) | Datos de prueba mínimos para recorrer todo el ciclo — *docstring de cabecera*. |
 | [`docs/plataforma_educativa_bd.md`](docs/plataforma_educativa_bd.md) | **Especificación de la BD**: reglas de negocio, diagrama Mermaid, estructura JSONB, resultados de verificación. |
 | [`docs/post_mvp.md`](docs/post_mvp.md) | **Backlog post-MVP**: funcionalidades planificadas (minijuegos, modalidades, aprobación de canjes…) que *no existen aún* en la BD. |
+| [`docs/contexto_mvp.md`](docs/contexto_mvp.md) | **Contexto del MVP**: reglas de negocio, stack y decisiones, qué está hecho y qué falta. |
 | [`.opencode/agents/AGENTS.md`](.opencode/agents/AGENTS.md) | Guardrails del proyecto para agentes de IA. |
 | [`package.json`](package.json) | **Backend NestJS** (API REST): scripts, dependencias y `engines`. |
 | [`src/`](src) | Código del backend (NestJS). Hoy solo el andamiaje inicial (`AppModule`, `GET /`). |
 | [`test/`](test) | Pruebas e2e (Jest + Supertest). |
-| [`.env.example`](.env.example) | Nombres de variables de entorno. Cópialo a `.env` (nunca se commitea). |
+| [`frontend/`](frontend) | **Frontend Next.js 16** (App Router + Tailwind 4 + KaTeX). App aparte con su propio lockfile; estructura de capas por rol en `frontend/src/` (`app/(auth|admin|teacher|student)/`, `features/`, `components/`, `lib/api-client.ts`). |
+| [`.env.example`](.env.example) | Variables del backend. Cópialo a `.env` (nunca se commitea). |
+| [`frontend/.env.example`](frontend/.env.example) | Variables del frontend (`NEXT_PUBLIC_API_URL`). |
 
 ## Requisitos
 
 - **Node.js ≥ 22** (probado en 22.23.3).
 - **pnpm ≥ 11** (`corepack enable pnpm` o `npm i -g pnpm`). **No se usa npm ni yarn**:
-  el lockfile del repo es `pnpm-lock.yaml`.
+  hay dos lockfiles, `pnpm-lock.yaml` (raíz) y `frontend/pnpm-lock.yaml`.
 - **PostgreSQL 14+** (probado en 16) con extensiones `citext` y `pg_trgm`
   (incluidas en el script).
+- Opcional: `python3` + `build-essential` por si alguna dependencia nativa
+  (`argon2`) tenga que compilarse en tu plataforma.
 
-## Instalar y arrancar el backend
+## Instalar y arrancar todo
 
 ```bash
-# 1. Dependencias (una sola vez)
-pnpm install
+# 1. Dependencias de backend + frontend (una sola vez)
+pnpm install:all
 
 # 2. Variables de entorno
-cp .env.example .env        # rellena los valores
+cp .env.example .env                    # backend (rellenar)
+cp frontend/.env.example frontend/.env.local   # frontend
 
-# 3. Desarrollo con recarga automática -> http://localhost:3000
+# 3. Terminal 1 -> API NestJS en http://localhost:3000
 pnpm start:dev
 
-# 4. Producción
-pnpm build && pnpm start:prod
+# 4. Terminal 2 -> Frontend Next en http://localhost:3001
+pnpm dev:web
 ```
 
 ### Comandos
 
 | Comando | Qué hace |
 |---|---|
-| `pnpm start:dev` | Servidor en watch (`--watch`) |
-| `pnpm build` | Compila a `dist/` |
-| `pnpm typecheck` | `tsc --noEmit` (sin generar archivos) |
-| `pnpm lint` | oxlint con reglas de tipos |
+| `pnpm install:all` | Instala backend (raíz) **y** frontend |
+| `pnpm start:dev` | API Nest en watch → `:3000` |
+| `pnpm dev:web` | Next en watch → `:3001` |
+| `pnpm build` / `pnpm build:web` | Compilar backend (`dist/`) / frontend (`.next/`) |
+| `pnpm typecheck` | `tsc --noEmit` del backend |
+| `pnpm lint` | oxlint (backend). Frontend: `pnpm --dir frontend lint` |
 | `pnpm format` / `pnpm format:check` | Prettier |
-| `pnpm test` | Pruebas unitarias |
+| `pnpm test` | Pruebas unitarias (Jest, modo ESM) |
 | `pnpm test:e2e` | Pruebas e2e |
-
 
 ## Crear la base de datos
 
@@ -98,19 +105,26 @@ positivas y negativas) — detalle en
 |---|---|---|
 | Base de datos | PostgreSQL 14+ (multi-tenant: `organizations`) | ✅ esquema y seeds en `db/` |
 | Backend | **NestJS 12 + TypeScript 6** (API REST) | 🟡 andamiaje inicial: solo `GET /`. Sin módulos de dominio |
-| ORM | Prisma | ⏳ pendiente de instalar |
+| ORM | **Prisma 7.10** + `@prisma/adapter-pg` + `pg` | 🟡 paquetes instalados. Falta `prisma/schema.prisma` y el baselining |
+| Auth / seguridad | `@nestjs/jwt`, `@nestjs/passport`, `helmet`, `argon2`, `class-validator` | 🟡 instalados, sin cablear |
+| API docs | `@nestjs/swagger` | 🟡 instalado, sin configurar |
 | Frontend demo | HTML/CSS plano (`educoins_platform.html`) | ✅ prototipo autocontenido |
-| Frontend final | Next.js (App Router) | ⏳ pendiente |
-| Editor de ecuaciones | KaTeX | ⏳ pendiente de integrar |
-| Lint / formato | oxlint + Prettier | ✅ configurado |
+| Frontend final | **Next.js 16 + React 19 + Tailwind 4** (`frontend/`) | 🟡 landing propia + esqueleto de capas por rol (`app/`, `features/`, `components/`, `lib/api-client.ts`). Sin vistas por rol |
+| Editor de ecuaciones | **KaTeX 0.19** | 🟡 instalado en `frontend/`, sin integrar |
+| Lint / formato | oxlint + Prettier (backend), ESLint (frontend) | ✅ configurado |
 | Tests | Jest 30 (unit + e2e con Supertest) | ✅ 2 pruebas en verde |
 
 ### Pendiente para el equipo
 
-- Instalar Prisma y el resto de dependencias del backend (`@nestjs/config`,
-  `@nestjs/jwt`, `class-validator`, `@nestjs/swagger`, `helmet`, `argon2`…):
-  ver `.opencode/agents/AGENTS.md` §2 y §9.
-- Crear el frontend Next.js (decisión de estructura: plano vs monorepo).
+- **Prisma**: crear `prisma/schema.prisma` a partir de `db/001_schema.sql` y hacer
+  el *baselining* (`.opencode/agents/AGENTS.md` §7). **Requiere aprobación**: toca la
+  zona de mayor riesgo.
+- **Cablear lo instalado**: `@nestjs/config` + `helmet` + `ValidationPipe` global +
+  Swagger en `main.ts`; `PrismaService` único inyectable.
+- **Cablear auth**: `JwtAuthGuard` + `RolesGuard` + hash `argon2`.
+- **Frontend**: crear las vistas por rol (el esqueleto de carpetas y
+  `lib/api-client.ts` ya existen en `frontend/src/`).
+- **Puertos acordados**: API `:3000`, frontend `:3001`.
 - Confirmar estrategia de despliegue (el script `pnpm deploy` de `@nestjs/mau`
   aún no está configurado).
 
