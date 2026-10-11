@@ -4,3 +4,8 @@ allowBuilds:
   esbuild: set this to true or false
   prisma: set this to true or false
   unrs-resolver: true
+  argon2: true
+  prisma: true
+  '@prisma/client': true
+  '@scarf/scarf': false
+  '@prisma/engines': true

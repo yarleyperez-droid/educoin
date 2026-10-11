@@ -31,23 +31,32 @@
 
 ## 2. Stack tecnológico
 
-> ✅ **[DECISIONES YA TOMADAS — rama `Alejandro`]** Existe `package.json` con el andamiaje de
-> NestJS instalado. Gestor de paquetes: **pnpm** (lockfile `pnpm-lock.yaml`; **prohibido** commitar
-> `package-lock.json`). **Node ≥ 22** (`engines`). Todavía **no** hay Prisma, ni frontend, ni módulos
-> de dominio.
+> ✅ **[DECISIONES YA TOMADAS — rama `Alejandro`]** Gestor de paquetes: **pnpm** (dos lockfiles:
+> `pnpm-lock.yaml` en la raíz y `frontend/pnpm-lock.yaml`; **prohibido** commitar `package-lock.json`).
+> **Node ≥ 22** (`engines`). Instalación de todo: **`pnpm install:all`**. **No instales dependencias
+> nuevas sin aprobación** (§10.3).
 
 | Capa | Tecnología | Estado |
 |---|---|---|
-| Lenguaje | **TypeScript 6** (modo `strict`) | ✅ |
+| Lenguaje | **TypeScript 6** backend / **TS 5.9** en `frontend/` | ✅ |
 | Runtime | **Node ≥ 22** | ✅ |
 | Backend | **NestJS 12** (API REST) — paquetes **ESM-only** | 🟡 solo scaffold (`GET /` → "Hello World!") |
-| ORM | **Prisma** | ❌ no instalado (instalar solo con aprobación) |
-| Frontend | **Next.js** (App Router) | ❌ no existe en el repo |
+| ORM | **Prisma 7.10** (`prisma` + `@prisma/client` + `@prisma/adapter-pg` + `pg`) | 🟡 instalado. **Sin `prisma/schema.prisma`** (ver §7) |
+| Auth / seguridad | `@nestjs/jwt`, `@nestjs/passport` (+`passport-local`), `helmet`, `argon2`, `class-validator`, `class-transformer` | 🟡 instalados, **sin cablear** |
+| API docs | `@nestjs/swagger` | 🟡 instalado, sin configurar |
+| Validación JSONB | `zod` | 🟡 instalado, sin usar |
+| Frontend | **Next.js 16 + React 19 + Tailwind 4** en `frontend/` (App Router, `src/`) | 🟡 landing propia + esqueleto de capas por rol (`lib/api-client.ts` listo). Sin vistas por rol |
+| Formularios | `react-hook-form` | 🟡 instalado en `frontend/` |
 | Base de datos | **PostgreSQL 14+** (extensiones `citext` y `pg_trgm`) | ✅ esquema en `db/001_schema.sql` |
 | Tests | **Jest 30** + Supertest (unit + e2e) | ✅ en verde; corren en **modo ESM** |
-| Lint / formato | **oxlint** (type-aware) + **Prettier** | ✅ |
-| Ecuaciones | **KaTeX** en el frontend | ❌ pendiente |
-| Hash de contraseñas | **argon2** (o bcrypt). Nunca texto plano | ❌ no instalado |
+| Lint / formato | **oxlint** (type-aware) + **Prettier** (backend), **ESLint** (`eslint-config-next`) en `frontend/` | ✅ |
+| Ecuaciones | **KaTeX 0.19** + `@types/katex` | 🟡 instalado, sin integrar |
+| Hash de contraseñas | **argon2** | 🟡 instalado, sin usar |
+
+**Estructura y puertos (decididos):**
+- Backend en la **raíz**; frontend en **`frontend/`** (app aparte, no es un workspace de pnpm).
+  No muevas nada a `apps/api` sin aprobación (§4).
+- Puertos: **API `:3000`** (`pnpm start:dev`), **frontend `:3001`** (`pnpm dev:web`).
 
 **Detalles críticos del andamiaje (léelos antes de tocar config):**
 - NestJS 12 publica **solo ESM** (`"type": "module"` en sus paquetes) y usa `import.meta.url`.
@@ -58,14 +67,21 @@
 - El código compilado (`pnpm build`) sale en CommonJS y arranca bien en Node 22
   (`require(esm)` nativo). No "arregles" eso agregando `"type": "module"` a `package.json`
   sin avisar: rompería las rutas relativas sin extensión (`moduleResolution: nodenext`).
+- `tsconfig.json` de la raíz **excluye `frontend/`** y `jest.config.ts` ignora
+  `/frontend/` — no los quites o `pnpm typecheck` y `pnpm test` se rompen.
+- `pnpm-workspace.yaml` (raíz) contiene `allowBuilds`: sin él, `pnpm install` falla con
+  `ERR_PNPM_IGNORED_BUILDS` (`argon2`, `prisma`, `@prisma/engines`…). `@scarf/scarf`
+  (telemetría de Prisma) está **denegado** a propósito.
+- `prisma` y `@prisma/client` están **fijados a la misma versión exacta** (`7.10.0`):
+  si actualizas uno, actualiza los tres (`prisma`, `@prisma/client`, `@prisma/adapter-pg`).
 
 **Versiones:** no asumas versiones de memoria. Lee `package.json` / `pnpm-lock.yaml` y usa la API de **la versión instalada**. Si dudas de cómo funciona una función de una librería, revisa sus tipos en `node_modules` o la documentación oficial antes de escribir código.
 
 **Decisiones aún NO definidas** (pregunta antes de elegir; no las decidas tú):
-- Forma del repo (plano vs monorepo — ver `docs/post_mvp.md`) y estructura del frontend.
-- Librería de UI / CSS (Tailwind, shadcn, etc.).
+- Librería de componentes de UI (shadcn/ui, MUI…) y de datos de tablas.
 - Almacenamiento de archivos (disco local, S3, Supabase Storage…).
 - Estrategia de despliegue (`pnpm deploy` existe pero no está configurado).
+- Migrar a monorepo `apps/api` + `apps/web` (propuesta de `docs/post_mvp.md`).
 
 ---
 
@@ -77,7 +93,8 @@ Antes de tocar datos, consulta en este orden:
 2. `docs/plataforma_educativa_bd.md` — especificación: reglas de negocio, diagrama Mermaid, estructura JSONB, resultados de verificación.
 3. `db/002_seed.sql` — datos de prueba (muestra de flujos reales).
 4. `docs/post_mvp.md` — pendientes/planificados. **NO existen en la BD**; solo referencia de futuro.
-5. Este archivo.
+5. `docs/contexto_mvp.md` — contexto general: reglas de negocio, stack, estado actual (hecho/pendiente).
+6. Este archivo.
 
 > Si un futuro `schema.prisma` y el SQL discrepan, **el SQL de `db/` gana**. Repórtalo, no lo "arregles" en silencio.
 
@@ -91,11 +108,12 @@ Estructura **actual** (real, verificada):
 .
 ├── README.md                        # overview, comandos de la BD y del backend
 ├── package.json                     # backend NestJS (scripts + dependencias)
-├── pnpm-lock.yaml                   # lockfile (pnpm) — NO usar npm
+├── pnpm-lock.yaml                   # lockfile del backend (pnpm) — NO usar npm
+├── pnpm-workspace.yaml              # allowBuilds (sin esto `pnpm install` falla)
 ├── jest.config.ts                   # Jest unitario (modo ESM)
 ├── nest-cli.json / tsconfig*.json   # config de Nest y TypeScript
 ├── .oxlintrc.json / .prettierrc     # lint y formato
-├── .env.example                     # nombres de variables de entorno (copiar a .env)
+├── .env.example                     # variables del backend (copiar a .env)
 ├── educoins_platform.html           # demo principal (prototipo UI autocontenido)
 ├── src/                             # backend NestJS
 │   ├── main.ts                      # bootstrap (PORT ?? 3000)
@@ -106,12 +124,32 @@ Estructura **actual** (real, verificada):
 ├── test/
 │   ├── app.e2e-spec.ts              # test e2e
 │   └── jest-e2e.json                # config Jest e2e (modo ESM)
+├── frontend/                        # app Next.js (independiente)
+│   ├── package.json                 # scripts: dev (--port 3001) / build / lint
+│   ├── pnpm-lock.yaml               # lockfile propio del frontend
+│   ├── pnpm-workspace.yaml          # allowBuilds de Next (sharp, unrs-resolver)
+│   ├── AGENTS.md                    # reglas de Next 16 — la regenera `next dev`
+│   ├── .env.example                 # NEXT_PUBLIC_API_URL (copiar a .env.local)
+│   └── src/
+│       ├── app/                     # App Router: layout raíz + landing "/"
+│       │   │                        #   route groups por rol: (auth) (admin)
+│       │   │                        #   (teacher) (student) — vacíos, con .gitkeep
+│       │   ├── layout.tsx           # metadata EduCoins, lang="es", fuentes Geist
+│       │   ├── page.tsx             # landing pública
+│       │   └── globals.css          # Tailwind 4 + tokens de color
+│       ├── features/{auth,admin,teacher,student}/   # lógica y pantallas por rol
+│       ├── components/{ui,features}/ # genéricos y de dominio (minijuegos, etc.)
+│       ├── hooks/                    # hooks reutilizables
+│       ├── lib/api-client.ts         # ÚNICO punto de HTTP (AGENTS §8); sin
+│       │                             #   endpoints inventados aún
+│       └── types/                    # tipos compartidos
 ├── db/
 │   ├── 001_schema.sql               # esquema completo (MVP) + docstring
 │   └── 002_seed.sql                 # datos de prueba + docstring
 ├── docs/
 │   ├── plataforma_educativa_bd.md   # especificación de la BD (§7 = verificación 12/12)
-│   └── post_mvp.md                  # backlog de funcionalidades pendientes
+│   ├── post_mvp.md                  # backlog de funcionalidades pendientes
+│   └── contexto_mvp.md             # contexto: reglas, stack, hecho y pendiente
 └── .opencode/
     └── agents/
         └── AGENTS.md                # este archivo (guardrails del proyecto)
@@ -120,6 +158,10 @@ Estructura **actual** (real, verificada):
 - **No crees carpetas ni archivos raíz nuevos sin aprobación** (excepto los que el plan de la tarea incluya).
 - **No modifiques `jest.config.ts`, `test/jest-e2e.json`, `tsconfig.json` ni los scripts de
   `package.json` sin aprobación** (ver §2: el modo ESM de Jest es frágil y necesario).
+- El backend y el frontend son **dos apps con su propio `package.json` y lockfile**.
+  `pnpm add X` en la raíz instala en el backend; usa `pnpm --dir frontend add X` para el frontend.
+- `frontend/AGENTS.md` (y `CLAUDE.md`) los genera y regenera `next dev` con las reglas de
+  Next 16: **léelos antes de escribir código en `frontend/`** y no los borres del diff.
 - La propuesta de estructura (monorepo `apps/api` + `apps/web`) está en `docs/post_mvp.md` —
   **hasta que se confirme, no crees esa estructura**.
 
@@ -320,11 +362,9 @@ Crea un `ExceptionFilter` en `common/filters` que traduzca:
 
 ### Después de escribir código
 13. **Verifica con comandos reales**, no con "creo que funciona":
-    - `pnpm typecheck`
-    - `pnpm lint`
-    - `pnpm test` y `pnpm test:e2e` (siempre que toques código del backend)
-    - `pnpm build`
-    - `pnpm prisma validate` / `prisma generate` **solo cuando Prisma exista** (hoy no está instalado; si tocas el schema, dilo en vez de inventar el comando)
+    - Backend: `pnpm typecheck`, `pnpm lint`, `pnpm build`, `pnpm test`, `pnpm test:e2e`
+    - Frontend: `pnpm --dir frontend lint`, `pnpm --dir frontend typecheck`, `pnpm build:web`
+    - `pnpm prisma validate` / `prisma generate` **solo cuando exista `prisma/schema.prisma`** (hoy no existe; si tocas el schema, dilo en vez de inventar el comando)
     *(Usa los scripts que existan en `package.json`; si un script no existe, no lo inventes: dilo.)*
 14. **Si un comando falla, lee el error completo** y corrige la causa. No silencies errores, no desactives reglas de lint, no uses `any` para "hacer que compile".
 15. **Informa con honestidad:** al terminar, resume qué hiciste, qué verificaste, qué **no** pudiste verificar y qué queda pendiente. Nunca afirmes que algo funciona si no lo ejecutaste.
@@ -391,8 +431,12 @@ UPLOAD_MAX_BYTES=
 NEXT_PUBLIC_API_URL=
 ```
 
-> Hoy el backend **no lee** `.env` todavía (`@nestjs/config` no está instalado); `src/main.ts`
-> usa `process.env.PORT ?? 3000`. Se instala junto con Prisma.
+> `@nestjs/config` **ya está instalado pero aún no se usa**: `src/main.ts` solo lee
+> `process.env.PORT ?? 3000`. Cablear `ConfigModule` (con `isGlobal`) es parte del trabajo pendiente.
+
+**Frontend:** existe `frontend/.env.example` → cópialo a `frontend/.env.local`
+(gitignorado) con `NEXT_PUBLIC_API_URL=http://localhost:3000/api/v1`
+(el prefijo `/api/v1` **aún no existe** en el backend).
 
 ---
 
