@@ -1,0 +1,243 @@
+generator client {
+  provider        = "prisma-client"
+  output          = "../src/generated/prisma"
+  previewFeatures = ["partialIndexes"]
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model activities {
+  id           BigInt          @id @default(autoincrement())
+  class_id     BigInt
+  title        String          @db.VarChar(200)
+  description  String?
+  reward_coins Int             @default(0)
+  status       activity_status @default(draft)
+  questions    Json            @default("[]")
+  published_at DateTime?       @db.Timestamptz(6)
+  closes_at    DateTime?       @db.Timestamptz(6)
+  created_at   DateTime        @default(now()) @db.Timestamptz(6)
+  updated_at   DateTime        @default(now()) @db.Timestamptz(6)
+  deleted_at   DateTime?       @db.Timestamptz(6)
+  classes      classes         @relation(fields: [class_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  submissions  submissions[]
+
+  @@index([class_id, status], map: "idx_activities_class_status")
+}
+
+/// This model contains an expression index which requires additional setup for migrations. Visit https://pris.ly/d/expression-indexes for more info.
+model classes {
+  id               BigInt             @id @default(autoincrement())
+  teacher_id       BigInt
+  name             String             @db.VarChar(150)
+  code             String             @unique @default(dbgenerated("upper(substr(md5(((random())::text || (clock_timestamp())::text)), 1, 8))")) @db.VarChar(12)
+  status           class_status       @default(active)
+  created_at       DateTime           @default(now()) @db.Timestamptz(6)
+  updated_at       DateTime           @default(now()) @db.Timestamptz(6)
+  activities       activities[]
+  users            users              @relation(fields: [teacher_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  enrollments      enrollments[]
+  redeemable_items redeemable_items[]
+
+  @@index([name(ops: raw("gin_trgm_ops"))], map: "idx_classes_name_trgm", type: Gin)
+  @@index([teacher_id], map: "idx_classes_teacher")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model coin_movements {
+  id            BigInt        @id @default(autoincrement())
+  enrollment_id BigInt
+  type          movement_type
+  quantity      Int
+  submission_id BigInt?       @unique(map: "uq_movement_earning", where: raw("(type = 'earning'::movement_type)"))
+  redemption_id BigInt?       @unique(map: "uq_movement_reversal", where: raw("(type = 'reversal'::movement_type)"))
+  description   String?       @db.VarChar(255)
+  created_by    BigInt?
+  created_at    DateTime      @default(now()) @db.Timestamptz(6)
+  users         users?        @relation(fields: [created_by], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  enrollments   enrollments   @relation(fields: [enrollment_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  redemptions   redemptions?  @relation(fields: [redemption_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  submissions   submissions?  @relation(fields: [submission_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([enrollment_id, created_at], map: "idx_movements_enrollment")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model enrollments {
+  id              BigInt            @id @default(autoincrement())
+  class_id        BigInt
+  student_id      BigInt
+  status          enrollment_status @default(active)
+  coins_earned    Int               @default(0)
+  coins_spent     Int               @default(0)
+  coins_available Int?              @default(dbgenerated("(coins_earned - coins_spent)"))
+  enrolled_at     DateTime          @default(now()) @db.Timestamptz(6)
+  coin_movements  coin_movements[]
+  classes         classes           @relation(fields: [class_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  users           users             @relation(fields: [student_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  redemptions     redemptions[]
+  submissions     submissions[]
+
+  @@unique([class_id, student_id], map: "uq_enrollment")
+  @@index([student_id], map: "idx_enrollments_student")
+}
+
+model organizations {
+  id         BigInt            @id @default(autoincrement())
+  name       String            @unique @db.VarChar(200)
+  type       organization_type
+  city       String?           @db.VarChar(100)
+  is_active  Boolean           @default(true)
+  created_at DateTime          @default(now()) @db.Timestamptz(6)
+  updated_at DateTime          @default(now()) @db.Timestamptz(6)
+  users      users[]
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model redeemable_items {
+  id           BigInt        @id @default(autoincrement())
+  class_id     BigInt
+  name         String        @db.VarChar(150)
+  description  String?
+  type         item_type
+  cost_coins   Int
+  grade_points Decimal?      @db.Decimal(4, 2)
+  stock        Int?
+  status       item_status   @default(active)
+  created_at   DateTime      @default(now()) @db.Timestamptz(6)
+  updated_at   DateTime      @default(now()) @db.Timestamptz(6)
+  classes      classes       @relation(fields: [class_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  redemptions  redemptions[]
+
+  @@unique([class_id, name], map: "uq_item_class_name")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model redemptions {
+  id               BigInt            @id @default(autoincrement())
+  enrollment_id    BigInt
+  item_id          BigInt
+  cost_coins       Int
+  grade_points     Decimal?          @db.Decimal(4, 2)
+  status           redemption_status @default(completed)
+  redeemed_at      DateTime          @default(now()) @db.Timestamptz(6)
+  reversed_at      DateTime?         @db.Timestamptz(6)
+  notes            String?
+  coin_movements   coin_movements?
+  enrollments      enrollments       @relation(fields: [enrollment_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  redeemable_items redeemable_items  @relation(fields: [item_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([enrollment_id], map: "idx_redemptions_enrollment")
+  @@index([item_id], map: "idx_redemptions_item")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model submissions {
+  id             BigInt            @id @default(autoincrement())
+  activity_id    BigInt
+  enrollment_id  BigInt
+  status         submission_status @default(in_progress)
+  started_at     DateTime          @default(now()) @db.Timestamptz(6)
+  submitted_at   DateTime?         @db.Timestamptz(6)
+  graded_at      DateTime?         @db.Timestamptz(6)
+  score          Decimal?          @db.Decimal(6, 2)
+  coins_awarded  Int               @default(0)
+  graded_by      BigInt?
+  feedback       String?
+  answers        Json              @default("[]")
+  coin_movements coin_movements?
+  activities     activities        @relation(fields: [activity_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  enrollments    enrollments       @relation(fields: [enrollment_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  users          users?            @relation(fields: [graded_by], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@unique([activity_id, enrollment_id], map: "uq_submission")
+  @@index([enrollment_id], map: "idx_submissions_enrollment")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model users {
+  id                   BigInt           @id @default(autoincrement())
+  organization_id      BigInt?
+  role                 user_role
+  username             String           @unique @db.Citext
+  email                String           @unique @db.Citext
+  password_hash        String
+  must_change_password Boolean          @default(true)
+  first_name           String           @db.VarChar(100)
+  last_name            String           @db.VarChar(150)
+  specialty            String?          @db.VarChar(150)
+  is_active            Boolean          @default(true)
+  last_login           DateTime?        @db.Timestamptz(6)
+  created_at           DateTime         @default(now()) @db.Timestamptz(6)
+  updated_at           DateTime         @default(now()) @db.Timestamptz(6)
+  classes              classes[]
+  coin_movements       coin_movements[]
+  enrollments          enrollments[]
+  submissions          submissions[]
+  organizations        organizations?   @relation(fields: [organization_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([organization_id], map: "idx_users_organization")
+  @@index([role], map: "idx_users_role")
+}
+
+enum activity_status {
+  draft
+  published
+  deleted
+}
+
+enum class_status {
+  active
+  archived
+}
+
+enum enrollment_status {
+  active
+  withdrawn
+  blocked
+}
+
+enum item_status {
+  active
+  inactive
+  deleted
+}
+
+enum item_type {
+  grade_bonus
+  fun_activity
+}
+
+enum movement_type {
+  earning
+  spending
+  reversal
+  adjustment
+}
+
+enum organization_type {
+  school
+  university
+  other
+}
+
+enum redemption_status {
+  completed
+  reversed
+}
+
+enum submission_status {
+  in_progress
+  submitted
+  graded
+  rejected
+}
+
+enum user_role {
+  admin
+  teacher
+  student
+}
