@@ -10,25 +10,22 @@ const { config: tsconfig } = ts.readConfigFile(
 );
 const paths = tsconfig?.compilerOptions?.paths ?? {};
 
+const moduleNameMapper = {
+  // Resolves ESM-style ".js" specifiers (used by the generated Prisma client)
+  // to their TypeScript sources when tests run as CommonJS.
+  '^(\\.{1,2}/.*)\\.js$': '$1',
+  ...pathsToModuleNameMapper(paths, { prefix: '<rootDir>/' }),
+};
+
 const config: Config = {
   moduleFileExtensions: ['js', 'json', 'ts'],
   rootDir: '.',
   testRegex: '.*\\.spec\\.ts$',
   testPathIgnorePatterns: ['/node_modules/', '/frontend/', '/dist/'],
-  extensionsToTreatAsEsm: ['.ts'],
   transform: {
-    '^.+\\.(t|j)s$': [
-      'ts-jest',
-      {
-        useESM: true,
-        tsconfig: {
-          module: 'esnext',
-          moduleResolution: 'bundler',
-        },
-      },
-    ],
+    '^.+\\.(t|j)s$': 'ts-jest',
   },
-  moduleNameMapper: pathsToModuleNameMapper(paths, { prefix: '<rootDir>/' }),
+  moduleNameMapper,
   collectCoverageFrom: [
     'src/**/*.(t|j)s',
     'libs/**/*.(t|j)s',
