@@ -5,6 +5,10 @@
  * - CA 1: un rol equivocado en un panel redirige al panel del propio rol.
  * - CA 2: una ruta protegida sin sesión redirige a `/login`.
  *
+ * T5.4.2 (PRO-379) añade los escenarios del bloqueo por
+ * `mustChangePassword` (plan §5), su anti-loops y la integración con la
+ * cookie que lleva el flag.
+ *
  * Estos tests validan **UX, no seguridad**: la validación real de rol y
  * propiedad la hace el backend en cada petición. Un usuario que salte el
  * middleware será rechazado por el servidor (CA 4 de H5.3).
@@ -44,6 +48,18 @@ const SESION_ADMIN: Sesion = {
   email: "admin@demo.com",
   nombre: "Admin",
   organizationId: "10",
+};
+
+/** Sesión estudiante con cambio de contraseña pendiente (T5.4.2). */
+const SESION_ESTUDIANTE_CON_CAMBIO_PENDIENTE: Sesion = {
+  ...SESION_ESTUDIANTE,
+  mustChangePassword: true,
+};
+
+/** Sesión estudiante que ya resolvió el cambio obligatorio (T5.4.2). */
+const SESION_ESTUDIANTE_SIN_CAMBIO_PENDIENTE: Sesion = {
+  ...SESION_ESTUDIANTE,
+  mustChangePassword: false,
 };
 
 describe("destinoDeRedireccion — rol equivocado (CA 1)", () => {
@@ -143,5 +159,107 @@ describe("integración middleware + cookie simulada", () => {
     const ubicacion = response.headers.get("location");
 
     expect(ubicacion).toBeNull();
+  });
+});
+
+describe("destinoDeRedireccion — cambio obligatorio de contraseña (T5.4.2)", () => {
+  it("flag true + /student redirige a /cambiar-contrasena", () => {
+    expect(
+      destinoDeRedireccion("/student", SESION_ESTUDIANTE_CON_CAMBIO_PENDIENTE),
+    ).toBe("/cambiar-contrasena");
+  });
+
+  it("flag true + /login redirige a /cambiar-contrasena (ya hizo login)", () => {
+    expect(
+      destinoDeRedireccion("/login", SESION_ESTUDIANTE_CON_CAMBIO_PENDIENTE),
+    ).toBe("/cambiar-contrasena");
+  });
+
+  it("flag false + /cambiar-contrasena redirige al panel del rol", () => {
+    expect(
+      destinoDeRedireccion(
+        "/cambiar-contrasena",
+        SESION_ESTUDIANTE_SIN_CAMBIO_PENDIENTE,
+      ),
+    ).toBe("/student");
+  });
+
+  it("flag false + panel del rol correcto deja pasar", () => {
+    expect(
+      destinoDeRedireccion("/student", SESION_ESTUDIANTE_SIN_CAMBIO_PENDIENTE),
+    ).toBeNull();
+  });
+
+  it("sesión sin el campo mustChangePassword se trata como false", () => {
+    // Cookie antigua (T5.3.3): el flag ausente no bloquea…
+    expect(destinoDeRedireccion("/cambiar-contrasena", SESION_ESTUDIANTE)).toBe(
+      "/student",
+    );
+
+    // …y su panel sigue funcionando como hasta ahora.
+    expect(destinoDeRedireccion("/student", SESION_ESTUDIANTE)).toBeNull();
+  });
+});
+
+describe("destinoDeRedireccion — anti-loops del cambio obligatorio (T5.4.2)", () => {
+  it("flag true + /cambiar-contrasena deja pasar (sin bucle)", () => {
+    expect(
+      destinoDeRedireccion(
+        "/cambiar-contrasena",
+        SESION_ESTUDIANTE_CON_CAMBIO_PENDIENTE,
+      ),
+    ).toBeNull();
+  });
+
+  it("sin sesión + /cambiar-contrasena redirige a /login", () => {
+    expect(destinoDeRedireccion("/cambiar-contrasena", null)).toBe("/login");
+  });
+
+  it("cada destino de redirección se cumple en un solo salto", () => {
+    // flag true → cambio → pasa.
+    const trasCambio = destinoDeRedireccion(
+      "/cambiar-contrasena",
+      SESION_ESTUDIANTE_CON_CAMBIO_PENDIENTE,
+    );
+    expect(trasCambio).toBeNull();
+
+    // flag false → panel → pasa.
+    const trasPanel = destinoDeRedireccion(
+      "/student",
+      SESION_ESTUDIANTE_SIN_CAMBIO_PENDIENTE,
+    );
+    expect(trasPanel).toBeNull();
+
+    // Sin sesión → login → pasa.
+    expect(destinoDeRedireccion("/login", null)).toBeNull();
+  });
+});
+
+describe("integración middleware + cookie con flag de cambio (T5.4.2)", () => {
+  it("cookie con mustChangePassword true redirige a /cambiar-contrasena desde el panel", () => {
+    const cookie = crearCookieSesion(SESION_ESTUDIANTE_CON_CAMBIO_PENDIENTE);
+    const request = new NextRequest(new URL("http://localhost/student"), {
+      headers: new Headers({ cookie: `educoins_sesion=${cookie}` }),
+    });
+
+    const response = middleware(request);
+    const ubicacion = response.headers.get("location");
+
+    expect(ubicacion).toContain("/cambiar-contrasena");
+  });
+
+  it("cookie con el flag en false deja pasar /cambiar-contrasena al panel del rol", () => {
+    const cookie = crearCookieSesion(SESION_ESTUDIANTE_SIN_CAMBIO_PENDIENTE);
+    const request = new NextRequest(
+      new URL("http://localhost/cambiar-contrasena"),
+      {
+        headers: new Headers({ cookie: `educoins_sesion=${cookie}` }),
+      },
+    );
+
+    const response = middleware(request);
+    const ubicacion = response.headers.get("location");
+
+    expect(ubicacion).toContain("/student");
   });
 });

@@ -69,6 +69,20 @@ export interface Sesion {
 
   /** ID de la organización a la que pertenece (string por `bigint` de BD). */
   organizationId: string;
+
+  /**
+   * Indica si el usuario debe cambiar su contraseña en el próximo ingreso.
+   *
+   * **Supuesto de contrato coherente con la columna real `users.must_change_password`
+   * de `db/001_schema.sql`** (booleano `NOT NULL DEFAULT TRUE` en la BD). Es
+   * opcional aquí para no romper {@link leerSesion}: los usuarios sin el campo
+   * siguen siendo una sesión válida. Si H2.1/H2.2 llegan a traerlo con otro
+   * nombre, se ajusta solo la capa `features/auth/api/auth.ts`.
+   *
+   * Consumidor previsto: T5.4.2 (PRO-379), para bloquear el panel hasta que
+   * el usuario cambie su contraseña inicial.
+   */
+  mustChangePassword?: boolean;
 }
 
 /**
@@ -104,28 +118,28 @@ export function crearCookieSesion(sesion: Sesion): string {
 }
 
 /**
- * Lee la sesión del usuario desde la cookie simulada.
+ * Decodifica el valor crudo de la cookie de sesión simulada.
  *
- * Es la función que consumirá el middleware de Next (T5.3.2) para decidir si
- * redirigir al login o al panel del rol. Con H2.1 se cambia su interior para
- * decodificar la cookie `httpOnly` real; la firma no cambia.
+ * Función pura compartida por {@link leerSesion} (middleware/servidor) y por
+ * `leerSesionActual` de `features/auth/api/auth` (vistas en el navegador),
+ * para que la decodificación viva en un solo lugar.
  *
- * Devuelve `null` (no lanza) cuando:
- * - no hay cookie;
- * - la cookie no es base64 válido o su JSON no es un objeto;
- * - falta algún campo obligatorio;
- * - el rol no está en {@link Rol}.
+ * **Por qué no basta con `leerSesion` en el navegador (bug real, T5.4.4):**
+ * `leerSesion` recibe un `NextRequest` y lee su cabecera `cookie`; pero la
+ * Fetch API de los navegadores **descarta en silencio la cabecera `cookie`**
+ * al construir un `Request` (*forbidden request header*), por lo que
+ * `request.cookies.get(...)` siempre devuelve `undefined` en el cliente y la
+ * sesión se leía como `null` (la vista de cambio de contraseña quedaba
+ * atascada en "Cargando…"). Por eso el valor ya extraído de `document.cookie`
+ * se decodifica aquí directamente, sin pasar por `NextRequest`.
  *
- * @param request Petición de Next (middleware/servidor; Edge-compatible).
- * @returns La sesión tipada, o `null` si no hay sesión válida.
+ * Devuelve `null` (no lanza) con las mismas reglas que {@link leerSesion}:
+ * base64/JSON inválidos, campos obligatorios ausentes o rol desconocido.
+ *
+ * @param valor Valor crudo de la cookie (payload base64 de {@link crearCookieSesion}).
+ * @returns La sesión tipada, o `null` si el valor no es una sesión válida.
  */
-export function leerSesion(request: NextRequest): Sesion | null {
-  const valor = request.cookies.get(NOMBRE_COOKIE_SESION)?.value;
-
-  if (!valor) {
-    return null;
-  }
-
+export function decodificarSesion(valor: string): Sesion | null {
   let crudo: unknown;
 
   try {
@@ -157,5 +171,34 @@ export function leerSesion(request: NextRequest): Sesion | null {
     email: candidato.email,
     nombre: candidato.nombre,
     organizationId: candidato.organizationId,
+    // Campo opcional (T5.4.1): se replica solo si viene como booleano para
+    // mantener la compatibilidad con cookies antiguas que no lo traen.
+    ...(typeof candidato.mustChangePassword === "boolean"
+      ? { mustChangePassword: candidato.mustChangePassword }
+      : {}),
   };
+}
+
+/**
+ * Lee la sesión del usuario desde la cookie simulada.
+ *
+ * Es la función que consumirá el middleware de Next (T5.3.2) para decidir si
+ * redirigir al login o al panel del rol. Con H2.1 se cambia su interior para
+ * decodificar la cookie `httpOnly` real; la firma no cambia.
+ *
+ * Delgada a propósito: extrae la cookie de la petición y delega la
+ * decodificación en {@link decodificarSesion}. Devuelve `null` (no lanza)
+ * cuando no hay cookie o su contenido no es una sesión válida.
+ *
+ * @param request Petición de Next (middleware/servidor; Edge-compatible).
+ * @returns La sesión tipada, o `null` si no hay sesión válida.
+ */
+export function leerSesion(request: NextRequest): Sesion | null {
+  const valor = request.cookies.get(NOMBRE_COOKIE_SESION)?.value;
+
+  if (!valor) {
+    return null;
+  }
+
+  return decodificarSesion(valor);
 }
