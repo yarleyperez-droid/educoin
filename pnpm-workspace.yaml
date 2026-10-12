@@ -1,11 +1,9 @@
 allowBuilds:
   '@parcel/watcher': true
-  '@prisma/engines': set this to true or false
-  esbuild: set this to true or false
-  prisma: set this to true or false
-  unrs-resolver: true
-  argon2: true
-  prisma: true
   '@prisma/client': true
-  '@scarf/scarf': false
   '@prisma/engines': true
+  '@scarf/scarf': false
+  argon2: true
+  esbuild: true
+  prisma: true
+  unrs-resolver: true
