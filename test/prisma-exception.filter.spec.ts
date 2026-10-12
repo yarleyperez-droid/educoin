@@ -1,3 +1,4 @@
+import { jest } from '@jest/globals';
 import { ArgumentsHost, HttpException, HttpStatus } from '@nestjs/common';
 import { Prisma } from '../src/generated/prisma/client';
 import { PrismaExceptionFilter } from '../src/common/filters/prisma-exception.filter';
