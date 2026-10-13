@@ -12,6 +12,12 @@ export class PrismaService
     super({
       adapter: new PrismaPg({
         connectionString: process.env.DATABASE_URL,
+        // Prisma + driver adapter no normaliza la zona horaria de la
+        // sesión: si el servidor usa una TZ local (p. ej. America/Bogota),
+        // escribe y lee TIMESTAMPTZ con desfases de la zona y cualquier
+        // fecha escrita por triggers de la BD (updated_at, etc.) llega
+        // desplazada. La sesión en UTC es requisito del adapter.
+        options: '-c timezone=UTC',
       }),
     });
   }
