@@ -2,11 +2,13 @@
  * Página de cambio obligatorio de contraseña (`/cambiar-contrasena`) —
  * T5.4.2 (PRO-379).
  *
- * Vista de bloqueo del MVP: cuando la sesión trae `mustChangePassword: true`
- * (columna real `users.must_change_password`), el middleware (T5.3.2 ampliado
- * en T5.4.2) no deja navegar a ningún otro sitio hasta completar el cambio
- * aquí. La vista consume la capa `@/features/auth/api/auth` (hoy mock; T5.4.3
- * la conecta a H2.2 sin tocar esta vista).
+ * Vista de bloqueo del MVP: cuando la sesión trae `debeCambiarContrasena:
+ * true` (columna real `users.must_change_password`; nombre del backend
+ * desde T5.4.3), el middleware (T5.3.2 ampliado en T5.4.2) no deja navegar a
+ * ningún otro sitio hasta completar el cambio aquí. La vista consume la capa
+ * `@/features/auth/api/auth`, cuyo `cambiarContrasena` sigue siendo **mock
+ * documentado** porque H2.2 (endpoint real de cambio) no existe todavía
+ * (PRO-381 integró solo login/logout de H2.1).
  *
  * Responsabilidades de esta vista:
  * - Renderizar **el mismo DOM en servidor y cliente** (formulario siempre
@@ -30,7 +32,7 @@
  *   middleware ya no lo bloquea porque la cookie quedó con el flag en
  *   `false`). Es una recarga a propósito y no `router.push`: el router
  *   client-side de Next cachea el redirect 307 que el middleware emitió para
- *   `/student` cuando la sesión aún traía `mustChangePassword: true`, y un
+ *   `/student` cuando la sesión aún traía `debeCambiarContrasena: true`, y un
  *   `push` posterior reutiliza ese redirect sin revalidar con el servidor,
  *   dejando al usuario atrapado en `/cambiar-contrasena` aunque la cookie ya
  *   quedó actualizada (bug real detectado con los E2E de T5.4.4). La recarga
@@ -43,10 +45,9 @@
  * - El frontend no es barrera de seguridad (AGENTS.md §9): el bloqueo real
  *   lo impone el backend (H2.1/H2.2); este guard de Next es UX.
  *
- * **Límite del mock (plan §7):** hasta T5.4.3 el cambio vive solo en la
- * memoria del dev server: un reload del navegador puede "olvidar" la
- * contraseña cambiada y volver a exigir el cambio si el usuario mock sigue
- * con `mustChangePassword: true`.
+ * **Límite del mock (plan §7):** hasta que exista H2.2 el cambio vive solo
+ * en la cookie del navegador: al volver a hacer login, el backend (que sigue
+ * con `must_change_password = true` en la BD) volverá a exigir el cambio.
  */
 
 "use client";
@@ -193,7 +194,7 @@ export default function CambiarContrasenaPage() {
         nueva: contrasenaNueva,
       });
 
-      window.location.assign(rutaPorRol(sesionActualizada.rol));
+      window.location.assign(rutaPorRol(sesionActualizada.role));
     } catch (error) {
       if (error instanceof ApiError) {
         setErrorEnvio(error.message);

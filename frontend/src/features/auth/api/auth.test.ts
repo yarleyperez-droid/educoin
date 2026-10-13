@@ -1,27 +1,29 @@
 /**
- * Tests de la capa de autenticación mock (T5.4.1, plan §4).
+ * Tests de la capa de autenticación (T5.4.1 + T5.4.3 / PRO-381).
  *
- * Cubren los 7 escenarios previstos para el mock de `features/auth/api/auth`:
- * login por usuario (teacher), login por correo (student), contraseña
- * incorrecta e identificador inexistente (mismo mensaje genérico, sin
- * enumeración), normalización del identificador, `cerrarSesion` y el flag
- * `mustChangePassword` del estudiante demo. T5.4.2 (PRO-379) añade las
- * suites de `leerSesionActual` y `cambiarContrasena` (plan §5).
+ * Desde T5.4.3 `iniciarSesion` y `cerrarSesion` hablan con la **API real de
+ * H2.1** (`POST auth/login`, `POST auth/logout`); estos tests stubbean
+ * `globalThis.fetch` con respuestas shaped como el backend (ver
+ * `src/modules/auth/dto/sesion-respuesta.dto.ts`) y verifican:
+ * - mapeo del payload a `Sesion` (vocabulario del backend) y escritura de la
+ *   cookie legible `educoins_sesion`;
+ * - `setAccessToken` con el JWT real;
+ * - `ApiError` 401 con el mensaje real del backend, **sin** intento de
+ *   refresh (un 401 en `auth/login` son credenciales malas, no sesión
+ *   vencida);
+ * - logout que limpia el estado local aunque el backend falle;
+ * - el mock documentado de `cambiarContrasena` (H2.2 pendiente).
  *
  * Entorno: Vitest corre en **node** (sin DOM, ver `vitest.config.mts`), por
  * lo que `document.cookie` se simula con un doble cuyo accessor registra cada
  * asignación (misma técnica que `api-client.test.ts` con `fetch`). Así se
  * prueba la escritura real de la cookie sin jsdom y sin romper el entorno
  * Edge/browser de producción, donde `document` existe de verdad.
- *
- * La suite no depende de un backend: valida el mock de T5.4.1 que T5.4.3
- * (PRO-381) reemplazará por `api.post('auth/login', …)`.
  */
 
 import { NextRequest } from "next/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { USUARIOS_MOCK } from "@/features/auth/usuarios-mock";
 import { ApiError, getAccessToken, setAccessToken } from "@/lib/api-client";
 import { crearCookieSesion, leerSesion } from "@/lib/auth";
 
@@ -33,17 +35,17 @@ import {
   rutaPorRol,
 } from "./auth";
 
-/** Contraseña de desarrollo compartida por los usuarios mock. */
-const CONTRASENA_MOCK = "Password123!";
+/** URL base de la API, igual que la que usa `api-client` en producción. */
+const URL_API = "http://localhost:3000/api/v1";
 
-/** Mensaje genérico que deben compartir todos los rechazos de credenciales. */
-const MENSAJE_CREDENCIALES_INVALIDAS = "Usuario o contraseña incorrectos.";
+/** Mensaje real de credenciales inválidas (constante del backend, H2.1). */
+const MENSAJE_CREDENCIALES_INVALIDAS = "El usuario o la contraseña son erróneos.";
 
 /** Mensaje cuando no hay sesión que respalde el cambio de contraseña. */
 const MENSAJE_SESION_INVALIDA =
   "No hay una sesión activa. Inicia sesión para continuar.";
 
-/** Mensaje cuando la contraseña actual no coincide (texto de plan §2). */
+/** Mensaje cuando falta la contraseña actual (regla defensiva del mock). */
 const MENSAJE_CONTRASENA_ACTUAL_INCORRECTA =
   "La contraseña actual no es correcta.";
 
@@ -54,6 +56,53 @@ const MENSAJE_NUEVA_MUY_CORTA =
 /** Mensaje cuando la nueva contraseña coincide con la actual. */
 const MENSAJE_NUEVA_IGUAL_A_ACTUAL =
   "La nueva contraseña debe ser distinta de la actual.";
+
+/** Usuario profesor del seed, shaped como `UsuarioRespuestaDto`. */
+const USUARIO_PROFESOR_BACKEND = {
+  id: "2",
+  username: "prof.lopez",
+  email: "lopez@educoins.test",
+  role: "teacher" as const,
+  nombre: "Laura",
+  apellido: "García",
+  organizacionId: "10",
+  debeCambiarContrasena: false,
+};
+
+/** Usuario estudiante del seed con cambio pendiente, shaped como el backend. */
+const USUARIO_ESTUDIANTE_BACKEND = {
+  id: "3",
+  username: "est.perez",
+  email: "perez@educoins.test",
+  role: "student" as const,
+  nombre: "Ana",
+  apellido: "López",
+  organizacionId: "10",
+  debeCambiarContrasena: true,
+};
+
+/** Cuerpo del `201` de login para el profesor. */
+const SESION_BACKEND_PROFESOR = {
+  accessToken: "jwt-acceso-profesor",
+  tipoToken: "Bearer" as const,
+  expiraEn: "15m",
+  usuario: USUARIO_PROFESOR_BACKEND,
+};
+
+/** Cuerpo del `201` de login para el estudiante (flag en true). */
+const SESION_BACKEND_ESTUDIANTE = {
+  accessToken: "jwt-acceso-estudiante",
+  tipoToken: "Bearer" as const,
+  expiraEn: "15m",
+  usuario: USUARIO_ESTUDIANTE_BACKEND,
+};
+
+/** Cuerpo del `401` de credenciales inválidas (formato Nest estándar). */
+const CUERPO_401 = {
+  statusCode: 401,
+  message: MENSAJE_CREDENCIALES_INVALIDAS,
+  error: "Unauthorized",
+};
 
 /** Doble de `document` que registra las asignaciones a `document.cookie`. */
 interface DocumentoCookieStub {
@@ -67,7 +116,7 @@ interface DocumentoCookieStub {
 /**
  * Crea un doble de `document.cookie` para el entorno node de Vitest.
  *
- * Reproduce la semántica de navegador que usa el mock: cada escritura
+ * Reproduce la semántica de navegador que usa la capa: cada escritura
  * (`document.cookie = "...";`) se registra como una asignación completa
  * (nombre, valor y atributos), y la lectura devuelve las cookies vivias
  * (nombre=valor) unidas por `"; "`.
@@ -93,6 +142,20 @@ function crearDocumentoCookieStub(): DocumentoCookieStub {
 }
 
 /**
+ * Construye una `Response` de fetch con cuerpo JSON (o vacía para 204).
+ *
+ * @param status Código HTTP.
+ * @param cuerpo Cuerpo JSON; omitir para respuestas sin contenido.
+ * @returns `Response` lista para resolver el stub de `fetch`.
+ */
+function respuestaJson(status: number, cuerpo?: unknown): Response {
+  return new Response(cuerpo === undefined ? null : JSON.stringify(cuerpo), {
+    status,
+    headers: { "Content-Type": "application/json" },
+  });
+}
+
+/**
  * Invoca una operación que debe fallar y devuelve el error capturado.
  *
  * @param operacion Promesa que se espera que rechace.
@@ -108,10 +171,16 @@ async function capturarError(operacion: Promise<unknown>): Promise<unknown> {
   throw new Error("La operación debía fallar pero se resolvió con éxito");
 }
 
+/** Stub de `fetch` activo durante el test en curso. */
+const fetchStub = vi.fn();
+
 /** Doble de `document` activo durante el test en curso. */
 let stub: DocumentoCookieStub;
 
 beforeEach(() => {
+  vi.stubEnv("NEXT_PUBLIC_API_URL", URL_API);
+  fetchStub.mockReset();
+  vi.stubGlobal("fetch", fetchStub);
   setAccessToken(null);
   stub = crearDocumentoCookieStub();
   vi.stubGlobal("document", stub.documento);
@@ -122,19 +191,38 @@ afterEach(() => {
   setAccessToken(null);
 });
 
-describe("iniciarSesion — credenciales válidas", () => {
-  it("login por usuario válido (teacher): devuelve la sesión y escribe la cookie", async () => {
+describe("iniciarSesion — credenciales válidas (login real)", () => {
+  it("login por usuario (teacher): mapea el payload, escribe cookie y token", async () => {
+    fetchStub.mockResolvedValueOnce(respuestaJson(201, SESION_BACKEND_PROFESOR));
+
     const sesion = await iniciarSesion({
-      identificador: "profesor.demo",
-      contrasena: CONTRASENA_MOCK,
+      usuarioOEmail: "prof.lopez",
+      contrasena: "Prof123!",
     });
 
-    expect(sesion.rol).toBe("teacher");
-    expect(sesion.userId).toBe("1");
-    expect(sesion.email).toBe("profesor.demo@demo.com");
-    expect(sesion.organizationId).toBe("10");
+    expect(sesion).toEqual({
+      id: "2",
+      username: "prof.lopez",
+      email: "lopez@educoins.test",
+      role: "teacher",
+      nombre: "Laura",
+      apellido: "García",
+      organizacionId: "10",
+      debeCambiarContrasena: false,
+    });
 
-    // Cookie escrita con el codificado que leerSesion (T5.3.3) lee de vuelta.
+    // Llamada real a POST auth/login con el DTO del backend y credenciales.
+    expect(fetchStub).toHaveBeenCalledTimes(1);
+    const [url, init] = fetchStub.mock.calls[0] as [URL, RequestInit];
+    expect(url.href).toBe(`${URL_API}/auth/login`);
+    expect(init.method).toBe("POST");
+    expect(init.credentials).toBe("include");
+    expect(JSON.parse(init.body as string)).toEqual({
+      usuarioOEmail: "prof.lopez",
+      contrasena: "Prof123!",
+    });
+
+    // Cookie legible escrita con el codificado que leerSesion lee de vuelta.
     const valorCookie = crearCookieSesion(sesion);
     expect(stub.asignaciones.at(-1)).toBe(
       `educoins_sesion=${valorCookie}; path=/; SameSite=Lax`,
@@ -145,78 +233,66 @@ describe("iniciarSesion — credenciales válidas", () => {
     });
     expect(leerSesion(request)).toEqual(sesion);
 
-    // Token simulado para que apiRequest adjunte Authorization en el panel.
-    expect(getAccessToken()).toBe(`mock-${sesion.userId}`);
+    // Access token real (JWT) en memoria para que apiRequest adjunte Bearer.
+    expect(getAccessToken()).toBe("jwt-acceso-profesor");
   });
 
-  it("login por correo válido (student): devuelve la sesión con rol student", async () => {
+  it("login por correo (student): mapea el payload con el flag en true", async () => {
+    fetchStub.mockResolvedValueOnce(respuestaJson(201, SESION_BACKEND_ESTUDIANTE));
+
     const sesion = await iniciarSesion({
-      identificador: "estudiante.demo@demo.com",
-      contrasena: CONTRASENA_MOCK,
+      usuarioOEmail: "perez@educoins.test",
+      contrasena: "Estudiante123!",
     });
 
-    expect(sesion.rol).toBe("student");
-    expect(sesion.userId).toBe("2");
+    expect(sesion.role).toBe("student");
+    expect(sesion.id).toBe("3");
+    expect(sesion.debeCambiarContrasena).toBe(true);
+    expect(getAccessToken()).toBe("jwt-acceso-estudiante");
   });
 
-  it("normaliza los espacios alrededor del identificador y hace login", async () => {
-    const sesion = await iniciarSesion({
-      identificador: "  profesor.demo  ",
-      contrasena: CONTRASENA_MOCK,
+  it("normaliza los espacios alrededor del usuarioOEmail antes de enviar", async () => {
+    fetchStub.mockResolvedValueOnce(respuestaJson(201, SESION_BACKEND_PROFESOR));
+
+    await iniciarSesion({
+      usuarioOEmail: "  prof.lopez  ",
+      contrasena: "Prof123!",
     });
 
-    expect(sesion.rol).toBe("teacher");
-
-    const porCorreo = await iniciarSesion({
-      identificador: "  estudiante.demo@demo.com  ",
-      contrasena: CONTRASENA_MOCK,
+    const [, init] = fetchStub.mock.calls[0] as [URL, RequestInit];
+    expect(JSON.parse(init.body as string)).toEqual({
+      usuarioOEmail: "prof.lopez",
+      contrasena: "Prof123!",
     });
-
-    expect(porCorreo.rol).toBe("student");
-  });
-
-  it("el estudiante demo expone mustChangePassword: true", async () => {
-    const sesion = await iniciarSesion({
-      identificador: "estudiante.demo",
-      contrasena: CONTRASENA_MOCK,
-    });
-
-    expect(sesion.mustChangePassword).toBe(true);
   });
 });
 
-describe("iniciarSesion — credenciales inválidas (sin enumeración)", () => {
-  it("contraseña incorrecta: ApiError 401 con el mensaje genérico", async () => {
+describe("iniciarSesion — credenciales inválidas (401 real)", () => {
+  it("ApiError 401 con el mensaje real del backend, sin intentar refresh", async () => {
+    fetchStub.mockResolvedValueOnce(respuestaJson(401, CUERPO_401));
+
     const error = await capturarError(
       iniciarSesion({
-        identificador: "profesor.demo",
-        contrasena: "contrasena-mala",
+        usuarioOEmail: "prof.lopez",
+        contrasena: "clave-mala",
       }),
     );
 
     expect(error).toBeInstanceOf(ApiError);
     expect((error as ApiError).status).toBe(401);
     expect((error as ApiError).message).toBe(MENSAJE_CREDENCIALES_INVALIDAS);
-  });
 
-  it("identificador inexistente: el mismo mensaje genérico, sin revelar si existe", async () => {
-    const error = await capturarError(
-      iniciarSesion({
-        identificador: "usuario.inexistente",
-        contrasena: CONTRASENA_MOCK,
-      }),
-    );
-
-    expect(error).toBeInstanceOf(ApiError);
-    expect((error as ApiError).status).toBe(401);
-    expect((error as ApiError).message).toBe(MENSAJE_CREDENCIALES_INVALIDAS);
+    // Un 401 en auth/login NO dispara auth/refresh: una sola llamada.
+    expect(fetchStub).toHaveBeenCalledTimes(1);
   });
 
   it("no escribe cookie ni token cuando las credenciales fallan", async () => {
+    fetchStub.mockResolvedValueOnce(respuestaJson(401, CUERPO_401));
+
     await capturarError(
       iniciarSesion({
-        identificador: "profesor.demo",
-        contrasena: "contrasena-mala",
+        usuarioOEmail: "prof.lopez",
+        contrasena: "clave-mala",
       }),
     );
 
@@ -225,16 +301,37 @@ describe("iniciarSesion — credenciales inválidas (sin enumeración)", () => {
   });
 });
 
-describe("cerrarSesion", () => {
-  it("limpia la cookie (max-age=0) y pone el token en null", async () => {
-    const sesion = await iniciarSesion({
-      identificador: "admin.demo",
-      contrasena: CONTRASENA_MOCK,
+describe("cerrarSesion (logout real)", () => {
+  it("llama a POST auth/logout y limpia la cookie (max-age=0) y el token", async () => {
+    fetchStub.mockResolvedValueOnce(respuestaJson(201, SESION_BACKEND_PROFESOR));
+    await iniciarSesion({
+      usuarioOEmail: "prof.lopez",
+      contrasena: "Prof123!",
+    });
+    expect(getAccessToken()).toBe("jwt-acceso-profesor");
+
+    fetchStub.mockResolvedValueOnce(respuestaJson(204));
+    await cerrarSesion();
+
+    const [url, init] = fetchStub.mock.calls[1] as [URL, RequestInit];
+    expect(url.href).toBe(`${URL_API}/auth/logout`);
+    expect(init.method).toBe("POST");
+
+    expect(getAccessToken()).toBeNull();
+    expect(stub.asignaciones.at(-1)).toBe(
+      "educoins_sesion=; path=/; max-age=0; SameSite=Lax",
+    );
+  });
+
+  it("limpia el estado local aunque el backend falle (no lanza)", async () => {
+    fetchStub.mockResolvedValueOnce(respuestaJson(201, SESION_BACKEND_PROFESOR));
+    await iniciarSesion({
+      usuarioOEmail: "prof.lopez",
+      contrasena: "Prof123!",
     });
 
-    expect(getAccessToken()).toBe(`mock-${sesion.userId}`);
-
-    await cerrarSesion();
+    fetchStub.mockRejectedValueOnce(new Error("red caída"));
+    await expect(cerrarSesion()).resolves.toBeUndefined();
 
     expect(getAccessToken()).toBeNull();
     expect(stub.asignaciones.at(-1)).toBe(
@@ -251,28 +348,19 @@ describe("rutaPorRol", () => {
   });
 });
 
-describe("referencia del mock", () => {
-  it("los 3 usuarios demo existen con la contraseña de desarrollo compartida", () => {
-    expect(USUARIOS_MOCK).toHaveLength(3);
-
-    for (const usuario of USUARIOS_MOCK) {
-      expect(usuario.contrasena).toBe(CONTRASENA_MOCK);
-    }
-  });
-});
-
 describe("leerSesionActual", () => {
-  it("devuelve la sesión escrita en la cookie simulada, con su flag", async () => {
+  it("devuelve la sesión escrita en la cookie, con su flag", async () => {
+    fetchStub.mockResolvedValueOnce(respuestaJson(201, SESION_BACKEND_ESTUDIANTE));
     await iniciarSesion({
-      identificador: "estudiante.demo",
-      contrasena: CONTRASENA_MOCK,
+      usuarioOEmail: "est.perez",
+      contrasena: "Estudiante123!",
     });
 
     const sesion = leerSesionActual();
 
-    expect(sesion?.userId).toBe("2");
-    expect(sesion?.rol).toBe("student");
-    expect(sesion?.mustChangePassword).toBe(true);
+    expect(sesion?.id).toBe("3");
+    expect(sesion?.role).toBe("student");
+    expect(sesion?.debeCambiarContrasena).toBe(true);
   });
 
   it("devuelve null sin cookie de sesión", () => {
@@ -280,35 +368,21 @@ describe("leerSesionActual", () => {
   });
 });
 
-describe("cambiarContrasena", () => {
-  /**
-   * Restaura el estado del mock mutado en memoria por el test de éxito.
-   *
-   * `cambiarContrasena` actualiza `contrasena` y `mustChangePassword` de
-   * `USUARIOS_MOCK` (límite del mock, plan §7); sin restaurar, los tests
-   * preexistentes que asumen la contraseña de desarrollo y el flag original
-   * fallarían.
-   */
-  afterEach(() => {
-    const estudiante = USUARIOS_MOCK.find((usuario) => usuario.userId === "2");
-
-    if (estudiante) {
-      estudiante.contrasena = CONTRASENA_MOCK;
-      estudiante.mustChangePassword = true;
-    }
-  });
-
-  /** Establece una sesión vigente de estudiante.demo en la cookie simulada. */
+describe("cambiarContrasena (MOCK documentado: H2.2 pendiente)", () => {
+  /** Establece una sesión vigente de est.perez en la cookie (vía login stub). */
   async function iniciarSesionEstudiante(): Promise<void> {
+    fetchStub.mockResolvedValueOnce(
+      respuestaJson(201, SESION_BACKEND_ESTUDIANTE),
+    );
     await iniciarSesion({
-      identificador: "estudiante.demo",
-      contrasena: CONTRASENA_MOCK,
+      usuarioOEmail: "est.perez",
+      contrasena: "Estudiante123!",
     });
   }
 
   it("sin sesión activa: ApiError 401", async () => {
     const error = await capturarError(
-      cambiarContrasena({ actual: CONTRASENA_MOCK, nueva: "NuevaClave123!" }),
+      cambiarContrasena({ actual: "Estudiante123!", nueva: "NuevaClave123!" }),
     );
 
     expect(error).toBeInstanceOf(ApiError);
@@ -316,14 +390,11 @@ describe("cambiarContrasena", () => {
     expect((error as ApiError).message).toBe(MENSAJE_SESION_INVALIDA);
   });
 
-  it("contraseña actual incorrecta: ApiError 400 y el mock queda intacto", async () => {
+  it("contraseña actual vacía: ApiError 400 (guarda defensiva del mock)", async () => {
     await iniciarSesionEstudiante();
 
     const error = await capturarError(
-      cambiarContrasena({
-        actual: "contrasena-mala",
-        nueva: "NuevaClave123!",
-      }),
+      cambiarContrasena({ actual: "", nueva: "NuevaClave123!" }),
     );
 
     expect(error).toBeInstanceOf(ApiError);
@@ -331,17 +402,13 @@ describe("cambiarContrasena", () => {
     expect((error as ApiError).message).toBe(
       MENSAJE_CONTRASENA_ACTUAL_INCORRECTA,
     );
-
-    const usuario = USUARIOS_MOCK.find((candidato) => candidato.userId === "2");
-    expect(usuario?.contrasena).toBe(CONTRASENA_MOCK);
-    expect(usuario?.mustChangePassword).toBe(true);
   });
 
   it("nueva contraseña de menos de 8 caracteres: ApiError 422", async () => {
     await iniciarSesionEstudiante();
 
     const error = await capturarError(
-      cambiarContrasena({ actual: CONTRASENA_MOCK, nueva: "Corta1!" }),
+      cambiarContrasena({ actual: "Estudiante123!", nueva: "Corta1!" }),
     );
 
     expect(error).toBeInstanceOf(ApiError);
@@ -353,7 +420,10 @@ describe("cambiarContrasena", () => {
     await iniciarSesionEstudiante();
 
     const error = await capturarError(
-      cambiarContrasena({ actual: CONTRASENA_MOCK, nueva: CONTRASENA_MOCK }),
+      cambiarContrasena({
+        actual: "Estudiante123!",
+        nueva: "Estudiante123!",
+      }),
     );
 
     expect(error).toBeInstanceOf(ApiError);
@@ -361,23 +431,21 @@ describe("cambiarContrasena", () => {
     expect((error as ApiError).message).toBe(MENSAJE_NUEVA_IGUAL_A_ACTUAL);
   });
 
-  it("éxito: sesión con flag false, mock mutado y cookie reescrita", async () => {
+  it("éxito: sesión con flag false y cookie reescrita (sin llamar al backend)", async () => {
     await iniciarSesionEstudiante();
+    const llamadasPrevias = fetchStub.mock.calls.length;
 
     const sesion = await cambiarContrasena({
-      actual: CONTRASENA_MOCK,
-      nueva: "NuevaClave123!",
+      actual: "Estudiante123!",
+      nueva: "NuevaClave2026!",
     });
 
-    expect(sesion.userId).toBe("2");
-    expect(sesion.rol).toBe("student");
-    expect(sesion.email).toBe("estudiante.demo@demo.com");
-    expect(sesion.mustChangePassword).toBe(false);
+    expect(sesion.id).toBe("3");
+    expect(sesion.role).toBe("student");
+    expect(sesion.debeCambiarContrasena).toBe(false);
 
-    // El usuario mock queda actualizado en memoria (plan §2).
-    const usuario = USUARIOS_MOCK.find((candidato) => candidato.userId === "2");
-    expect(usuario?.contrasena).toBe("NuevaClave123!");
-    expect(usuario?.mustChangePassword).toBe(false);
+    // El mock NO llama al backend (H2.2 no existe): solo reescribe la cookie.
+    expect(fetchStub.mock.calls.length).toBe(llamadasPrevias);
 
     // Cookie reescrita con el flag en false (última asignación)…
     const valorCookie = crearCookieSesion(sesion);

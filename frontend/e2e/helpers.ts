@@ -1,9 +1,11 @@
 /**
- * Helpers compartidos de las pruebas E2E (T5.4.4, PRO-382).
+ * Helpers compartidos de las pruebas E2E (T5.4.4, PRO-382; actualizados en
+ * T5.4.3 / PRO-381 para usar la API real).
  *
- * Centralizan las credenciales del mock de auth (T5.4.1/T5.4.2) y los pasos
- * repetidos de navegación/login, para que flujos como el de T5.4.3 (cambio a
- * usuarios reales del seed) solo tengan que tocar **un solo lugar**.
+ * Centralizan las **credenciales reales del seed** (`db/002_seed.sql`, ya
+ * pobladas en la BD Docker) y los pasos repetidos de navegación/login, para
+ * que los flujos solo tengan que tocar **un solo lugar** si las
+ * credenciales cambian.
  *
  * Los selectores usan la API de accesibilidad de Playwright (`getByLabel`,
  * `getByRole`) sobre los labels reales de la UI, no selectores CSS frágiles
@@ -18,28 +20,28 @@
 import type { BrowserContext, Page } from "@playwright/test";
 
 /**
- * Usuario profesor del mock (`usuarios-mock.ts`).
+ * Usuario profesor del seed (id 2).
  *
- * Su sesión tiene `mustChangePassword: false`, así que el login redirige
+ * Su sesión real trae `debeCambiarContrasena: false`
+ * (`must_change_password = FALSE` en la BD), así que el login redirige
  * directo al panel `/teacher`.
  */
-export const USUARIO_PROFESOR = "profesor.demo";
+export const USUARIO_PROFESOR = "prof.lopez";
+
+/** Contraseña real del profesor del seed (hash argon2 en la BD). */
+export const CONTRASENA_PROFESOR = "Prof123!";
 
 /**
- * Usuario estudiante del mock (`usuarios-mock.ts`).
+ * Usuario estudiante del seed (id 3).
  *
- * Su sesión tiene `mustChangePassword: true`, así que el middleware lo
- * bloquea en `/cambiar-contrasena` hasta completar el cambio obligatorio.
+ * Su sesión real trae `debeCambiarContrasena: true`
+ * (`must_change_password = TRUE` en la BD), así que el middleware lo bloquea
+ * en `/cambiar-contrasena` hasta completar el cambio obligatorio.
  */
-export const USUARIO_ESTUDIANTE = "estudiante.demo";
+export const USUARIO_ESTUDIANTE = "est.perez";
 
-/**
- * Contraseña de desarrollo compartida por los usuarios mock.
- *
- * SOLO es válida contra el mock de T5.4.1/T5.4.2 (desaparece con T5.4.3 /
- * H2.1); si las credenciales cambian, se actualiza únicamente esta constante.
- */
-export const CONTRASENA_DEMO = "Password123!";
+/** Contraseña real del estudiante del seed (hash argon2 en la BD). */
+export const CONTRASENA_ESTUDIANTE = "Estudiante123!";
 
 /**
  * Abre la página de login (`/login`) y espera a que cargue.
@@ -59,8 +61,8 @@ export async function irALogin(page: Page): Promise<void> {
  * obligatorio o permanencia en `/login`).
  *
  * @param page Página de Playwright del test.
- * @param identificador Usuario o correo del mock (p. ej. `USUARIO_PROFESOR`).
- * @param contrasena Contraseña (p. ej. `CONTRASENA_DEMO`).
+ * @param identificador Usuario o correo (p. ej. `USUARIO_PROFESOR`).
+ * @param contrasena Contraseña real del seed (p. ej. `CONTRASENA_PROFESOR`).
  */
 export async function login(
   page: Page,

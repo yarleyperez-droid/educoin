@@ -6,15 +6,16 @@
  * - CA 2: una ruta protegida sin sesión redirige a `/login`.
  *
  * T5.4.2 (PRO-379) añade los escenarios del bloqueo por
- * `mustChangePassword` (plan §5), su anti-loops y la integración con la
- * cookie que lleva el flag.
+ * `debeCambiarContrasena` (plan §5), su anti-loops y la integración con la
+ * cookie que lleva el flag. Desde T5.4.3 (PRO-381) el flag y el rol usan el
+ * vocabulario del backend (`role`, `debeCambiarContrasena`).
  *
  * Estos tests validan **UX, no seguridad**: la validación real de rol y
  * propiedad la hace el backend en cada petición. Un usuario que salte el
  * middleware será rechazado por el servidor (CA 4 de H5.3).
  *
  * Se testea la función pura `destinoDeRedireccion` (exportada en T5.3.2) y
- * un caso de integración con `middleware(request)` + cookie simulada.
+ * un caso de integración con `middleware(request)` + cookie de sesión.
  */
 
 import { NextRequest } from "next/server";
@@ -25,41 +26,50 @@ import { destinoDeRedireccion, middleware } from "@/middleware";
 
 /** Sesión de ejemplo para los tests de rol equivocado. */
 const SESION_ESTUDIANTE: Sesion = {
-  userId: "1",
-  rol: "student",
-  email: "alumno@demo.com",
-  nombre: "Ana López",
-  organizationId: "10",
+  id: "3",
+  username: "est.perez",
+  email: "perez@educoins.test",
+  role: "student",
+  nombre: "Ana",
+  apellido: "López",
+  organizacionId: "10",
+  debeCambiarContrasena: false,
 };
 
 /** Sesión docente para los tests de rol correcto e integración. */
 const SESION_DOCENTE: Sesion = {
-  userId: "2",
-  rol: "teacher",
-  email: "profe@demo.com",
-  nombre: "Prof. García",
-  organizationId: "10",
+  id: "2",
+  username: "prof.lopez",
+  email: "lopez@educoins.test",
+  role: "teacher",
+  nombre: "Laura",
+  apellido: "García",
+  organizacionId: "10",
+  debeCambiarContrasena: false,
 };
 
-/** Sesión admin para el test de rol exacto. */
+/** Sesión admin para el test de rol exacto (sin organización). */
 const SESION_ADMIN: Sesion = {
-  userId: "3",
-  rol: "admin",
-  email: "admin@demo.com",
+  id: "1",
+  username: "admin",
+  email: "admin@educoins.test",
+  role: "admin",
   nombre: "Admin",
-  organizationId: "10",
+  apellido: "EduCoins",
+  organizacionId: null,
+  debeCambiarContrasena: false,
 };
 
 /** Sesión estudiante con cambio de contraseña pendiente (T5.4.2). */
 const SESION_ESTUDIANTE_CON_CAMBIO_PENDIENTE: Sesion = {
   ...SESION_ESTUDIANTE,
-  mustChangePassword: true,
+  debeCambiarContrasena: true,
 };
 
 /** Sesión estudiante que ya resolvió el cambio obligatorio (T5.4.2). */
 const SESION_ESTUDIANTE_SIN_CAMBIO_PENDIENTE: Sesion = {
   ...SESION_ESTUDIANTE,
-  mustChangePassword: false,
+  debeCambiarContrasena: false,
 };
 
 describe("destinoDeRedireccion — rol equivocado (CA 1)", () => {
@@ -136,7 +146,7 @@ describe("destinoDeRedireccion — rutas públicas", () => {
   });
 });
 
-describe("integración middleware + cookie simulada", () => {
+describe("integración middleware + cookie de sesión", () => {
   it("redirige a /student cuando la cookie indica rol student y se pide /teacher", () => {
     const cookie = crearCookieSesion(SESION_ESTUDIANTE);
     const request = new NextRequest(new URL("http://localhost/teacher"), {
@@ -190,8 +200,8 @@ describe("destinoDeRedireccion — cambio obligatorio de contraseña (T5.4.2)", 
     ).toBeNull();
   });
 
-  it("sesión sin el campo mustChangePassword se trata como false", () => {
-    // Cookie antigua (T5.3.3): el flag ausente no bloquea…
+  it("sesión sin cambio pendiente entra a /cambiar-contrasena solo vía redirección", () => {
+    // Flag en false: el cambio se resuelve al panel del rol…
     expect(destinoDeRedireccion("/cambiar-contrasena", SESION_ESTUDIANTE)).toBe(
       "/student",
     );
@@ -236,7 +246,7 @@ describe("destinoDeRedireccion — anti-loops del cambio obligatorio (T5.4.2)", 
 });
 
 describe("integración middleware + cookie con flag de cambio (T5.4.2)", () => {
-  it("cookie con mustChangePassword true redirige a /cambiar-contrasena desde el panel", () => {
+  it("cookie con debeCambiarContrasena true redirige a /cambiar-contrasena desde el panel", () => {
     const cookie = crearCookieSesion(SESION_ESTUDIANTE_CON_CAMBIO_PENDIENTE);
     const request = new NextRequest(new URL("http://localhost/student"), {
       headers: new Headers({ cookie: `educoins_sesion=${cookie}` }),

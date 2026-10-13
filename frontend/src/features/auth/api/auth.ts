@@ -1,69 +1,71 @@
 /**
- * Capa de autenticación del frontend EduCoins (T5.4.1).
+ * Capa de autenticación del frontend EduCoins (T5.4.1, integrada con la API
+ * real de H2.1 en T5.4.3 / PRO-381).
  *
  * Responsabilidades de esta versión:
  * - Exponer una interfaz estable de login/logout (`iniciarSesion`,
  *   `cerrarSesion`) y el helper de destino por rol (`rutaPorRol`), de modo
- *   que la vista de login **no conozca** usuarios, cookies ni tokens.
- * - Validar credenciales contra el mock de desarrollo {@link USUARIOS_MOCK}
- *   (T5.4.1), con un mensaje de error genérico que evita la enumeración de
- *   usuarios (spec §Contrato con el backend, punto 3).
- * - Escribir la cookie simulada `educoins_sesion` (vía `crearCookieSesion`
- *   de `@/lib/auth`) y el access token simulado (vía `setAccessToken` de
- *   `@/lib/api-client`) para que el middleware (T5.3.2) y las vistas de
- *   panel funcionen sin backend.
- * - T5.4.2 (PRO-379) amplía la capa con {@link cambiarContrasena} (cambio
- *   obligatorio de contraseña, mock alineado a H2.2) y
- *   {@link leerSesionActual} (lectura de la sesión vigente para que las
- *   vistas sigan sin conocer cookies).
+ *   que la vista de login **no conozca** cookies ni tokens.
+ * - `iniciarSesion` habla con **`POST auth/login` real** (H2.1, prefijo
+ *   `/api/v1`): envía `{ usuarioOEmail, contrasena }`, guarda el access
+ *   token en memoria (`setAccessToken`) y escribe la cookie legible
+ *   `educoins_sesion` con los claims no sensibles de la sesión para que el
+ *   middleware (T5.3.2) y las vistas puedan leerla.
+ * - `cerrarSesion` invoca **`POST auth/logout` real** (204) y limpia el
+ *   estado local (cookie + token en memoria), siempre sin lanzar.
+ * - `cambiarContrasena` (T5.4.2) sigue siendo **MOCK documentado**: H2.2
+ *   (endpoint de cambio de contraseña) no existe en ninguna rama; ver su
+ *   docstring para el alcance exacto del andamio.
+ * - `leerSesionActual` lee la sesión vigente desde la cookie para que las
+ *   vistas sigan sin conocer cookies ni tokens.
  *
- * Responsabilidades que NO incluye (otras tareas):
- * - Integración con la API real: T5.4.3 (PRO-381), bloqueada por H2.1/H2.2.
- * - Refresh real contra `POST auth/refresh` (H2.1; el mock no emite cookie
- *   de refresh).
+ * ## Contrato con H2.1 (verificado en `main`)
  *
- * ## Contrato esperado con H2.1/H2.2 (para no cazar bugs después)
+ * `POST /api/v1/auth/login` recibe `{ usuarioOEmail, contrasena }` y
+ * responde `201` con `{ accessToken, tipoToken, expiraEn, usuario }` más una
+ * cookie `httpOnly` de refresh (`refresh_token`, `Path=/api/v1/auth`). El
+ * `usuario` es `UsuarioRespuestaDto`: `{ id, username, email, role, nombre,
+ * apellido, organizacionId, debeCambiarContrasena }`. Credenciales
+ * inválidas → `401` con el mensaje único `"El usuario o la contraseña son
+ * erróneos."` (el cliente lo muestra tal cual; `apiRequest` no intenta
+ * refrescar en el 401 de `auth/login`).
  *
- * `POST auth/login` recibe identificador (usuario o correo) + contraseña y
- * responde `{ data: { accessToken, user } }` más una cookie `httpOnly` de
- * refresh. **MOCK temporal: T5.4.3 (PRO-381) reemplaza el interior de estas
- * funciones por `api.post('auth/login', …)` sin cambiar sus firmas.** Si el
- * Swagger de H2.1 publica otra forma, se ajusta solo el mapeo interno hacia
- * `Sesion`; la vista de login y `rutaPorRol` no cambian.
+ * `POST /api/v1/auth/logout` responde `204` y expira la cookie de refresh.
  *
- * ## Esto NO es seguridad
+ * ## Por qué la cookie `educoins_sesion` sigue existiendo
  *
- * El mock y la cookie simulada son un andamio de desarrollo (mismo disclaimer
- * que `lib/auth.ts`): la barrera real la pone el backend (AGENTS.md §9). Las
- * contraseñas de {@link USUARIOS_MOCK} están en texto plano **solo porque es
- * un mock de desarrollo** que desaparece con T5.4.3/H2.1 (AGENTS.md §9.3).
+ * La cookie de refresh es `httpOnly` con `Path=/api/v1/auth`, así que el
+ * middleware de Next (Edge) **no puede** leerla en las rutas de panel. La
+ * sesión para el middleware viaja por `educoins_sesion` (legible, escrita
+ * aquí tras el login real) con claims no sensibles y **sin tokens**. No es
+ * seguridad (ver docstrings de `lib/auth.ts`): la validación real la hace el
+ * backend en cada petición.
  */
 
-import { ApiError, setAccessToken } from "@/lib/api-client";
+import { ApiError, api, setAccessToken } from "@/lib/api-client";
 import {
   crearCookieSesion,
   decodificarSesion,
   type Rol,
   type Sesion,
 } from "@/lib/auth";
-import { USUARIOS_MOCK, type UsuarioMock } from "@/features/auth/usuarios-mock";
 
 /**
  * Credenciales de entrada del login.
  *
- * `identificador` admite **usuario o correo** (spec: "Vista de login (usuario
- * o correo)"); la capa decide contra qué campo comparar.
+ * `usuarioOEmail` admite **usuario o correo** (CITEXT en la BD, la
+ * comparación es insensible a mayúsculas); el backend decide contra qué
+ * campo buscar. Es el nombre exacto del DTO `IniciarSesionDto` de H2.1.
  */
 export interface CredencialesLogin {
   /** Usuario o correo electrónico. */
-  identificador: string;
+  usuarioOEmail: string;
 
   /**
-   * Contraseña en texto plano **solo dentro de este mock de desarrollo**.
-   *
-   * Con H2.1 viajará solo por HTTPS hacia `POST auth/login`; el backend la
-   * verifica contra `password_hash` (argon2) y jamás la devuelve (AGENTS.md
-   * §9.3). La capa la trata como opaca: no se normaliza ni se recorta.
+   * Contraseña en texto plano: viaja solo por HTTPS hacia `POST auth/login`;
+   * el backend la verifica contra `password_hash` (argon2) y jamás la
+   * devuelve (AGENTS.md §9.3). La capa la trata como opaca: no se normaliza
+   * ni se recorta.
    */
   contrasena: string;
 }
@@ -71,30 +73,57 @@ export interface CredencialesLogin {
 /**
  * Datos del cambio de contraseña (T5.4.2, PRO-379).
  *
- * Misma semántica "opaca" que {@link CredencialesLogin}: las contraseñas viajan
- * en texto plano **solo dentro de este mock de desarrollo** y no se
- * normalizan ni se recortan en la capa.
+ * Las contraseñas viajan en texto plano solo dentro de esta capa/mock y no
+ * se normalizan ni se recortan.
  */
 export interface CambioContrasena {
   /**
    * Contraseña actual del usuario de la sesión vigente.
    *
-   * Con H2.2 viajará solo por HTTPS hacia `POST auth/change-password` y el
-   * backend la verifica contra `password_hash` (argon2); nunca se devuelve
+   * Con H2.2 viajará por HTTPS hacia el endpoint real de cambio y el backend
+   * la verificará contra `password_hash` (argon2); nunca se devuelve
    * (AGENTS.md §9.3).
    */
   actual: string;
 
-  /** Nueva contraseña (reglas mock: mínimo 8 caracteres y distinta de `actual`). */
+  /** Nueva contraseña (reglas de UX: mínimo 8 caracteres y distinta de `actual`). */
   nueva: string;
+}
+
+/**
+ * `UsuarioRespuestaDto` de H2.1 tal como llega en el cuerpo del login.
+ *
+ * Espejo de `src/modules/auth/dto/sesion-respuesta.dto.ts` (sin
+ * `password_hash` ni `last_login`, que el backend nunca envía).
+ */
+interface UsuarioBackend {
+  id: string;
+  username: string;
+  email: string;
+  role: Rol;
+  nombre: string;
+  apellido: string;
+  organizacionId: string | null;
+  debeCambiarContrasena: boolean;
+}
+
+/**
+ * Cuerpo del `201` de `POST auth/login` y `POST auth/refresh` (H2.1).
+ *
+ * El refresh token NUNCA va en el cuerpo: viaja en la cookie `httpOnly`.
+ */
+interface SesionBackend {
+  accessToken: string;
+  tipoToken: "Bearer";
+  expiraEn: string;
+  usuario: UsuarioBackend;
 }
 
 /**
  * Mapa rol → ruta del panel.
  *
  * Coherente con el `PANEL_POR_ROL` del middleware (T5.3.2); duplicado aquí a
- * propósito porque `middleware.ts` no se toca en esta tarea (T5.4.2 lo podrá
- * reutilizar desde esta capa si se decide unificar).
+ * propósito porque `middleware.ts` no se toca en esta capa.
  */
 const RUTA_PANEL_POR_ROL: Readonly<Record<Rol, string>> = {
   teacher: "/teacher",
@@ -103,35 +132,33 @@ const RUTA_PANEL_POR_ROL: Readonly<Record<Rol, string>> = {
 };
 
 /**
- * Nombre de la cookie de sesión simulada.
+ * Nombre de la cookie de sesión legible por el middleware.
  *
  * Debe coincidir con `NOMBRE_COOKIE_SESION` de `@/lib/auth` (la constante es
  * privada allí para mantener el middleware Edge-safe; el mismo nombre está
- * literal en `middleware.test.ts`). Con H2.1 se reemplaza por la cookie
- * `httpOnly` real.
+ * literal en `middleware.test.ts`). La cookie `httpOnly` de refresh la gestiona
+ * el backend y tiene otro nombre y otro `Path`.
  */
 const NOMBRE_COOKIE_SESION = "educoins_sesion";
-
-/** Mensaje genérico de credenciales inválidas (evita enumeración de usuarios). */
-const MENSAJE_CREDENCIALES_INVALIDAS = "Usuario o contraseña incorrectos.";
 
 /** Mensaje cuando no hay una sesión válida que respalde la operación. */
 const MENSAJE_SESION_INVALIDA =
   "No hay una sesión activa. Inicia sesión para continuar.";
 
 /**
- * Mensaje cuando la contraseña actual no coincide con la del usuario.
+ * Mensaje cuando la contraseña actual no llega (regla defensiva del mock).
  *
- * Texto literal exigido por plan §2 de T5.4.2.
+ * Texto literal exigido por plan §2 de T5.4.2. Con H2.2 el backend será el
+ * que verifique la contraseña real.
  */
 const MENSAJE_CONTRASENA_ACTUAL_INCORRECTA =
   "La contraseña actual no es correcta.";
 
-/** Mensaje cuando la nueva contraseña no llega a 8 caracteres (regla mock). */
+/** Mensaje cuando la nueva contraseña no llega a 8 caracteres (regla de UX). */
 const MENSAJE_NUEVA_MUY_CORTA =
   "La nueva contraseña debe tener al menos 8 caracteres.";
 
-/** Mensaje cuando la nueva contraseña coincide con la actual (regla mock). */
+/** Mensaje cuando la nueva contraseña coincide con la actual (regla de UX). */
 const MENSAJE_NUEVA_IGUAL_A_ACTUAL =
   "La nueva contraseña debe ser distinta de la actual.";
 
@@ -141,7 +168,7 @@ const MENSAJE_NUEVA_IGUAL_A_ACTUAL =
  * Vitest corre en entorno `node` (sin DOM), por lo que `document` puede no
  * existir fuera del navegador. En ese caso se devuelve `null` y las
  * escrituras de cookie se omiten con gracia (no se lanza): el token en
- * memoria se setea igual y el mock sigue siendo usable en tests.
+ * memoria se setea igual y la capa sigue siendo usable en tests.
  *
  * @returns `document` en el navegador, o `null` fuera de él.
  */
@@ -186,17 +213,15 @@ function extraerValorCookie(
 }
 
 /**
- * Escribe la cookie de sesión simulada con la sesión indicada.
+ * Escribe la cookie de sesión legible con la sesión indicada.
  *
- * **MOCK temporal: T5.4.3 (PRO-381) desaparece** junto con el resto del
- * mock: con H2.1 la cookie `httpOnly` la setea el backend en la respuesta de
- * `POST auth/login` y el navegador no necesita (ni puede) escribirla desde JS.
- *
- * Usa `crearCookieSesion` de `@/lib/auth` (mismo codificado que espera
- * `leerSesion`, T5.3.3) y `document.cookie` con la semántica de la T5.3.5.
- * Es una función exportada y testeable: los tests la ejercitan con un doble
- * de `document.cookie` (Vitest corre en node, sin DOM). Sin `document` no
- * hace nada (ver {@link obtenerDocumento}).
+ * Se llama tras un login real (o tras un cambio de contraseña exitoso) y
+ * guarda **solo claims no sensibles** (sin tokens): es lo que el middleware
+ * de Next lee en las rutas de panel. Usa `crearCookieSesion` de `@/lib/auth`
+ * (mismo codificado que espera `leerSesion`, T5.3.3) y `document.cookie` con
+ * la semántica de la T5.3.5. Es una función exportada y testeable: los tests
+ * la ejercitan con un doble de `document.cookie` (Vitest corre en node, sin
+ * DOM). Sin `document` no hace nada (ver {@link obtenerDocumento}).
  *
  * @param sesion Sesión a codificar en la cookie.
  */
@@ -211,12 +236,10 @@ export function escribirCookieSimulada(sesion: Sesion): void {
 }
 
 /**
- * Limpia la cookie de sesión simulada (`max-age=0`).
+ * Limpia la cookie de sesión legible (`max-age=0`).
  *
- * **MOCK temporal: T5.4.3 (PRO-381) desaparece** junto con el resto del
- * mock: con H2.1 el logout invoca `POST auth/logout` y el backend expira su
- * cookie `httpOnly`. Exportada y testeable igual que
- * {@link escribirCookieSimulada}.
+ * Se llama en el logout (junto con `setAccessToken(null)`). Exportada y
+ * testeable igual que {@link escribirCookieSimulada}.
  */
 export function limpiarCookieSimulada(): void {
   const doc = obtenerDocumento();
@@ -229,15 +252,12 @@ export function limpiarCookieSimulada(): void {
 }
 
 /**
- * Lee la sesión vigente desde la cookie simulada `educoins_sesion`.
+ * Lee la sesión vigente desde la cookie de sesión legible `educoins_sesion`.
  *
  * Es el punto de lectura de sesión para las **vistas** (T5.4.2): así la
  * vista de cambio de contraseña valida la sesión y muestra al usuario sin
  * conocer cookies ni tokens (mismo criterio de encapsulamiento que
  * `iniciarSesion`).
- *
- * **MOCK temporal: T5.4.3 (PRO-381) reemplaza el interior por la lectura de
- * la sesión real (cookie `httpOnly` + JWT de H2.1) sin cambiar esta firma.**
  *
  * Misma técnica testeable que {@link escribirCookieSimulada}: se lee
  * `document.cookie` vía {@link obtenerDocumento} (Vitest corre en node, sin
@@ -270,78 +290,59 @@ export function leerSesionActual(): Sesion | null {
 }
 
 /**
- * Normaliza el identificador y busca el usuario en el mock.
+ * Mapea el `usuario` de la respuesta del backend a la {@link Sesion} del
+ * frontend.
  *
- * Normalización (plan §2): `trim`; si el identificador contiene `@` se
- * compara contra `email`, si no contra `username`. La comparación es
- * insensible a mayúsculas para reflejar el tipo `CITEXT` de la BD
- * (`db/001_schema.sql`), donde ambos campos son únicos sin distinguir
- * mayúsculas.
+ * Hoy el shape es idéntico (el tipo `Sesion` espejea `UsuarioRespuestaDto`,
+ * T5.4.3); la función existe como **único punto de traducción** por si el
+ * Swagger de H2.x cambia la forma del payload, sin tocar las vistas.
  *
- * @param identificadorCrudo Identificador tal como lo escribe el usuario.
- * @returns El usuario encontrado, o `null` si no hay coincidencia.
+ * @param usuario Usuario devuelto por `POST auth/login`.
+ * @returns La sesión del frontend lista para la cookie y las vistas.
  */
-function buscarUsuarioMock(identificadorCrudo: string): UsuarioMock | null {
-  const identificador = identificadorCrudo.trim().toLowerCase();
-
-  if (identificador === "") {
-    return null;
-  }
-
-  const esCorreo = identificador.includes("@");
-
-  return (
-    USUARIOS_MOCK.find((usuario) => {
-      const candidato = esCorreo ? usuario.email : usuario.username;
-      return candidato.toLowerCase() === identificador;
-    }) ?? null
-  );
+function aSesion(usuario: UsuarioBackend): Sesion {
+  return {
+    id: usuario.id,
+    username: usuario.username,
+    email: usuario.email,
+    role: usuario.role,
+    nombre: usuario.nombre,
+    apellido: usuario.apellido,
+    organizacionId: usuario.organizacionId,
+    debeCambiarContrasena: usuario.debeCambiarContrasena,
+  };
 }
 
 /**
- * Valida las credenciales y construye la sesión del usuario.
+ * Inicia sesión contra la API real de H2.1 (`POST auth/login`).
  *
- * **MOCK temporal: T5.4.3 (PRO-381) reemplaza el interior por
- * `api.post('auth/login', …)` sin cambiar esta firma.**
- * Contrato esperado H2.1: `POST auth/login` →
- * `{ data: { accessToken, user } }` + cookie `httpOnly` de refresh.
+ * Flujo (T5.4.3):
+ * 1. Envía `{ usuarioOEmail, contrasena }` (con `trim` del identificador,
+ *    igual que validaba la vista) vía `api.post`, que adjunta
+ *    `credentials: "include"` para que el navegador guarde la cookie
+ *    `httpOnly` de refresh que setea el backend.
+ * 2. Éxito (`201`): setea el access token en memoria
+ *    ({@link setAccessToken}), escribe la cookie legible `educoins_sesion`
+ *    con los claims no sensibles de {@link aSesion} y devuelve la sesión.
+ * 3. Credenciales inválidas (`401`): `apiRequest` **no** intenta refrescar
+ *    (excluye `auth/login`) y propaga el `ApiError` con el mensaje real del
+ *    backend ("El usuario o la contraseña son erróneos.").
  *
- * Flujo mock (plan §2):
- * 1. Normaliza el identificador (trim; `@` → email, si no → username) y lo
- *    busca en {@link USUARIOS_MOCK}.
- * 2. Usuario inexistente o contraseña incorrecta → `ApiError` 401 con el
- *    **mismo** mensaje genérico en ambos casos, para no revelar si la cuenta
- *    existe (evita enumeración de usuarios; spec §Contrato, punto 3).
- * 3. Éxito → construye la `Sesion` (incluido `mustChangePassword`, simulando
- *    `users.must_change_password`), escribe la cookie simulada
- *    `educoins_sesion`, setea el token simulado `mock-<userId>` para que
- *    `apiRequest` adjunte `Authorization` en las vistas de panel, y devuelve
- *    la `Sesion`.
- *
- * La contraseña se compara tal cual (sin `trim`): es opaca para la capa.
- *
- * @param cred Identificador (usuario o correo) y contraseña.
+ * @param cred Usuario o correo y contraseña.
  * @returns La sesión del usuario autenticado.
- * @throws {ApiError} 401 con mensaje genérico si las credenciales no valen.
+ * @throws {ApiError} 401 con el mensaje del backend si las credenciales no
+ *   valen; otros errores HTTP según el backend.
  */
 export async function iniciarSesion(cred: CredencialesLogin): Promise<Sesion> {
-  const usuario = buscarUsuarioMock(cred.identificador);
+  const respuesta = await api.post<SesionBackend>("auth/login", {
+    usuarioOEmail: cred.usuarioOEmail.trim(),
+    contrasena: cred.contrasena,
+  });
 
-  if (!usuario || usuario.contrasena !== cred.contrasena) {
-    throw new ApiError(MENSAJE_CREDENCIALES_INVALIDAS, 401);
-  }
+  const sesion = aSesion(respuesta.data.usuario);
 
-  const sesion: Sesion = {
-    userId: usuario.userId,
-    rol: usuario.rol,
-    email: usuario.email,
-    nombre: usuario.nombre,
-    organizationId: usuario.organizationId,
-    mustChangePassword: usuario.mustChangePassword,
-  };
-
+  setAccessToken(respuesta.data.accessToken);
   escribirCookieSimulada(sesion);
-  setAccessToken(`mock-${usuario.userId}`);
 
   return sesion;
 }
@@ -349,16 +350,22 @@ export async function iniciarSesion(cred: CredencialesLogin): Promise<Sesion> {
 /**
  * Cierra la sesión del usuario activo.
  *
- * **MOCK temporal: T5.4.3 (PRO-381) reemplaza el interior por
- * `api.post('auth/logout', …)` (o el endpoint que defina H2.1) sin cambiar
- * esta firma.** Contrato esperado H2.1: el backend expira la cookie
- * `httpOnly` de refresh; aquí solo se limpia el andamio local.
+ * Invoca `POST auth/logout` real (H2.1 → `204`, expira la cookie `httpOnly`
+ * de refresh en el navegador) y **siempre** limpia el estado local: la cookie
+ * de sesión legible ({@link limpiarCookieSimulada}) y el access token en
+ * memoria (`setAccessToken(null)`).
  *
- * Limpia la cookie simulada (`max-age=0`) y el access token en memoria
- * (`setAccessToken(null)`). No lanza: cerrar sesión debe ser siempre
- * posible, aunque la limpieza local ya esté hecha.
+ * No lanza: cerrar sesión debe ser siempre posible, aunque el backend falle
+ * o ya no haya sesión (la limpieza local se hace igualmente).
  */
 export async function cerrarSesion(): Promise<void> {
+  try {
+    await api.post<null>("auth/logout", undefined);
+  } catch {
+    // El logout es best-effort: sin backend (o sin sesión) basta con limpiar
+    // el estado local para que el usuario quede deslogueado en la UI.
+  }
+
   limpiarCookieSimulada();
   setAccessToken(null);
 }
@@ -366,40 +373,38 @@ export async function cerrarSesion(): Promise<void> {
 /**
  * Cambia la contraseña del usuario de la sesión vigente (cambio obligatorio).
  *
- * **MOCK temporal: T5.4.3 (PRO-381) reemplaza el interior por
- * `api.post('auth/change-password', …)` sin cambiar esta firma.**
- * Contrato esperado H2.2: `POST auth/change-password` recibe la contraseña
- * actual y la nueva; el backend verifica la actual contra `password_hash`,
- * aplica sus reglas de seguridad sobre la nueva, la guarda hasheada y pone
- * `users.must_change_password = false`; el frontend refresca la sesión con
- * el flag en `false`. Si el Swagger de H2.2 publica otra forma, se ajusta
- * solo el mapeo interno hacia `Sesion`; esta firma y las vistas no cambian.
+ * **MOCK temporal: H2.2 (endpoint real de cambio de contraseña) no existe en
+ * ninguna rama.** T5.4.3 (PRO-381) integró login/logout reales, pero el
+ * cambio de contraseña **no puede** hablar con el backend todavía. Contrato
+ * previsto para H2.2: `POST auth/change-password` recibe la contraseña actual
+ * y la nueva; el backend verifica la actual contra `password_hash`, aplica
+ * sus reglas de seguridad, guarda la nueva hasheada y pone
+ * `users.must_change_password = false`; el frontend entonces refrescará la
+ * sesión con el flag en `false`. Si el Swagger de H2.2 publica otra forma, se
+ * ajusta solo el mapeo interno; esta firma y las vistas no cambian.
  *
- * Flujo mock (plan §2):
+ * **Alcance del mock hoy** (andamio de UX, no seguridad):
  * 1. Lee la sesión vigente ({@link leerSesionActual}); sin sesión válida →
  *    `ApiError` 401.
- * 2. Busca el usuario mock por `userId` en {@link USUARIOS_MOCK}; contraseña
- *    actual incorrecta → `ApiError` 400 "La contraseña actual no es
- *    correcta."
- * 3. Reglas de negocio mock de la nueva contraseña: `nueva.length >= 8` y
+ * 2. Contraseña actual vacía → `ApiError` 400 (la vista ya lo valida; esta
+ *    guarda es defensiva). **El mock NO verifica la contraseña real contra
+ *    la BD**: no hay endpoint con el que hacerlo.
+ * 3. Reglas de UX de la nueva contraseña: `nueva.length >= 8` y
  *    `nueva !== actual`; si no se cumplen → `ApiError` 422 con mensaje claro
  *    en español.
- * 4. Éxito: actualiza el usuario mock **en memoria** (contraseña y
- *    `mustChangePassword: false`), reescribe la cookie simulada con el flag
- *    en `false` ({@link escribirCookieSimulada}) y devuelve la `Sesion`
- *    actualizada.
+ * 4. Éxito: reescribe la cookie de sesión con `debeCambiarContrasena: false`
+ *    ({@link escribirCookieSimulada}) y devuelve la `Sesion` actualizada, de
+ *    modo que el middleware deje de bloquear el panel.
  *
- * **Límite del mock:** el estado de {@link USUARIOS_MOCK} vive solo en la
- * memoria del proceso (dev server o test) y se pierde al recargar: un reload
- * del navegador "olvida" la contraseña cambiada. Aceptable hasta T5.4.3,
- * donde manda la BD (plan §7).
- *
- * Las contraseñas se comparan tal cual (sin `trim`): son opacas para la capa.
+ * **Límite del mock:** el cambio vive solo en la cookie del navegador: al
+ * volver a hacer login, el backend (que sigue con
+ * `must_change_password = true` en la BD) volverá a exigir el cambio. Ese
+ * flujo se cierra cuando exista H2.2.
  *
  * @param datos Contraseña actual y nueva contraseña.
- * @returns La sesión actualizada, con `mustChangePassword: false`.
- * @throws {ApiError} 401 sin sesión válida; 400 si la contraseña actual no
- * coincide; 422 si la nueva contraseña incumple las reglas mock.
+ * @returns La sesión actualizada, con `debeCambiarContrasena: false`.
+ * @throws {ApiError} 401 sin sesión válida; 400 si falta la contraseña
+ *   actual; 422 si la nueva contraseña incumple las reglas de UX.
  */
 export async function cambiarContrasena(
   datos: CambioContrasena,
@@ -410,15 +415,7 @@ export async function cambiarContrasena(
     throw new ApiError(MENSAJE_SESION_INVALIDA, 401);
   }
 
-  const usuario = USUARIOS_MOCK.find(
-    (candidato) => candidato.userId === sesion.userId,
-  );
-
-  if (!usuario) {
-    throw new ApiError(MENSAJE_SESION_INVALIDA, 401);
-  }
-
-  if (usuario.contrasena !== datos.actual) {
+  if (datos.actual === "") {
     throw new ApiError(MENSAJE_CONTRASENA_ACTUAL_INCORRECTA, 400);
   }
 
@@ -430,16 +427,9 @@ export async function cambiarContrasena(
     throw new ApiError(MENSAJE_NUEVA_IGUAL_A_ACTUAL, 422);
   }
 
-  usuario.contrasena = datos.nueva;
-  usuario.mustChangePassword = false;
-
   const sesionActualizada: Sesion = {
-    userId: usuario.userId,
-    rol: usuario.rol,
-    email: usuario.email,
-    nombre: usuario.nombre,
-    organizationId: usuario.organizationId,
-    mustChangePassword: false,
+    ...sesion,
+    debeCambiarContrasena: false,
   };
 
   escribirCookieSimulada(sesionActualizada);

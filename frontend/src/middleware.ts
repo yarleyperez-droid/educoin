@@ -6,11 +6,11 @@
  * T5.4.2):
  * - ruta protegida sin sesión → redirige a `/login` (CA 2 de H5.3);
  * - rol equivocado en un panel → redirige al panel del propio rol (CA 1);
- * - sesión con `mustChangePassword === true` (T5.4.2) → cualquier ruta que
- *   no sea `/cambiar-contrasena` redirige allí (bloqueo hasta completar el
- *   cambio);
- * - sesión con el flag en `false` o ausente en `/cambiar-contrasena` o
- *   `/login` → redirige al panel del propio rol (ya hizo login / ya cambió);
+ * - sesión con `debeCambiarContrasena === true` (T5.4.2; nombre del backend
+ *   desde T5.4.3) → cualquier ruta que no sea `/cambiar-contrasena` redirige
+ *   allí (bloqueo hasta completar el cambio);
+ * - sesión con el flag en `false` en `/cambiar-contrasena` o `/login` →
+ *   redirige al panel del propio rol (ya hizo login / ya cambió);
  * - rol correcto y sin cambio pendiente → deja pasar.
  *
  * ## Esto NO es barrera de seguridad (CA 4 de H5.3)
@@ -22,12 +22,12 @@
  * del cambio obligatorio), no seguridad: el bloqueo real lo impone el backend
  * con H2.1/H2.2 (`must_change_password` en la BD y en la sesión).
  *
- * ## Sesión simulada hasta H2.1 (CA 3 de H5.3)
+ * ## Sesión legible (CA 3 de H5.3; login real desde T5.4.3)
  *
- * La sesión se lee vía `leerSesion` de `@/lib/auth`, que hoy consume la cookie
- * simulada `educoins_sesion`. Cuando H2.1 entregue la sesión real (cookie
- * `httpOnly` + JWT), **solo cambia el interior de `leerSesion`** — este
- * middleware no se toca.
+ * La sesión se lee vía `leerSesion` de `@/lib/auth`, que consume la cookie
+ * legible `educoins_sesion` que escribe la capa de auth tras un login real
+ * contra H2.1. No es seguridad: la cookie es editable desde DevTools; el
+ * backend revalida cada petición (CA 4 de H5.3).
  *
  * ## Anti-loops (T5.4.2)
  *
@@ -74,7 +74,7 @@ const ROL_DE_RUTA: Record<string, Rol> = {
 /**
  * Ruta de la vista de cambio obligatorio de contraseña (T5.4.2, PRO-379).
  *
- * Única ruta permitida para una sesión con `mustChangePassword === true`.
+ * Única ruta permitida para una sesión con `debeCambiarContrasena === true`.
  */
 const RUTA_CAMBIO_CONTRASENA = "/cambiar-contrasena";
 
@@ -86,12 +86,12 @@ const RUTA_CAMBIO_CONTRASENA = "/cambiar-contrasena";
  *
  * Reglas (incluye el bloqueo de cambio obligatorio de T5.4.2):
  * - Sin sesión: `/login` → pasar; `/cambiar-contrasena` o un panel → `/login`.
- * - Sesión con `mustChangePassword === true`: `/cambiar-contrasena` → pasar;
- *   cualquier otra ruta (`/login`, panel u otra) → `/cambiar-contrasena`.
- * - Sesión con el flag en `false` o **ausente** (cookies de sesiones
- *   antiguas, T5.3.3): se trata como `false` — `/login` o
- *   `/cambiar-contrasena` → panel del propio rol; panel con rol distinto →
- *   panel del propio rol; panel correcto → pasar.
+ * - Sesión con `debeCambiarContrasena === true`: `/cambiar-contrasena` →
+ *   pasar; cualquier otra ruta (`/login`, panel u otra) →
+ *   `/cambiar-contrasena`.
+ * - Sesión con el flag en `false`: `/login` o `/cambiar-contrasena` → panel
+ *   del propio rol; panel con rol distinto → panel del propio rol; panel
+ *   correcto → pasar.
  * - Cualquier otra ruta → pasar (el `matcher` ya la excluye; red de seguridad).
  *
  * Anti-loops: cada destino se cumple en un solo salto (ver docstring del
@@ -110,8 +110,8 @@ export function destinoDeRedireccion(
     pathname === RUTA_CAMBIO_CONTRASENA ||
     pathname.startsWith(`${RUTA_CAMBIO_CONTRASENA}/`);
 
-  // Flag ausente = false (retrocompatible con cookies de T5.3.3).
-  const exigeCambio = sesion?.mustChangePassword === true;
+  // Bloqueo (T5.4.2): solo el cambio de contraseña es accesible.
+  const exigeCambio = sesion?.debeCambiarContrasena === true;
 
   if (!sesion) {
     if (segmento === "login") {
@@ -132,7 +132,7 @@ export function destinoDeRedireccion(
 
   // Ya cambió (o no hacía falta): login y cambio se resuelven al panel.
   if (segmento === "login" || esRutaCambio) {
-    return PANEL_POR_ROL[sesion.rol];
+    return PANEL_POR_ROL[sesion.role];
   }
 
   const rolRequerido = ROL_DE_RUTA[segmento];
@@ -141,8 +141,8 @@ export function destinoDeRedireccion(
     return null;
   }
 
-  if (sesion.rol !== rolRequerido) {
-    return PANEL_POR_ROL[sesion.rol];
+  if (sesion.role !== rolRequerido) {
+    return PANEL_POR_ROL[sesion.role];
   }
 
   return null;
@@ -153,7 +153,7 @@ export function destinoDeRedireccion(
  *
  * Delgado a propósito: la lógica de decisión vive en
  * {@link destinoDeRedireccion}. Ver el docstring del archivo para el contrato
- * con el backend (no es seguridad; la sesión es simulada hasta H2.1).
+ * con el backend (no es seguridad; la validación real la hace el servidor).
  *
  * @param request Petición de Next (Edge).
  * @returns `NextResponse.redirect` si hay que redirigir; `NextResponse.next()` en caso contrario.

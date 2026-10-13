@@ -1,9 +1,10 @@
 /**
- * Página de inicio de sesión (`/login`) — T5.4.1 (PRO-377).
+ * Página de inicio de sesión (`/login`) — T5.4.1 (PRO-377), integrada con la
+ * API real en T5.4.3 (PRO-381).
  *
  * Formulario real de login (usuario **o** correo + contraseña) que delega la
- * validación de credenciales en la capa `@/features/auth/api/auth` (hoy mock;
- * T5.4.3 la reemplaza por la API real de H2.1 sin tocar esta vista).
+ * validación de credenciales en la capa `@/features/auth/api/auth` (que desde
+ * T5.4.3 habla con `POST auth/login` real de H2.1).
  *
  * Responsabilidades de esta vista:
  * - Capturar identificador y contraseña con `label` accesible (`htmlFor`).
@@ -13,13 +14,13 @@
  *   "Verificando…" mientras hay una petición en curso.
  * - Mostrar errores de credenciales en un área `role="alert"` con **solo**
  *   `error.message` de `ApiError` — nunca se ramifica por código HTTP ni se
- *   muestran `error.detalles` (spec §Contrato con el backend, punto 3).
+ *   muestran `error.detalles` (spec §Contrato con el backend, punto 3). Con
+ *   H2.1 el mensaje real es "El usuario o la contraseña son erróneos.".
  * - Redirigir al panel del rol tras el login (`rutaPorRol`).
  *
- * Contrato con el backend (para no cazar bugs cuando llegue H2.1):
+ * Contrato con el backend:
  * - La vista **no** conoce usuarios, cookies ni tokens: todo eso vive en la
- *   capa de auth. Cuando H2.1 llegue, solo cambia el interior de esa capa
- *   (T5.4.3) y esta vista queda igual.
+ *   capa de auth; los cambios de H2.x se absorben allí.
  * - El frontend no es barrera de seguridad (AGENTS.md §9): el rol validado
  *   aquí es UX; el backend revalida cada petición.
  */
@@ -91,11 +92,11 @@ export default function LoginPage() {
 
     try {
       const sesion = await iniciarSesion({
-        identificador: identificadorNormalizado,
+        usuarioOEmail: identificadorNormalizado,
         contrasena,
       });
 
-      router.push(rutaPorRol(sesion.rol));
+      router.push(rutaPorRol(sesion.role));
     } catch (error) {
       if (error instanceof ApiError) {
         setErrorEnvio(error.message);
