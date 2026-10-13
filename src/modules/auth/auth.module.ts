@@ -1,10 +1,13 @@
 import { Module } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { APP_GUARD } from '@nestjs/core';
 import { JwtModule } from '@nestjs/jwt';
 import { PassportModule } from '@nestjs/passport';
 import { ThrottlerModule } from '@nestjs/throttler';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
+import { PertenenciaGuard } from '../../common/guards/pertenencia.guard';
+import { AutorizacionModule } from '../autorizacion/autorizacion.module';
 import { expiracionASegundos } from './cookies';
 import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
@@ -29,6 +32,7 @@ import { LocalStrategy } from './strategies/local.strategy';
  */
 @Module({
   imports: [
+    AutorizacionModule,
     ThrottlerModule.forRoot([
       {
         name: THROTTLER_LOGIN,
@@ -60,7 +64,19 @@ import { LocalStrategy } from './strategies/local.strategy';
     LocalStrategy,
     JwtAuthGuard,
     RolesGuard,
+    PertenenciaGuard,
     AuthThrottlerGuard,
+    // Guards GLOBALES: toda la API exige un access token válido (incluida
+    // su caducidad), respeta @Roles(...) por defecto y verifica la
+    // pertenencia de los recursos declarados con @PerteneceA(...). Las
+    // únicas rutas exentas son las marcadas con @Publico() (login, refresh,
+    // logout y el healthcheck de la raíz). El orden es determinante:
+    // 1º JwtAuthGuard autentica y adjunta request.user; 2º RolesGuard
+    // compara el rol contra @Roles(...); 3º PertenenciaGuard delega en
+    // AutorizacionService la pertenencia del recurso de la ruta.
+    { provide: APP_GUARD, useClass: JwtAuthGuard },
+    { provide: APP_GUARD, useClass: RolesGuard },
+    { provide: APP_GUARD, useClass: PertenenciaGuard },
   ],
   exports: [JwtAuthGuard, RolesGuard, JwtModule],
 })

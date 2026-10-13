@@ -2,11 +2,14 @@ import { INestApplication, ValidationPipe } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import type { Express } from 'express';
 import helmet from 'helmet';
+import { PrismaExceptionFilter } from './common/filters/prisma-exception.filter';
 
 /**
  * Configuración transversal de la aplicación: prefijo /api/v1, validación
- * global de DTOs, cabeceras seguras (helmet) y CORS restringido al frontend.
- * Se extrae de main.ts para que los tests e2e repliquen la misma configuración.
+ * global de DTOs, cabeceras seguras (helmet), CORS restringido al frontend
+ * y el filtro global que traduce errores de Prisma/BD a respuestas HTTP
+ * (P2002→409, RAISE EXCEPTION→422, 500 genérico). Se extrae de main.ts
+ * para que los tests e2e repliquen la misma configuración.
  */
 export function configurarApp(app: INestApplication): void {
   const config = app.get(ConfigService);
@@ -21,6 +24,7 @@ export function configurarApp(app: INestApplication): void {
       transform: true,
     }),
   );
+  app.useGlobalFilters(new PrismaExceptionFilter());
   app.use(helmet());
   app.enableCors({ origin: frontendUrl, credentials: true });
   // Confiar en 1 proxy inverso: detrás de nginx req.ip será la IP real del

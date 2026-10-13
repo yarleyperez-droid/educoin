@@ -1,6 +1,8 @@
 import type { ExecutionContext } from '@nestjs/common';
 import { UnauthorizedException } from '@nestjs/common';
+import { Reflector } from '@nestjs/core';
 import { JwtService } from '@nestjs/jwt';
+import { Publico } from '../decorators/publico.decorator';
 import { JwtAuthGuard, MENSAJE_NO_AUTENTICADO } from './jwt-auth.guard';
 
 const SECRETO_PRUEBA = 'secreto-de-pruebas-de-jwt-1234567890';
@@ -10,10 +12,20 @@ interface PeticionMock {
   user?: object;
 }
 
-function crearContexto(peticion: PeticionMock): ExecutionContext {
+class ControladorDePrueba {
+  @Publico()
+  rutaPublica(this: void): void {}
+
+  rutaProtegida(this: void): void {}
+}
+
+function crearContexto(
+  peticion: PeticionMock,
+  handler: () => void = ControladorDePrueba.prototype.rutaProtegida,
+): ExecutionContext {
   return {
-    getHandler: () => jest.fn(),
-    getClass: () => jest.fn(),
+    getHandler: () => handler,
+    getClass: () => ControladorDePrueba,
     switchToHttp: () => ({ getRequest: () => peticion }),
   } as unknown as ExecutionContext;
 }
@@ -24,7 +36,17 @@ describe('JwtAuthGuard', () => {
 
   beforeEach(() => {
     jwtService = new JwtService({ secret: SECRETO_PRUEBA });
-    guard = new JwtAuthGuard(jwtService);
+    guard = new JwtAuthGuard(jwtService, new Reflector());
+  });
+
+  it('deja pasar sin token las rutas marcadas con @Publico()', () => {
+    const peticion: PeticionMock = { headers: {} };
+    expect(
+      guard.canActivate(
+        crearContexto(peticion, ControladorDePrueba.prototype.rutaPublica),
+      ),
+    ).toBe(true);
+    expect(peticion.user).toBeUndefined();
   });
 
   it('rechaza con 401 si falta el encabezado Authorization', () => {

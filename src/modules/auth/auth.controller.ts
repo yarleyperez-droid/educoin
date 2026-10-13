@@ -15,8 +15,7 @@ import { AuthGuard } from '@nestjs/passport';
 import { SkipThrottle } from '@nestjs/throttler';
 import type { Request, Response } from 'express';
 import { UsuarioActual } from '../../common/decorators/usuario-actual.decorator';
-import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
-import { RolesGuard } from '../../common/guards/roles.guard';
+import { Publico } from '../../common/decorators/publico.decorator';
 import type { UsuarioAutenticado } from '../../common/interfaces/usuario-autenticado';
 import { AuthService, type SesionInterna } from './auth.service';
 import {
@@ -38,10 +37,12 @@ import type {
 
 /**
  * Endpoints de sesión bajo /api/v1/auth (AGENTS.md §8: prefijo /api/v1):
- * - POST /login   → 201 con access token; refresh en cookie httpOnly.
- * - POST /refresh → canjea la cookie de refresh por una sesión nueva.
- * - POST /logout  → 204 y expira la cookie de refresh.
- * - GET  /perfil  → requiere JWT; devuelve el usuario autenticado.
+ * - POST /login   → PÚBLICO; 201 con access token; refresh en cookie httpOnly.
+ * - POST /refresh → PÚBLICO; canjea la cookie de refresh (se autentica por
+ *                   el JWT firmado dentro de la cookie, no por un Bearer).
+ * - POST /logout  → PÚBLICO; 204 y expira la cookie (debe funcionar incluso
+ *                   con el access token vencido para poder cerrar sesión).
+ * - GET  /perfil  → protegido por los guards GLOBALES (JWT + roles).
  */
 @Controller('auth')
 export class AuthController {
@@ -53,6 +54,7 @@ export class AuthController {
   // El throttler va PRIMERO: las peticiones bloqueadas por rate limit ni
   // llegan a argon2 ni a la BD. @SkipThrottle evita que el contador de
   // 'refresh' aplique también a esta ruta (throttler nombrado independiente).
+  @Publico()
   @SkipThrottle({ [THROTTLER_REFRESH]: true })
   @UseGuards(AuthThrottlerGuard, AuthGuard('local'))
   @Post('login')
@@ -64,6 +66,7 @@ export class AuthController {
     return this.armarSesion(await this.authService.login(usuario), respuesta);
   }
 
+  @Publico()
   @SkipThrottle({ [THROTTLER_LOGIN]: true })
   @UseGuards(AuthThrottlerGuard)
   @Post('refresh')
@@ -84,6 +87,7 @@ export class AuthController {
     );
   }
 
+  @Publico()
   @Post('logout')
   @HttpCode(HttpStatus.NO_CONTENT)
   cerrarSesion(@Res({ passthrough: true }) respuesta: Response): void {
@@ -93,7 +97,8 @@ export class AuthController {
     );
   }
 
-  @UseGuards(JwtAuthGuard, RolesGuard)
+  // Protegido automáticamente por los guards globales (APP_GUARD) registrados
+  // en AuthModule: JWT con caducidad + RolesGuard.
   @Get('perfil')
   async obtenerPerfil(
     @UsuarioActual() usuario: UsuarioAutenticado,

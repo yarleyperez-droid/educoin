@@ -4,8 +4,10 @@ import {
   Injectable,
   UnauthorizedException,
 } from '@nestjs/common';
+import { Reflector } from '@nestjs/core';
 import { JwtService } from '@nestjs/jwt';
 import type { Request } from 'express';
+import { ES_PUBLICO_KEY } from '../decorators/publico.decorator';
 import type { UsuarioAutenticado } from '../interfaces/usuario-autenticado';
 
 export const MENSAJE_NO_AUTENTICADO = 'No autenticado o sesión expirada.';
@@ -13,15 +15,30 @@ export const MENSAJE_NO_AUTENTICADO = 'No autenticado o sesión expirada.';
 type PeticionConUsuario = Request & { user?: UsuarioAutenticado };
 
 /**
- * Guard de JWT de acceso. Verifica el token "Bearer" del encabezado
- * Authorization con el secreto configurado en AuthModule y adjunta el
- * payload decodificado en `request.user` para RolesGuard y los endpoints.
+ * Guard de JWT de acceso, registrado GLOBALMENTE en AuthModule (APP_GUARD).
+ * Se aplica a todas las rutas salvo las marcadas con @Publico(). Verifica
+ * el token "Bearer" del encabezado Authorization con el secreto configurado
+ * en AuthModule — un token vencido (exp) o de firma inválida da 401 — y
+ * adjunta el payload decodificado en `request.user` para RolesGuard y los
+ * endpoints.
  */
 @Injectable()
 export class JwtAuthGuard implements CanActivate {
-  constructor(private readonly jwtService: JwtService) {}
+  constructor(
+    private readonly jwtService: JwtService,
+    private readonly reflector: Reflector,
+  ) {}
 
   canActivate(contexto: ExecutionContext): boolean {
+    const esPublica = this.reflector.getAllAndOverride<boolean>(
+      ES_PUBLICO_KEY,
+      [contexto.getHandler(), contexto.getClass()],
+    );
+
+    if (esPublica === true) {
+      return true;
+    }
+
     const request = contexto.switchToHttp().getRequest<PeticionConUsuario>();
     const token = this.extraerToken(request.headers.authorization);
 
