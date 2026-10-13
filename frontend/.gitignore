@@ -24,6 +24,8 @@ yarn-error.log*
 # env (raíz/.gitignore ya cubre .env y .env.local)
 .env*.local
 
-# tests e2e (Playwright) — artifacts, nunca al repo
-test-results/
-playwright-report/
+# playwright
+/test-results/
+/playwright-report/
+/blob-report/
+/playwright/.cache/

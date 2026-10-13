@@ -10,25 +10,41 @@ const { config: tsconfig } = ts.readConfigFile(
 );
 const paths = tsconfig?.compilerOptions?.paths ?? {};
 
+/**
+ * Configuración de Jest en modo **CommonJS** — resolución del merge entre
+ * `main` y `Alejandro` (T5.4.3 / H2.x).
+ *
+ * Por qué NO modo ESM (que era la rama de `main`):
+ * - `@nestjs/common@12` es ESM-only (`"type": "module"`) mientras que
+ *   `@nestjs/throttler@6.7.1` se publica en CJS. En un grafo ESM de Jest,
+ *   el `require()` de CJS hacia un ESM del mismo grafo lanza
+ *   `ERR_REQUIRE_CYCLE_MODULE` ("Cannot require() ES Module … in a cycle"),
+ *   que **ninguna versión de Node arregla**: es una limitación del loader.
+ *   Eso rompía `auth-throttler.guard.spec.ts` y las 5 suites e2e (la app
+ *   completa importa el throttler vía `AuthModule`).
+ * - En CJS, `require()` de un ESM aislado sí funciona en Node >= 24.9
+ *   (requisito de Jest 30 + Nest 12; `engines.node` lo declara).
+ * - Verificado empíricamente tras el merge: con esta config pasan las 11
+ *   suites unitarias (ambos autores) y con la ESM solo 6.
+ *
+ * Por qué se conserva el resto: `moduleNameMapper` (resuelve los
+ * especificadores `./archivo.js` del cliente Prisma generado) viene de la
+ * rama `Alejandro`, igual que `collectCoverageFrom`.
+ */
 const config: Config = {
   moduleFileExtensions: ['js', 'json', 'ts'],
   rootDir: '.',
   testRegex: '.*\\.spec\\.ts$',
   testPathIgnorePatterns: ['/node_modules/', '/frontend/', '/dist/'],
-  extensionsToTreatAsEsm: ['.ts'],
   transform: {
-    '^.+\\.(t|j)s$': [
-      'ts-jest',
-      {
-        useESM: true,
-        tsconfig: {
-          module: 'esnext',
-          moduleResolution: 'bundler',
-        },
-      },
-    ],
+    '^.+\\.(t|j)s$': 'ts-jest',
   },
-  moduleNameMapper: pathsToModuleNameMapper(paths, { prefix: '<rootDir>/' }),
+  moduleNameMapper: {
+    // Resuelve especificadores estilo ESM (`.js`) a sus fuentes TypeScript
+    // cuando las pruebas corren como CommonJS (cliente Prisma generado).
+    '^(\\.{1,2}/.*)\\.js$': '$1',
+    ...pathsToModuleNameMapper(paths, { prefix: '<rootDir>/' }),
+  },
   collectCoverageFrom: [
     'src/**/*.(t|j)s',
     'libs/**/*.(t|j)s',
