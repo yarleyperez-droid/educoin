@@ -1,10 +1,15 @@
 import { NestFactory } from '@nestjs/core';
+import { ConfigService } from '@nestjs/config';
 import { AppModule } from './app.module';
-import { PrismaExceptionFilter } from './common/filters/prisma-exception.filter';
+import { configurarApp } from './app.setup';
 
-async function bootstrap() {
+async function bootstrap(): Promise<void> {
   const app = await NestFactory.create(AppModule);
-  app.useGlobalFilters(new PrismaExceptionFilter());
-  await app.listen(process.env.PORT ?? 3000);
+  // El filtro global de Prisma se registra dentro de configurarApp para
+  // que producción y tests e2e compartan exactamente la misma cadena HTTP.
+  configurarApp(app);
+  const config = app.get(ConfigService);
+  const puerto = config.get<number>('PORT') ?? 3000;
+  await app.listen(puerto);
 }
 void bootstrap();
