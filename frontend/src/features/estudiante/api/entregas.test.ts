@@ -20,7 +20,11 @@ import {
 import type { Pregunta } from "@/features/teacher/contrato/actividades";
 import { ApiError } from "@/lib/api-client";
 
-import { enviarRespuestas, obtenerEntrega } from "./entregas";
+import {
+  consultarAutoCalificacion,
+  enviarRespuestas,
+  obtenerEntrega,
+} from "./entregas";
 
 /** Pregunta `test` con opciones reales. */
 const PREGUNTA_TEST: Pregunta = {
@@ -174,5 +178,53 @@ describe("obtenerEntrega", () => {
 
     expect(leida?.id).toBe(creada.id);
     expect(leida?.estado).toBe("submitted");
+  });
+});
+
+describe("consultarAutoCalificacion", () => {
+  it("califica una entrega submitted y devuelve graded con resultado", async () => {
+    const actividadId = await crearPublicada("Auto-calificación");
+
+    await enviarRespuestas(actividadId, RESPUESTAS_COMPLETAS);
+    const calificada = await consultarAutoCalificacion(actividadId);
+
+    expect(calificada.estado).toBe("graded");
+    expect(calificada.calificadaEn).not.toBeNull();
+    expect(calificada.puntaje).toBe(15); // 10 (test) + 5 (completion)
+    expect(calificada.monedasOtorgadas).toBe(120); // recompensa de la actividad
+    expect(calificada.retroalimentacion).not.toBeNull(); // placeholder H3.5
+    expect(calificada.resultado).toHaveLength(2);
+    expect(calificada.resultado?.every((item) => item.correcta)).toBe(true);
+  });
+
+  it("es idempotente sobre una entrega ya calificada", async () => {
+    const actividadId = await crearPublicada("Idempotencia");
+
+    await enviarRespuestas(actividadId, RESPUESTAS_COMPLETAS);
+    const primera = await consultarAutoCalificacion(actividadId);
+    const segunda = await consultarAutoCalificacion(actividadId);
+
+    expect(segunda.estado).toBe("graded");
+    expect(segunda.puntaje).toBe(primera.puntaje);
+    expect(segunda.calificadaEn).toBe(primera.calificadaEn);
+    expect(segunda.resultado).toEqual(primera.resultado);
+  });
+
+  it("responde 404 si no hay entrega", async () => {
+    await expect(consultarAutoCalificacion("sin-entrega")).rejects.toMatchObject(
+      { status: 404 },
+    );
+  });
+
+  it("la entrega calificada no expone secretos del JSONB", async () => {
+    const actividadId = await crearPublicada("Entrega sin secretos");
+
+    await enviarRespuestas(actividadId, RESPUESTAS_COMPLETAS);
+    const calificada = await consultarAutoCalificacion(actividadId);
+    const serializado = JSON.stringify(calificada);
+
+    expect(serializado).toContain("correcta"); // el resultado sí se ve
+    expect(serializado).not.toContain("is_correct");
+    expect(serializado).not.toContain("expected_answer");
   });
 });

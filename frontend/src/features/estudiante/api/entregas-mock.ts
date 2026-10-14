@@ -19,7 +19,10 @@
 
 import { ApiError } from "@/lib/api-client";
 
+import { obtenerActividadMock } from "@/features/teacher/api/actividades-mock";
+
 import type { Entrega, Respuesta } from "../contrato/entregas";
+import { calcularResultado } from "../util/calificacion";
 
 /** Duración simulada de la "petición" (ms). */
 const LATENCIA_MOCK_MS = 150;
@@ -30,6 +33,16 @@ export const ESTUDIANTE_MOCK_ID = "3";
 /** Mensaje real que produciría el conflicto UNIQUE (H3.4 → 409). */
 const MENSAJE_DUPLICADA =
   "Ya enviaste esta actividad; solo se permite un intento por estudiante.";
+
+/**
+ * Feedback de ejemplo que escribe el mock al auto-calificar.
+ *
+ * **Placeholder de H3.5** (calificación manual del profesor): cuando
+ * exista el endpoint real, el texto vendrá de `submissions.feedback` y
+ * este desaparece (T5.8.4).
+ */
+const RETROALIMENTACION_EJEMPLO =
+  "Buen trabajo: revisa el ejercicio 3 antes de la próxima entrega.";
 
 /** Catálogo de entregas de la sesión del mock. */
 const catalogo: Entrega[] = [];
@@ -88,6 +101,7 @@ export async function crearEntregaMock(
     puntaje: null,
     monedasOtorgadas: 0,
     retroalimentacion: null,
+    resultado: null,
   };
 
   catalogo.push(entrega);
@@ -103,4 +117,52 @@ export async function crearEntregaMock(
  */
 export function lanzarDuplicada(): never {
   throw new ApiError(MENSAJE_DUPLICADA, 409);
+}
+
+/**
+ * Auto-califica la entrega de una actividad (`submitted → graded`).
+ *
+ * Simula a **H3.4** (servidor): evalúa `answers` contra las `questions`
+ * con secretos del mock del profesor usando {@link calcularResultado} y
+ * guarda el resultado **en la entrega** — es lo único que luego ve el
+ * estudiante (nunca los secretos de la actividad).
+ *
+ * Réplica simplificada del trigger `fn_award_coins`: `monedasOtorgadas`
+ * = recompensa de la actividad (la BD real es la que otorga una sola vez).
+ *
+ * @param actividadId Actividad de la entrega a calificar.
+ * @returns La entrega calificada (`graded`) con resultado y feedback.
+ * @throws {Error} Si no existe la entrega o su actividad (la fachada lo
+ *   previene antes).
+ */
+export async function calificarMock(actividadId: string): Promise<Entrega> {
+  await new Promise<void>((resolver) => setTimeout(resolver, LATENCIA_MOCK_MS));
+
+  const entrega = obtenerEntregaMock(actividadId);
+  const actividad = obtenerActividadMock(actividadId);
+
+  if (!entrega || !actividad) {
+    throw new Error(`Entrega o actividad ${actividadId} no encontradas.`);
+  }
+
+  const { resultado, puntaje } = calcularResultado(
+    entrega.respuestas,
+    actividad.preguntas,
+  );
+
+  const ahora = new Date().toISOString();
+  const calificada: Entrega = {
+    ...entrega,
+    estado: "graded",
+    calificadaEn: ahora,
+    puntaje,
+    monedasOtorgadas: actividad.recompensaMonedas,
+    retroalimentacion: RETROALIMENTACION_EJEMPLO,
+    resultado,
+  };
+
+  const indice = catalogo.findIndex((item) => item.id === entrega.id);
+  catalogo[indice] = calificada;
+
+  return calificada;
 }

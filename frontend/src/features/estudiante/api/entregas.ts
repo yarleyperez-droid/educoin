@@ -33,6 +33,7 @@ import {
 
 import { obtenerParaEstudiante } from "./actividades-estudiante";
 import {
+  calificarMock,
   crearEntregaMock,
   lanzarDuplicada,
   obtenerEntregaMock,
@@ -43,6 +44,10 @@ export type { Entrega, Respuesta };
 /** Mensaje cuando la actividad no existe o no está publicada. */
 const MENSAJE_ACTIVIDAD_NO_DISPONIBLE =
   "No se encontró la actividad o todavía no está publicada.";
+
+/** Mensaje cuando no hay entrega que consultar. */
+const MENSAJE_ENTREGA_INEXISTENTE =
+  "No se encontró ninguna entrega para esta actividad.";
 
 /** Mensaje cuando falta una respuesta por pregunta. */
 const MENSAJE_RESPUESTA_FALTANTE =
@@ -158,4 +163,41 @@ export async function obtenerEntrega(
   await Promise.resolve();
 
   return obtenerEntregaMock(actividadId);
+}
+
+/**
+ * Consulta/actualiza el estado de la entrega con la auto-calificación.
+ *
+ * Simula el job asíncrono de **H3.4** (T5.8.3):
+ * - Sin entrega → `ApiError` 404.
+ * - `submitted` → dispara la auto-calificación del mock (latencia de
+ *   servidor) y devuelve la entrega `graded` con `resultado`, `puntaje`,
+ *   `monedasOtorgadas` y `retroalimentacion`.
+ * - `graded` / `rejected` / `in_progress` → **idempotente**: devuelve la
+ *   entrega tal cual, sin recalcular ni tocar fechas.
+ *
+ * **MOCK temporal (H3.4 pendiente):** con API real, T5.8.4 la sustituirá
+ * por `api.get(...)` — el servidor será quien califique.
+ *
+ * @param actividadId Actividad de la entrega.
+ * @returns La entrega en su estado actual (posiblemente ya `graded`).
+ * @throws {ApiError} 404 si no hay entrega.
+ */
+export async function consultarAutoCalificacion(
+  actividadId: string,
+): Promise<Entrega> {
+  const entrega = obtenerEntregaMock(actividadId);
+
+  if (!entrega) {
+    throw new ApiError(MENSAJE_ENTREGA_INEXISTENTE, 404);
+  }
+
+  if (entrega.estado === "submitted") {
+    return calificarMock(actividadId);
+  }
+
+  // Idempotencia: nada que recalcular fuera del estado "submitted".
+  await Promise.resolve();
+
+  return entrega;
 }

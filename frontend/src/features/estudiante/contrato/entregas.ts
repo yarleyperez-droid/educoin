@@ -75,6 +75,30 @@ export type EstadoEntrega =
   | "rejected";
 
 /**
+ * Resultado de una pregunta **ya calculado por el backend** (T5.8.3).
+ *
+ * Es la única fuente del estudiante para ver aciertos: **no** deriva de
+ * `is_correct`/`expected_answer` del JSONB de preguntas (nunca expuestos)
+ * sino del cálculo que en la BD/real hace H3.4 sobre `submissions.answers`.
+ *
+ * `correcta` = si la respuesta fue correcta; `puntos` = `score` obtenido
+ * (0 si fue incorrecta).
+ */
+export const ResultadoPreguntaSchema = z.object({
+  /** Posición de la pregunta evaluada. */
+  question_position: z.number().int().min(1),
+
+  /** Si la respuesta del estudiante fue correcta. */
+  correcta: z.boolean(),
+
+  /** Puntos obtenidos en esta pregunta (0 si falló). */
+  puntos: z.number().min(0),
+});
+
+/** Resultado por pregunta derivado del esquema zod. */
+export type ResultadoPregunta = z.infer<typeof ResultadoPreguntaSchema>;
+
+/**
  * Entrega vista por el estudiante (envelope provisional de `submissions`,
  * igual que el resto de H5.8 hasta que H3.4 publique sus DTOs).
  */
@@ -111,4 +135,29 @@ export interface Entrega {
 
   /** Feedback del profesor (`feedback TEXT`); `null` si no hay. */
   retroalimentacion: string | null;
+
+  /** Resultado por pregunta (calculado al calificar); `null` antes. */
+  resultado: ResultadoPregunta[] | null;
+}
+
+/**
+ * Etiquetas en español de cada estado de la entrega.
+ *
+ * Una sola fuente para todas las vistas (convención AGENTS.md §8).
+ */
+const ETIQUETAS_ENTREGA: Readonly<Record<EstadoEntrega, string>> = {
+  in_progress: "En curso",
+  submitted: "Enviada",
+  graded: "Calificada",
+  rejected: "Rechazada",
+};
+
+/**
+ * Etiqueta en español de un estado de entrega.
+ *
+ * @param estado Estado de la entrega.
+ * @returns Texto visible (p. ej. `"Calificada"`).
+ */
+export function etiquetaEstadoEntrega(estado: EstadoEntrega): string {
+  return ETIQUETAS_ENTREGA[estado];
 }

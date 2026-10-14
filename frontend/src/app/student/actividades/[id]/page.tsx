@@ -1,6 +1,6 @@
 /**
  * Cuestionario del estudiante (`/student/actividades/[id]`)
- * — T5.8.1 (PRO-394) + T5.8.2 (PRO-395).
+ * — T5.8.1 (PRO-394), T5.8.2 (PRO-395) y T5.8.3 (PRO-396).
  *
  * Abre una actividad **publicada**, renderiza sus preguntas con KaTeX
  * saneado y permite **enviar las respuestas una sola vez** (CA 1–3 de
@@ -12,7 +12,11 @@
  *   tener entrega (y la vista la re-lee al montar para el caso "recarga"),
  *   y si el servidor aún así devuelve `409`, el mensaje se muestra en un
  *   `role="alert"` sin romper la vista.
- * - Los estados de la entrega (`graded`, feedback…) llegan con T5.8.3.
+ * - **Estados y resultado (T5.8.3):** badge de estado en todo momento;
+ *   tras enviar, la vista espera ~1.5 s y consulta la auto-calificación
+ *   (simulación de H3.4) para mostrar puntaje por pregunta, monedas y el
+ *   **feedback del profesor** — siempre desde `entrega.resultado`, nunca
+ *   desde los secretos del JSONB.
  *
  * Contrato con el backend: datos por `features/estudiante/api/*` (mock de
  * H3.3/H3.4 hoy; T5.8.4 reemplaza los interiores). La vista solo lee
@@ -29,6 +33,7 @@ import "katex/dist/katex.min.css";
 
 import { obtenerParaEstudiante } from "@/features/estudiante/api/actividades-estudiante";
 import {
+  consultarAutoCalificacion,
   enviarRespuestas,
   obtenerEntrega,
   type Entrega,
@@ -38,7 +43,10 @@ import type {
   ActividadEstudiante,
   PreguntaEstudiante,
 } from "@/features/estudiante/contrato/cuestionario";
-import type { Respuesta } from "@/features/estudiante/contrato/entregas";
+import {
+  etiquetaEstadoEntrega,
+  type Respuesta,
+} from "@/features/estudiante/contrato/entregas";
 import { ApiError } from "@/lib/api-client";
 
 /** Mensaje cuando la actividad no existe o no está publicada. */
@@ -55,6 +63,9 @@ const MENSAJE_ENVIADO = "Respuestas enviadas";
 /** Texto del bloqueo: ya no hay reintento (UNIQUE de la BD). */
 const MENSAJE_SIN_REINTENTO =
   "Tu entrega ya fue registrada. Solo se permite un intento por actividad.";
+
+/** Estado vacío del feedback (cuando el profesor aún no comenta). */
+const MENSAJE_SIN_FEEDBACK = "Aún sin retroalimentación.";
 
 /** Mensaje genérico para errores inesperados que no son `ApiError`. */
 const MENSAJE_ERROR_GENERICO = "Ocurrió un error inesperado. Intenta de nuevo.";
@@ -145,6 +156,35 @@ export default function CuestionarioPage() {
     };
   }, [actividadId]);
 
+  // Espera asíncrona del resultado (simula el job de H3.4): solo mientras
+  // la entrega esté "submitted"; al volver como "graded" el efecto no hace
+  // nada (idempotencia de consultarAutoCalificacion).
+  useEffect(() => {
+    if (!entrega || entrega.estado !== "submitted") {
+      return;
+    }
+
+    let vigente = true;
+
+    const temporizador = setTimeout(() => {
+      consultarAutoCalificacion(actividadId)
+        .then((actualizada) => {
+          if (vigente) {
+            setEntrega(actualizada);
+          }
+        })
+        .catch(() => {
+          // Sin conexión al "servidor": se mantiene el estado enviado; la
+          // vista vuelve a consultar al montar.
+        });
+    }, 1500);
+
+    return () => {
+      vigente = false;
+      clearTimeout(temporizador);
+    };
+  }, [entrega, actividadId]);
+
   /**
    * Registra la respuesta de una pregunta (estado controlado).
    *
@@ -201,6 +241,10 @@ export default function CuestionarioPage() {
     }
   }
 
+  /** Puntos totales posibles de la actividad (para el marcador). */
+  const totalPuntos =
+    actividad?.preguntas.reduce((total, pregunta) => total + pregunta.score, 0) ?? 0;
+
   if (cargando) {
     return (
       <p className="text-sm text-neutral-500" role="status">
@@ -229,9 +273,16 @@ export default function CuestionarioPage() {
     <div className="w-full max-w-2xl rounded-lg border border-neutral-200 bg-white p-6 shadow-sm sm:p-8">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h2 className="text-xl font-semibold text-neutral-900">
-            {actividad.titulo}
-          </h2>
+          <div className="flex items-center gap-2">
+            <h2 className="text-xl font-semibold text-neutral-900">
+              {actividad.titulo}
+            </h2>
+            {entrega !== null && (
+              <span className="rounded-full bg-neutral-200 px-2 py-0.5 text-xs font-medium text-neutral-700">
+                {etiquetaEstadoEntrega(entrega.estado)}
+              </span>
+            )}
+          </div>
           {actividad.descripcion !== null && (
             <p className="mt-1 text-sm text-neutral-600">
               {actividad.descripcion}
@@ -252,7 +303,7 @@ export default function CuestionarioPage() {
       </div>
 
       {entrega !== null ? (
-        <section aria-live="polite" className="mt-6">
+        <section aria-live="polite" className="mt-6 space-y-4">
           <div className="rounded-md border border-green-200 bg-green-50 p-4">
             <p className="text-sm font-medium text-green-800">
               {MENSAJE_ENVIADO}
@@ -260,15 +311,103 @@ export default function CuestionarioPage() {
             <p className="mt-1 text-xs text-green-700">{MENSAJE_SIN_REINTENTO}</p>
           </div>
 
-          <p className="mt-4 text-xs text-neutral-500">
+          <p className="text-xs text-neutral-500">
             Enviado el{" "}
             {entrega.enviadaEn !== null
               ? new Date(entrega.enviadaEn).toLocaleString("es-CO")
               : "—"}
-            . El resultado se mostrará cuando esté calificada.
+            .
           </p>
 
-          <div className="mt-4">
+          {entrega.estado === "submitted" && (
+            <p
+              role="status"
+              className="rounded-md border border-neutral-200 bg-neutral-50 p-3 text-sm text-neutral-600"
+            >
+              Esperando el resultado de la auto-calificación…
+            </p>
+          )}
+
+          {entrega.estado === "graded" && (
+            <>
+              <section
+                aria-labelledby="titulo-resultado"
+                className="rounded-md border border-neutral-200 p-4"
+              >
+                <h3
+                  id="titulo-resultado"
+                  className="text-sm font-semibold text-neutral-800"
+                >
+                  Resultado
+                </h3>
+                <p className="mt-1 text-sm text-neutral-700">
+                  {entrega.puntaje} / {totalPuntos} puntos ·{" "}
+                  {entrega.monedasOtorgadas} monedas
+                </p>
+
+                <ul className="mt-3 space-y-1">
+                  {(entrega.resultado ?? []).map((item) => {
+                    const pregunta = actividad.preguntas.find(
+                      (p) => p.position === item.question_position,
+                    );
+
+                    return (
+                      <li
+                        key={item.question_position}
+                        className="flex items-start gap-2 text-sm text-neutral-700"
+                      >
+                        <span
+                          aria-hidden="true"
+                          className={
+                            item.correcta
+                              ? "font-semibold text-green-700"
+                              : "font-semibold text-red-700"
+                          }
+                        >
+                          {item.correcta ? "✓" : "✗"}
+                        </span>
+                        <span>
+                          Pregunta {item.question_position}:{" "}
+                          {pregunta?.prompt ?? ""} — {item.puntos} puntos
+                        </span>
+                      </li>
+                    );
+                  })}
+                </ul>
+
+                <p className="mt-2 text-xs text-neutral-500">
+                  {MENSAJE_SIN_REINTENTO}
+                </p>
+              </section>
+
+              <section
+                aria-labelledby="titulo-feedback"
+                className="rounded-md border border-neutral-200 bg-neutral-50 p-4"
+              >
+                <h3
+                  id="titulo-feedback"
+                  className="text-sm font-semibold text-neutral-800"
+                >
+                  Feedback del profesor
+                </h3>
+                <p className="mt-1 text-sm text-neutral-700">
+                  {entrega.retroalimentacion ?? MENSAJE_SIN_FEEDBACK}
+                </p>
+              </section>
+            </>
+          )}
+
+          {entrega.estado === "rejected" && (
+            <p
+              role="alert"
+              className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700"
+            >
+              Tu entrega fue rechazada por tu profesor. Revisa el feedback y
+              consulta con él.
+            </p>
+          )}
+
+          <div>
             <Link
               href="/student/actividades"
               className="rounded-md bg-neutral-900 px-4 py-2 text-sm font-medium text-white hover:bg-neutral-700 focus:outline-none focus:ring-2 focus:ring-neutral-500 focus:ring-offset-2"
