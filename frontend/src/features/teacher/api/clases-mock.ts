@@ -19,7 +19,7 @@
  * al estado inicial (limitación documentada del mock).
  */
 
-import type { Clase } from "../tipos";
+import type { Clase, ClaseListado, Meta } from "../tipos";
 
 /** Duración simulada de la "petición" (ms). */
 const LATENCIA_MOCK_MS = 150;
@@ -29,6 +29,15 @@ const ALFABETO_CODIGO = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
 
 /** Longitud del código de unión generado por la BD (comentario de `classes.code`). */
 export const LONGITUD_CODIGO = 8;
+
+/** Profesor dueño del catálogo mock (prof.lopez, id 2 del seed). */
+const PROFESOR_MOCK = {
+  id: "2",
+  nombre: "Ana López",
+};
+
+/** Tope de filas por página (igual que `BuscarClasesQueryDto`, H3.1). */
+const LIMITE_MAXIMO = 50;
 
 /**
  * Catálogo en memoria de las clases creadas en esta sesión del mock.
@@ -41,7 +50,7 @@ export const LONGITUD_CODIGO = 8;
 const catalogo: Clase[] = [
   {
     id: "mock-clase-seed",
-    profesorId: "2",
+    profesorId: PROFESOR_MOCK.id,
     nombre: "Mathematics 10A",
     codigo: "MATH10A0",
     estado: "active",
@@ -88,7 +97,7 @@ export async function crearClaseMock(datos: { nombre: string }): Promise<Clase> 
   const clase: Clase = {
     // ID opaco estilo backend: el real es un BigInt serializado como string.
     id: `mock-${catalogo.length + 1}-${Date.now()}`,
-    profesorId: "2", // prof.lopez: el profesor sale del token en el backend real
+    profesorId: PROFESOR_MOCK.id, // el profesor sale del token en el backend real
     nombre: datos.nombre,
     codigo: generarCodigoUnico(),
     estado: "active",
@@ -108,4 +117,102 @@ export async function crearClaseMock(datos: { nombre: string }): Promise<Clase> 
  */
 export function listarClasesMock(): Clase[] {
   return [...catalogo];
+}
+
+/**
+ * Busca clases del profesor mock por nombre (simula `GET /classes`).
+ *
+ * Reproduce las reglas de `BuscarClasesQueryDto` (H3.1): coincidencia por
+ * subcadena insensible a mayúsculas (el `ILIKE` del backend; el `pg_trgm`
+ * puro no se simula), orden alfabético, paginación 1-indexada y tope de
+ * {@link LIMITE_MAXIMO} filas por página. El filtro por profesor imita
+ * `condicionPorRol`: solo se devuelven clases de {@link PROFESOR_MOCK}.
+ *
+ * La validación de `q ≥ 3` vive en la fachada (es quien decide los
+ * errores); aquí se asume ya validado.
+ *
+ * @param q Texto de búsqueda (ya validado, ≥ 3 caracteres).
+ * @param page Página 1-indexada.
+ * @param limit Filas por página (1..50).
+ * @returns Página de resultados con su `meta` de paginación.
+ */
+export async function buscarClasesMock(
+  q: string,
+  page: number,
+  limit: number,
+): Promise<{ data: ClaseListado[]; meta: Meta }> {
+  await new Promise<void>((resolver) => setTimeout(resolver, LATENCIA_MOCK_MS));
+
+  const texto = q.trim().toLowerCase();
+  const limite = Math.min(Math.max(limit, 1), LIMITE_MAXIMO);
+  const pagina = Math.max(page, 1);
+
+  const coincidencias = catalogo
+    .filter(
+      (clase) =>
+        clase.profesorId === PROFESOR_MOCK.id &&
+        clase.nombre.toLowerCase().includes(texto),
+    )
+    .sort((a, b) => a.nombre.localeCompare(b.nombre));
+
+  const desde = (pagina - 1) * limite;
+
+  return {
+    data: coincidencias.slice(desde, desde + limite).map((clase) => ({
+      id: clase.id,
+      nombre: clase.nombre,
+      estado: clase.estado,
+      profesorNombre: PROFESOR_MOCK.nombre,
+      creadoEn: clase.creadoEn,
+    })),
+    meta: {
+      total: coincidencias.length,
+      page: pagina,
+      limit: limite,
+    },
+  };
+}
+
+/**
+ * Busca una clase por id en el catálogo mock.
+ *
+ * @param id Identificador de la clase.
+ * @returns La clase completa (incluye `codigo`), o `null` si no existe.
+ */
+export function obtenerClaseMock(id: string): Clase | null {
+  return catalogo.find((clase) => clase.id === id) ?? null;
+}
+
+/**
+ * Aplica un parche a una clase del catálogo mock (simula `PATCH /classes/:id`).
+ *
+ * **No valida** el parche (lo hace la fachada, que decide los códigos de
+ * error): solo reemplaza los campos indicados y refresca `actualizadoEn`.
+ *
+ * @param id Identificador de la clase.
+ * @param parche Campos a cambiar (`nombre` y/o `estado`).
+ * @returns La clase actualizada.
+ * @throws {Error} Si el id no existe (la fachada lo previene antes).
+ */
+export async function actualizarClaseMock(
+  id: string,
+  parche: { nombre?: string; estado?: Clase["estado"] },
+): Promise<Clase> {
+  await new Promise<void>((resolver) => setTimeout(resolver, LATENCIA_MOCK_MS));
+
+  const indice = catalogo.findIndex((clase) => clase.id === id);
+
+  if (indice === -1) {
+    throw new Error(`Clase ${id} no encontrada en el mock.`);
+  }
+
+  const actualizada: Clase = {
+    ...catalogo[indice],
+    ...parche,
+    actualizadoEn: new Date().toISOString(),
+  };
+
+  catalogo[indice] = actualizada;
+
+  return actualizada;
 }

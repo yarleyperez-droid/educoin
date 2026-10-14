@@ -15,7 +15,13 @@ import { ApiError } from "@/lib/api-client";
 
 import type { Pregunta } from "../contrato/actividades";
 
-import { crearActividad, publicarActividad } from "./actividades";
+import {
+  actualizarActividad,
+  crearActividad,
+  listarActividades,
+  obtenerActividad,
+  publicarActividad,
+} from "./actividades";
 import { listarActividadesMock } from "./actividades-mock";
 
 /** Pregunta `test` válida de ejemplo. */
@@ -149,5 +155,109 @@ describe("publicarActividad", () => {
     await expect(publicarActividad("no-existe")).rejects.toMatchObject({
       status: 404,
     });
+  });
+});
+
+describe("listarActividades y obtenerActividad", () => {
+  it("lista solo las actividades de la clase indicada", async () => {
+    const propia = await crearActividad({
+      ...DATOS_VALIDOS,
+      claseId: "clase-A",
+      titulo: "Actividad de la clase A",
+    });
+    const ajena = await crearActividad({
+      ...DATOS_VALIDOS,
+      claseId: "clase-B",
+      titulo: "Actividad de la clase B",
+    });
+
+    const lista = await listarActividades("clase-A");
+    const ids = lista.map((actividad) => actividad.id);
+
+    expect(ids).toContain(propia.id);
+    expect(ids).not.toContain(ajena.id);
+  });
+
+  it("nunca devuelve actividades eliminadas (borrado lógico)", async () => {
+    await crearActividad({
+      ...DATOS_VALIDOS,
+      claseId: "clase-C",
+      titulo: "Actividad visible",
+    });
+
+    const lista = await listarActividades("clase-C");
+
+    expect(lista.length).toBeGreaterThan(0);
+    expect(lista.every((a) => a.estado !== "deleted")).toBe(true);
+  });
+
+  it("obtenerActividad devuelve la creada o null si no existe", async () => {
+    const creada = await crearActividad({
+      ...DATOS_VALIDOS,
+      titulo: "Actividad para obtener",
+    });
+
+    expect(obtenerActividad(creada.id)?.id).toBe(creada.id);
+    expect(obtenerActividad("no-existe")).toBeNull();
+  });
+});
+
+describe("actualizarActividad", () => {
+  it("edita una actividad en draft (título, recompensa y preguntas)", async () => {
+    const creada = await crearActividad({ ...DATOS_VALIDOS });
+
+    const actualizada = await actualizarActividad(creada.id, {
+      titulo: "Título corregido",
+      recompensaMonedas: 50,
+      preguntas: [
+        {
+          type: "completion",
+          position: 5,
+          prompt: "2 + 2 = ___",
+          score: 3,
+          expected_answer: "4",
+        },
+      ],
+    });
+
+    expect(actualizada.titulo).toBe("Título corregido");
+    expect(actualizada.recompensaMonedas).toBe(50);
+    expect(actualizada.estado).toBe("draft");
+    // Las posiciones se renumeran 1..n en el guardado.
+    expect(actualizada.preguntas[0].position).toBe(1);
+    expect(actualizada.actualizadaEn).not.toBe(creada.actualizadaEn);
+  });
+
+  it("rechaza editar con un JSONB inválido (ApiError 422)", async () => {
+    const creada = await crearActividad({ ...DATOS_VALIDOS });
+
+    await expect(
+      actualizarActividad(creada.id, {
+        preguntas: [
+          {
+            type: "test",
+            position: 1,
+            prompt: "Solo una opción",
+            score: 5,
+            options: [{ text: "Única", is_correct: true }],
+          },
+        ],
+      }),
+    ).rejects.toMatchObject({ status: 422 });
+  });
+
+  it("no permite editar una actividad publicada (ApiError 409)", async () => {
+    const creada = await crearActividad({ ...DATOS_VALIDOS });
+    await publicarActividad(creada.id);
+
+    await expect(
+      actualizarActividad(creada.id, { titulo: "Intento de edición" }),
+    ).rejects.toMatchObject({ status: 409 });
+  });
+
+  it("responde ApiError 404 para una actividad inexistente", async () => {
+    await expect(
+      actualizarActividad("no-existe", { titulo: "Nada" }),
+    ).rejects.toMatchObject({ status: 404 });
   });
 });

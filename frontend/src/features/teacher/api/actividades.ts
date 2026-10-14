@@ -43,7 +43,9 @@ import {
 } from "../contrato/actividades";
 
 import {
+  actualizarActividadMock,
   crearActividadMock,
+  listarActividadesMock,
   obtenerActividadMock,
   publicarActividadMock,
 } from "./actividades-mock";
@@ -61,6 +63,10 @@ const MENSAJE_YA_PUBLICADA =
 /** Mensaje cuando la actividad está eliminada lógicamente. */
 const MENSAJE_ELIMINADA =
   "La actividad está eliminada y no se puede publicar.";
+
+/** Mensaje cuando se intenta editar una actividad ya publicada. */
+const MENSAJE_PUBLICADA_NO_EDITABLE =
+  "La actividad ya está publicada y no se puede editar; crea una nueva versión si necesitas cambios.";
 
 /**
  * Datos de entrada para crear una actividad.
@@ -166,4 +172,110 @@ export async function publicarActividad(id: string): Promise<Actividad> {
   }
 
   return publicarActividadMock(id);
+}
+
+/**
+ * Obtiene una actividad por su id (para la vista de edición, T5.6.3).
+ *
+ * **MOCK temporal:** H3.3 no expone `GET /activities/:id`; la fachada lee
+ * el catálogo mock hasta que exista el endpoint real.
+ *
+ * @param id Identificador de la actividad.
+ * @returns La actividad, o `null` si no existe en la sesión actual.
+ */
+export function obtenerActividad(id: string): Actividad | null {
+  return obtenerActividadMock(id);
+}
+
+/**
+ * Lista las actividades de una clase, **ocultando las eliminadas**.
+ *
+ * El borrado lógico (`status = 'deleted'` + `deleted_at`, AGENTS.md §6)
+ * no es visible en el panel: solo `draft` y `published`.
+ *
+ * **MOCK temporal:** T5.6.4 lo sustituirá por `api.get(...)` cuando H3.3
+ * publique su endpoint de listado.
+ *
+ * @param claseId Clase dueña de las actividades.
+ * @returns Actividades visibles de la clase (orden del catálogo).
+ */
+export async function listarActividades(claseId: string): Promise<Actividad[]> {
+  const actividades = await Promise.resolve(listarActividadesMock(claseId));
+
+  return actividades.filter((actividad) => actividad.estado !== "deleted");
+}
+
+/**
+ * Edita una actividad **en `draft`** (simula `PATCH /activities/:id`).
+ *
+ * Reglas:
+ * - Solo se puede editar en `draft`; `published` → `ApiError` 409 (CA 3 de
+ *   H5.6: la UI tampoco ofrece la acción) y `deleted` → 409.
+ * - Los campos no indicados conservan su valor actual; el resultado
+ *   completo se revalida con los esquemas zod (misma primera red que
+ *   {@link crearActividad}).
+ *
+ * **MOCK temporal:** ver cabecera del archivo.
+ *
+ * @param id Identificador de la actividad.
+ * @param parche Campos a cambiar (título, descripción, recompensa, preguntas).
+ * @returns La actividad actualizada.
+ * @throws {ApiError} 404 inexistente; 409 publicada/eliminada; 422 si el
+ *   resultado no valida contra el contrato zod.
+ */
+export async function actualizarActividad(
+  id: string,
+  parche: {
+    titulo?: string;
+    descripcion?: string;
+    recompensaMonedas?: number;
+    preguntas?: Pregunta[];
+  },
+): Promise<Actividad> {
+  const actual = obtenerActividadMock(id);
+
+  if (!actual) {
+    throw new ApiError(MENSAJE_NO_ENCONTRADA, 404);
+  }
+
+  if (actual.estado === "published") {
+    throw new ApiError(MENSAJE_PUBLICADA_NO_EDITABLE, 409);
+  }
+
+  if (actual.estado === "deleted") {
+    throw new ApiError(MENSAJE_ELIMINADA, 409);
+  }
+
+  const preguntasNormalizadas = normalizarPosiciones(
+    parche.preguntas ?? actual.preguntas,
+  );
+
+  const borrador = BorradorActividadSchema.safeParse({
+    titulo: parche.titulo ?? actual.titulo,
+    descripcion:
+      parche.descripcion !== undefined
+        ? parche.descripcion.trim() === ""
+          ? undefined
+          : parche.descripcion
+        : (actual.descripcion ?? undefined),
+    recompensaMonedas:
+      parche.recompensaMonedas ?? actual.recompensaMonedas,
+  });
+
+  if (!borrador.success) {
+    throw new ApiError(mensajeDeErroresZod(borrador.error.issues), 422);
+  }
+
+  const preguntas = PreguntasSchema.safeParse(preguntasNormalizadas);
+
+  if (!preguntas.success) {
+    throw new ApiError(mensajeDeErroresZod(preguntas.error.issues), 422);
+  }
+
+  return actualizarActividadMock(id, {
+    titulo: borrador.data.titulo,
+    descripcion: borrador.data.descripcion ?? null,
+    recompensaMonedas: borrador.data.recompensaMonedas,
+    preguntas: preguntas.data,
+  });
 }

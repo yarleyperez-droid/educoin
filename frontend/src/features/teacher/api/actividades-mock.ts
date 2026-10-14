@@ -140,3 +140,42 @@ export function listarActividadesMock(claseId?: string): Actividad[] {
 
   return [...actividades];
 }
+
+/**
+ * Aplica un parche a una actividad del catálogo mock.
+ *
+ * **No valida** estado ni contenido (lo hace la fachada): solo reemplaza
+ * los campos indicados y refresca `actualizadoEn`.
+ *
+ * @param id Identificador de la actividad.
+ * @param parche Campos a cambiar (título, descripción, recompensa o preguntas).
+ * @returns La actividad actualizada.
+ * @throws {Error} Si el id no existe (la fachada lo previene antes).
+ */
+export async function actualizarActividadMock(
+  id: string,
+  parche: {
+    titulo?: string;
+    descripcion?: string | null;
+    recompensaMonedas?: number;
+    preguntas?: Pregunta[];
+  },
+): Promise<Actividad> {
+  await new Promise<void>((resolver) => setTimeout(resolver, LATENCIA_MOCK_MS));
+
+  const indice = catalogo.findIndex((actividad) => actividad.id === id);
+
+  if (indice === -1) {
+    throw new Error(`Actividad ${id} no encontrada en el mock.`);
+  }
+
+  const actualizada: Actividad = {
+    ...catalogo[indice],
+    ...parche,
+    actualizadaEn: new Date().toISOString(),
+  };
+
+  catalogo[indice] = actualizada;
+
+  return actualizada;
+}

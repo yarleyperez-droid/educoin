@@ -65,6 +65,32 @@ export interface Meta {
 }
 
 /**
+ * Ítem del listado de clases — espejo de `ClaseListadoDto` (H3.1).
+ *
+ * **Sin `codigo`** a propósito: verlo en un listado permitiría
+ * auto-inscribirse sin que el profesor comparta el código (decisión del
+ * backend, spec §Contrato 3 de T5.6.3). El código solo se muestra al
+ * crear la clase (T5.6.1, CA 1 de H5.6). Tampoco expone
+ * `profesorId`/organización: solo el nombre del profesor.
+ */
+export interface ClaseListado {
+  /** ID de la clase (BigInt de la BD como string). */
+  id: string;
+
+  /** Nombre visible de la clase. */
+  nombre: string;
+
+  /** Estado lógico de la clase. */
+  estado: EstadoClase;
+
+  /** Nombre completo del profesor dueño de la clase. */
+  profesorNombre: string;
+
+  /** Fecha de creación (ISO). */
+  creadoEn: string;
+}
+
+/**
  * Estados de actividad (enum `activity_status` de `db/001_schema.sql`).
  *
  * - `draft` → editable y publicable;

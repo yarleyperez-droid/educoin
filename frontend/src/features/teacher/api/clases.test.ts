@@ -14,9 +14,12 @@ import { describe, expect, it } from "vitest";
 import { ApiError } from "@/lib/api-client";
 
 import {
+  actualizarClase,
   crearClase,
+  buscarClases,
   LONGITUD_MAXIMA_NOMBRE,
   LONGITUD_MINIMA_NOMBRE,
+  obtenerClase,
 } from "./clases";
 import {
   generarCodigoUnico,
@@ -109,5 +112,97 @@ describe("generarCodigoUnico", () => {
       expect(generarCodigoUnico()).toMatch(/^[A-Z0-9]{8}$/);
       expect(generarCodigoUnico().length).toBe(LONGITUD_CODIGO);
     }
+  });
+});
+
+describe("buscarClases", () => {
+  it("rechaza búsquedas de menos de 3 caracteres con ApiError 422", async () => {
+    await expect(buscarClases("ma")).rejects.toBeInstanceOf(ApiError);
+    await expect(buscarClases("ma")).rejects.toMatchObject({ status: 422 });
+    await expect(buscarClases("   ")).rejects.toMatchObject({ status: 422 });
+  });
+
+  it("encuentra clases por subcadena y devuelve { data, meta } sin código", async () => {
+    const resultado = await buscarClases("Mathematics");
+
+    expect(resultado.meta.total).toBeGreaterThanOrEqual(1);
+    expect(resultado.data[0].nombre).toBe("Mathematics 10A");
+    expect(resultado.data[0].estado).toBe("active");
+    expect(resultado.data[0].profesorNombre).not.toBe("");
+    // ClaseListadoDto no expone el código de unión (decisión del backend).
+    expect(resultado.data[0]).not.toHaveProperty("codigo");
+  });
+
+  it("devuelve meta de paginación coherente (página 1)", async () => {
+    const resultado = await buscarClases("Universal", 1, 50);
+
+    expect(resultado.meta.page).toBe(1);
+    expect(resultado.meta.limit).toBe(50);
+    expect(resultado.data.length).toBeLessThanOrEqual(50);
+  });
+});
+
+describe("obtenerClase", () => {
+  it("devuelve la clase creada por su id", async () => {
+    const creada = await crearClase({ nombre: "Biología General 11A" });
+
+    const encontrada = obtenerClase(creada.id);
+
+    expect(encontrada).not.toBeNull();
+    expect(encontrada?.id).toBe(creada.id);
+    expect(encontrada?.codigo).toMatch(/^[A-Z0-9]{8}$/);
+  });
+
+  it("devuelve null para un id inexistente", () => {
+    expect(obtenerClase("no-existe")).toBeNull();
+  });
+});
+
+describe("actualizarClase", () => {
+  it("rechaza un parche sin ningún campo con ApiError 400", async () => {
+    const creada = await crearClase({ nombre: "Historia del Arte 10C" });
+
+    await expect(actualizarClase(creada.id, {})).rejects.toBeInstanceOf(
+      ApiError,
+    );
+    await expect(actualizarClase(creada.id, {})).rejects.toMatchObject({
+      status: 400,
+    });
+  });
+
+  it("archiva una clase sin tocar su nombre", async () => {
+    const creada = await crearClase({ nombre: "Literatura Global 11D" });
+
+    const archivada = await actualizarClase(creada.id, {
+      estado: "archived",
+    });
+
+    expect(archivada.estado).toBe("archived");
+    expect(archivada.nombre).toBe(creada.nombre);
+    expect(archivada.actualizadoEn).not.toBe(creada.actualizadoEn);
+  });
+
+  it("renombra una clase normalizando el nombre con trim", async () => {
+    const creada = await crearClase({ nombre: "Educación Física 9A" });
+
+    const renombrada = await actualizarClase(creada.id, {
+      nombre: "   Deporte Escolar 9A   ",
+    });
+
+    expect(renombrada.nombre).toBe("Deporte Escolar 9A");
+  });
+
+  it("rechaza un nombre corto al editar con ApiError 422", async () => {
+    const creada = await crearClase({ nombre: "Ciencias Políticas 12B" });
+
+    await expect(
+      actualizarClase(creada.id, { nombre: "corto" }),
+    ).rejects.toMatchObject({ status: 422 });
+  });
+
+  it("responde ApiError 404 para una clase inexistente", async () => {
+    await expect(
+      actualizarClase("no-existe", { estado: "archived" }),
+    ).rejects.toMatchObject({ status: 404 });
   });
 });
