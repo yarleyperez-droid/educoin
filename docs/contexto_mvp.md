@@ -82,13 +82,13 @@ Todas las cuentas nacen con `must_change_password = TRUE`.
 | Capa | Elección | Nota |
 |---|---|---|
 | Backend | **NestJS 12 + TypeScript 6** | ESM-only; el código debe ser ESM-friendly |
-| ORM / BD | **Prisma 7.10.0** (`@prisma/adapter-pg` + `pg`) · **PostgreSQL 14+** | versión fijada exacta; `prisma`/`@prisma/client`/`@prisma/adapter-pg` deben ir sincronizados |
+| ORM / BD | **Prisma 7.10.0** (`@prisma/adapter-pg` + `pg`) · **PostgreSQL 14+** | versión fijada exacta; `prisma`/`@prisma/client`/`@prisma/adapter-pg` deben ir sincronizados; `prisma/schema.prisma` + migraciones **ya existen** |
 | Frontend | **Next.js 16 + React 19 + Tailwind 4 + KaTeX** | en `frontend/`, aplicación aparte con su propio lockfile |
-| Auth / seguridad | `@nestjs/jwt`, `passport`, `argon2`, `helmet`, `class-validator` | instalados, **sin cablear** |
-| Validación de negocio extra | `zod` | para `questions` JSONB y `.env` |
+| Auth / seguridad | `@nestjs/jwt`, `passport`, `argon2`, `helmet`, `class-validator` | ✅ **cableado**: login 201 + cookie httpOnly `refresh_token` (Path=/api/v1/auth), refresh, logout 204, perfil; rate limit 5/min/IP; mensaje 401 "El usuario o la contraseña son erróneos" |
+| Validación de negocio extra | `zod` | ✅ cableado: validación `.env` al arrancar (`src/config/env.validation.ts`) + `questions` JSONB |
 | API docs | `@nestjs/swagger` | instalado, sin configurar |
-| Tests / QA | **Jest 30 (modo ESM obligatorio)** + oxlint + Prettier | pasar a CJS rompe Nest 12 |
-| Tooling | **pnpm 11** · `pnpm install:all` · Node ≥ 22 | sin npm/yarn; prohibido `package-lock.json` |
+| Tests / QA | **Jest 30 (modo CommonJS/CJS)** + oxlint + Prettier | CJS necesario por grafo mixto `@nestjs/common@12` (ESM-only) + `@nestjs/throttler@6.7.1` (CJS); `ERR_REQUIRE_CYCLE_MODULE` en modo ESM; CJS funciona en Node ≥ 24.9 |
+| Tooling | **pnpm 11** · `pnpm install:all` · Node ≥ 24.9 | sin npm/yarn; prohibido `package-lock.json` |
 
 **Decisiones operativas:**
 
@@ -108,24 +108,19 @@ Todas las cuentas nacen con `must_change_password = TRUE`.
 
 ## 4. Qué llevamos hecho ✅
 
-- **Rama `Alejandro`** sincronizada con `main` + commits del equipo.
+- **Rama `Alejandro`** sincronizada con `main` + commits del equipo; existe rama de trabajo `s2_h5_4_login` con H5.4 + integración (merge local en `main` sin push).
 - **Instalación completa en verde** con `pnpm install:all` (backend + frontend).
 - **Base de datos**: `db/001_schema.sql` (9 tablas, 10 enums, 7 triggers, 3 vistas) +
   `db/002_seed.sql` — **verificación 12/12** de reglas de negocio.
-- **Backend NestJS andamiaje** con scripts de calidad: `typecheck`, `build`, `lint`,
-  `format:check`, `test`, `test:e2e` → todos en verde (2 pruebas).
-- **Jest resuelto en modo ESM** (bloqueo histórico del equipo) y `tsconfig`/`jest.config`
-  ajustados para ignorar `frontend/` y `dist/`.
-- **Frontend Next.js 16** creado y verificado: `lint`, `typecheck`, `build` en verde;
-  `.env.example` con `NEXT_PUBLIC_API_URL`.
-- **Dependencias clave instaladas**: Prisma 7.10.0, `pg`, `@nestjs/config`, `@nestjs/jwt`,
-  `@nestjs/passport`, `passport`, `passport-local`, `class-validator`, `class-transformer`,
-  `@nestjs/swagger`, `helmet`, `zod`, `argon2`, y en dev `@types/pg`,
-  `@types/passport-local`.
-- **Documentación**: `README.md` (estado real, comandos, estructura) y
-  `.opencode/agents/AGENTS.md` (guardrails, fuentes de verdad, árbol de carpetas) al día.
+- **Prisma**: `prisma/schema.prisma` (modelos PascalCase español → `@@map` inglés) + migraciones SQL manuales en `prisma/migrations/` (baselining + triggers/vistas/índices parciales) + cliente generado en `src/generated/prisma` (`postinstall: prisma generate`); `PrismaModule`/`PrismaService` inyectable.
+- **Configuración `.env` validada al arrancar** con zod (`src/config/env.validation.ts`): exige `DATABASE_URL`, `JWT_ACCESS_SECRET` (≥16), `JWT_REFRESH_SECRET` (≥16); defaults `JWT_ACCESS_EXPIRES_IN=15m`, `JWT_REFRESH_EXPIRES_IN=7d`, `FRONTEND_URL=http://localhost:3001`, `PORT=3000`, `UPLOAD_MAX_BYTES=10485760`; `ConfigModule.forRoot({isGlobal, validate: validarEnv})` cableado en `AppModule`.
+- **Backend NestJS** con módulos reales: `auth` (H2.1 **COMPLETO**), `autorizacion` (roles/pertenencia), `classes` (PARCIAL: crear/editar/archivar); prefijo global `/api/v1` (`app.setup.ts`), CORS con `credentials` y origen `FRONTEND_URL`, helmet, `ValidationPipe` global (`whitelist`, `forbidNonWhitelisted`, `transform`), filtro global `PrismaExceptionFilter` (P2002→409, RAISE EXCEPTION→422, 500 genérico).
+- **Auth backend (H2.1)**: `POST /api/v1/auth/login` 201 + cookie refresh httpOnly `refresh_token` (Path=/api/v1/auth); `POST /auth/refresh` (rotación); `POST /auth/logout` 204; `GET /auth/perfil`; `AuthThrottlerGuard` 5 intentos/min por IP (login y refresh contadores independientes); argon2 en `AuthService.validarUsuario`; mensaje 401 único `MENSAJE_CREDENCIALES_INVALIDAS`.
+- **Guards/Decorators globales**: `JwtAuthGuard` (JWT acceso vida corta), `RolesGuard` (`@Roles(...)`), `AuthThrottlerGuard`, `@UsuarioActual`, `@Publico` en `src/common/`.
+- **Frontend Next.js 16** (H5.1–H5.4 **completas**): `lib/api-client.ts` (HTTP único, access token en memoria, refresh-on-401 con cola de concurrencia, normaliza `auth/*` a `{data}`, 204→`data:null`, 401 login no dispara refresh); `lib/auth.ts` (`Sesion` espejo `UsuarioRespuestaDto` = `{id, username, email, role, nombre, apellido, organizacionId (string|null), debeCambiarContrasena}`, cookie legible `educoins_sesion` para middleware Edge); `middleware.ts` (guard por rol + bloqueo `debeCambiarContrasena` → `/cambiar-contrasena`); `features/auth/api/auth.ts` (`iniciarSesion`/`cerrarSesion` reales; `cambiarContrasena` = **MOCK documentado pendiente H2.2**); E2E Playwright con `webServer` array (Nest `:3000` + Next `:3001`), usuarios del seed reales; unit Vitest con stubs de fetch.
+- **Tests backend**: Jest en **modo CommonJS/CJS** (`jest.config.ts` y `test/jest-e2e.json` sin `extensionsToTreatAsEsm`/`useESM`, con `moduleNameMapper` para cliente Prisma); `pnpm test` / `pnpm test:e2e` en verde (11 suites unitarias).
 - **Servidor verificado en vivo**: API `:3000` → 200 · Next `:3001` → 200.
-- **Deps limpias**: eliminado archivo basura `=22`; pnpm lockfiles correctos en ambas apps.
+- **Deps limpias**: pnpm lockfiles correctos en ambas apps.
 
 ---
 
@@ -133,68 +128,34 @@ Todas las cuentas nacen con `must_change_password = TRUE`.
 
 > Orden lógico de dependencias (no es un cronograma ni incluye responsables).
 
-### 5.1 Fundación del backend
-- `prisma/schema.prisma` reflejando el SQL real + **baselining** de la BD existente
-  (`migrate resolve`, nunca `db push` para no perder triggers/vistas/columnas generadas).
-  **Requiere aprobación** por ser la zona de mayor riesgo.
-- `PrismaModule`/`PrismaService` global con cierre de conexión.
-- Configuración centralizada de `.env` con validación al arrancar.
-- Swagger/OpenAPI en `/api` con el prefijo `/api/v1`.
-- Filtro global de excepciones que traduzca errores de Prisma/BD → HTTP
-  (`P2002→409`, `RAISE EXCEPTION→422`, `500` genérico sin filtrar detalles).
+### 5.1 Auth — pendiente único
+- **H2.2**: endpoint de cambio de contraseña en el backend (`POST /api/v1/auth/cambiar-contrasena` o similar). Desbloquea reemplazar el **MOCK** de `cambiarContrasena` en `frontend/features/auth/api/auth.ts`.
 
-### 5.2 Identidad y autorización
-- Módulo `auth`: login con usuario **o** correo, refresh token en cookie `httpOnly`,
-  logout con revocación, rate limiting en login, argon2.
-- Cambio obligatorio de contraseña inicial (`must_change_password`).
-- Guards globales de JWT + rol y **verificación de pertenencia** en cada Service
-  (profesor solo sus clases; estudiante solo sus inscripciones/entregas/canjes).
-- Módulo `organizations` y `users` (altas por admin, listados con paginación, `PATCH /me`).
+### 5.2 Backend de dominio (módulos no construidos)
+- `classes` **completar**: listar, unir por código, gestión de inscriptos, `pg_trgm` búsqueda.
+- `activities`: crear/editar/publicar/archivar con validación `questions` (zod), KaTeX saneado, recompensa 120 monedas (seed).
+- `submissions`: crear entrega (validaciones BD), auto-calificación `test`/`completion`, cola del profesor, calificar/rechazar con `feedback`, recalificar sin duplicar monedas (índice único parcial).
+- `enrollments`: inscripción, contadores monedas por clase, `coins_available` (columna generada).
+- `redeemable_items` / `redemptions`: catálogo (`grade_bonus` con `grade_points`, `fun_activity` con stock), canje instantáneo (trigger `fn_execute_redemption` + `fn_register_redemption`), reversión (`status=reversed` → trigger `fn_reverse_redemption`), validación `ck_enrollment_no_negative`.
+- `coins` / ranking: `coin_movements` solo lectura (auditoría); vistas `global_ranking`, `class_ranking`, `student_coins` para consultar (no recalcular).
+- Subida de archivos (PDF/JPG/PNG) con validación MIME real, límite `UPLOAD_MAX_BYTES`, nombre UUID servidor; ruta guardada en `submissions.answers[].files[]`.
 
-### 5.3 Aula (clases, actividades, entregas)
-- `classes`: crear con código generado por la BD, editar/archivar, buscar con `pg_trgm`,
-  unión por código (traduciendo el error de la BD a un mensaje amable), gestión de
-  inscriptos.
-- `activities`: crear/editar/publicar/archivar con validación de `questions` (zod),
-  **120 monedas** de recompensa en el seed, editor con render **KaTeX** saneado.
-- `submissions`: crear entrega (validaciones en BD), auto-calificación `test`/`completion`,
-  cola de entregas del profesor, calificar/rechazar con `feedback`,
-  **recalificar sin duplicar monedas**.
-- Subida de archivos (PDF/JPG/PNG) con validación MIME real, límite de tamaño y nombre
-  de archivo generado por el servidor.
+### 5.3 Autorización por recurso (pendiente en módulos nuevos)
+- Guards globales JWT + roles + pertenencia **ya existen**; falta verificación de **propiedad por recurso** en cada service (profesor solo sus clases/actividades/ítems/entregas; estudiante solo sus inscripciones/entregas/redemptions/monedas; ambos solo su organización).
 
-### 5.4 Economía y gamificación
-- Billetera del estudiante (saldo por clase, historial de `coin_movements` — solo lectura).
-- Catálogo de ítems canjeables (`grade_bonus` con `grade_points`, `fun_activity` con stock).
-- Canje instantáneo con confirmación previa de costo/saldo y anulación (reversión de
-  monedas y stock vía trigger).
-- Rankings (global y por clase) leyendo las **vistas**, sin recalcular en código.
-- **Minijuegos**: hoy `type: "minigame"` es solo un marcador; no hay tablas de
-  configuración ni solución → **requiere proponer esquema y que se apruebe**.
+### 5.4 Frontend — paneles por rol (H5.6/H5.8+)
+- H5.4 solo cubre auth. Faltan: panel admin (organizaciones, usuarios), panel profesor (clases, actividades, revisión/calificación, ítems), panel estudiante (dashboard, cuestionario, billetera, canjes, rankings, progreso).
+- Estados UI obligatorios: carga / vacío / error en toda vista con datos.
+- Decidir destino de `educoins_platform.html` (referencia o descarte).
 
-### 5.5 Frontend (hoy solo el scaffold)
-- Cliente HTTP único (`lib/api-client.ts`): token, refresco en 401, manejo de errores,
-  `NEXT_PUBLIC_API_URL`. Prohibido `fetch` disperso con URLs escritas a mano.
-- Rutas y layouts separados por rol (`/admin`, `/teacher`, `/student`) con middleware +
-  validación de rol en servidor (el frontend no es barrera de seguridad).
-- Estados base de UI: carga / vacío / error, componente de toast y accesibilidad
-  (labels, foco, contraste) en toda vista con datos.
-- Vistas: login y cambio de contraseña · panel del admin (organizaciones, usuarios) ·
-  panel del profesor (clases, actividades, revisión/calificación, ítems) · panel del
-  estudiante (dashboard, cuestionario, billetera, canjes, rankings, progreso).
-- Decidir el destino del prototipo `educoins_platform.html` (referencia visual o
-  descartado) para no mantener dos interfaces.
+### 5.5 API Docs
+- Swagger/OpenAPI en `/api` con prefijo `/api/v1` (hoy el frontend deriva tipos del código real del backend, no de Swagger).
 
 ### 5.6 Calidad, seguridad y entrega
-- `helmet` + CORS restringido al frontend, `ValidationPipe` global con `whitelist`,
-  rate limiting, auditoría de que ninguna respuesta filtre `password_hash`,
-  `is_correct` ni `expected_answer` al estudiante.
-- Pruebas por funcionalidad (unit + e2e + casos negativos de rol/recurso ajeno/validación
-  de BD) siguiendo el checklist de "terminado" de los guardrails.
-- CI que ejecute `typecheck`, `lint`, `build`, `test`, `test:e2e` (+ build del frontend)
-  en cada PR; rama `develop` y flujo de PR (hoy solo existen `main` y `Alejandro`).
-- Despliegue de backend + frontend + PostgreSQL, variables de entorno fuera del repo,
-  datos de demo sembrados y guía de arranque de 5 minutos.
+- `helmet` + CORS + `ValidationPipe` global + rate limiting **ya cableados**; auditoría de que ninguna respuesta filtre `password_hash`, `is_correct`, `expected_answer` al estudiante.
+- Pruebas por funcionalidad (unit + e2e + casos negativos de rol/recurso ajeno/validación BD) siguiendo checklist "terminado" de AGENTS.md §12.
+- CI: `typecheck`, `lint`, `build`, `test`, `test:e2e` (+ build frontend) en cada PR; rama `develop` y flujo PR (hoy `main` + `Alejandro` + `s2_h5_4_login`).
+- Despliegue backend + frontend + PostgreSQL (Docker `educoin-db` puerto host 5434), variables fuera del repo, datos demo sembrados, guía arranque 5 min.
 
 ---
 

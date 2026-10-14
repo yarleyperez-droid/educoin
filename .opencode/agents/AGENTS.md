@@ -33,25 +33,25 @@
 
 > ✅ **[DECISIONES YA TOMADAS — rama `Alejandro`]** Gestor de paquetes: **pnpm** (dos lockfiles:
 > `pnpm-lock.yaml` en la raíz y `frontend/pnpm-lock.yaml`; **prohibido** commitar `package-lock.json`).
-> **Node ≥ 22** (`engines`). Instalación de todo: **`pnpm install:all`**. **No instales dependencias
+> **Node ≥ 24.9** (`engines`). Instalación de todo: **`pnpm install:all`**. **No instales dependencias
 > nuevas sin aprobación** (§10.3).
 
 | Capa | Tecnología | Estado |
 |---|---|---|
 | Lenguaje | **TypeScript 6** backend / **TS 5.9** en `frontend/` | ✅ |
-| Runtime | **Node ≥ 22** | ✅ |
-| Backend | **NestJS 12** (API REST) — paquetes **ESM-only** | 🟡 solo scaffold (`GET /` → "Hello World!") |
-| ORM | **Prisma 7.10** (`prisma` + `@prisma/client` + `@prisma/adapter-pg` + `pg`) | 🟡 instalado. **Sin `prisma/schema.prisma`** (ver §7) |
-| Auth / seguridad | `@nestjs/jwt`, `@nestjs/passport` (+`passport-local`), `helmet`, `argon2`, `class-validator`, `class-transformer` | 🟡 instalados, **sin cablear** |
+| Runtime | **Node ≥ 24.9** (`engines.node`) | ✅ |
+| Backend | **NestJS 12** (API REST) — paquetes **ESM-only** | ✅ módulos reales: `auth` (H2.1 completo), `autorizacion`, `classes` (parcial) |
+| ORM | **Prisma 7.10** (`prisma` + `@prisma/client` + `@prisma/adapter-pg` + `pg`) | ✅ `prisma/schema.prisma` + migraciones + `src/generated/prisma` (postinstall) |
+| Auth / seguridad | `@nestjs/jwt`, `@nestjs/passport` (+`passport-local`), `helmet`, `argon2`, `class-validator`, `class-transformer` | ✅ cableado: login 201 + cookie httpOnly `refresh_token`, refresh, logout 204, perfil; rate limit 5/min/IP |
 | API docs | `@nestjs/swagger` | 🟡 instalado, sin configurar |
-| Validación JSONB | `zod` | 🟡 instalado, sin usar |
-| Frontend | **Next.js 16 + React 19 + Tailwind 4** en `frontend/` (App Router, `src/`) | 🟡 landing propia + esqueleto de capas por rol (`lib/api-client.ts` listo). Sin vistas por rol |
+| Validación JSONB | `zod` | ✅ cableado: validación `.env` al arrancar (`src/config/env.validation.ts`) |
+| Frontend | **Next.js 16 + React 19 + Tailwind 4** en `frontend/` (App Router, `src/`) | ✅ H5.1–H5.4: `lib/api-client.ts` (refresh-on-401, cola), `lib/auth.ts` (`Sesion` espejo), `middleware.ts` (guard rol + bloqueo `debeCambiarContrasena`), `features/auth/api/auth.ts` (login/logout reales; `cambiarContrasena` = MOCK pendiente H2.2) |
 | Formularios | `react-hook-form` | 🟡 instalado en `frontend/` |
-| Base de datos | **PostgreSQL 14+** (extensiones `citext` y `pg_trgm`) | ✅ esquema en `db/001_schema.sql` |
-| Tests | **Jest 30** + Supertest (unit + e2e) | ✅ en verde; corren en **modo ESM** |
+| Base de datos | **PostgreSQL 14+** (extensiones `citext` y `pg_trgm`) | ✅ esquema en `db/001_schema.sql` + Docker `educoin-db` (puerto host 5434) |
+| Tests | **Jest 30** + Supertest (unit + e2e) | ✅ en verde; corren en **modo CommonJS** (CJS) — ver §2 detalles |
 | Lint / formato | **oxlint** (type-aware) + **Prettier** (backend), **ESLint** (`eslint-config-next`) en `frontend/` | ✅ |
 | Ecuaciones | **KaTeX 0.19** + `@types/katex` | 🟡 instalado, sin integrar |
-| Hash de contraseñas | **argon2** | 🟡 instalado, sin usar |
+| Hash de contraseñas | **argon2** | ✅ cableado en `AuthService.validarUsuario` |
 
 **Estructura y puertos (decididos):**
 - Backend en la **raíz**; frontend en **`frontend/`** (app aparte, no es un workspace de pnpm).
@@ -60,11 +60,15 @@
 
 **Detalles críticos del andamiaje (léelos antes de tocar config):**
 - NestJS 12 publica **solo ESM** (`"type": "module"` en sus paquetes) y usa `import.meta.url`.
-  Por eso Jest está configurado en **modo ESM** (`extensionsToTreatAsEsm` + `useESM: true` en
-  `jest.config.ts` y `test/jest-e2e.json`). **No lo pases a CommonJS**: los tests dejan de pasar
-  (Nest 12 rompe con `import.meta` compilado a CJS) y no funciona en Node < 24.9.
+  Jest está configurado en **modo CommonJS (CJS)** (`jest.config.ts` y `test/jest-e2e.json`
+  **sin** `extensionsToTreatAsEsm`/`useESM`, con `moduleNameMapper` `'^(\\.{1,2}/.*)\\.js$': '$1'`
+  para el cliente Prisma generado).
+  **Motivo:** el grafo mixto `@nestjs/common@12` (ESM-only) + `@nestjs/throttler@6.7.1` (CJS)
+  provoca `ERR_REQUIRE_CYCLE_MODULE` en modo ESM. En CJS, `require()` de un ESM aislado
+  funciona en Node ≥ 24.9 (requisito declarado en `engines.node`). Ver comentario documentado
+  dentro de `jest.config.ts` (líneas 14–33).
 - Los tests se ejecutan con `--experimental-vm-modules`; usa siempre `pnpm test` / `pnpm test:e2e`.
-- El código compilado (`pnpm build`) sale en CommonJS y arranca bien en Node 22
+- El código compilado (`pnpm build`) sale en CommonJS y arranca bien en Node ≥ 24.9
   (`require(esm)` nativo). No "arregles" eso agregando `"type": "module"` a `package.json`
   sin avisar: rompería las rutas relativas sin extensión (`moduleResolution: nodenext`).
 - `tsconfig.json` de la raíz **excluye `frontend/`** y `jest.config.ts` ignora
@@ -110,20 +114,32 @@ Estructura **actual** (real, verificada):
 ├── package.json                     # backend NestJS (scripts + dependencias)
 ├── pnpm-lock.yaml                   # lockfile del backend (pnpm) — NO usar npm
 ├── pnpm-workspace.yaml              # allowBuilds (sin esto `pnpm install` falla)
-├── jest.config.ts                   # Jest unitario (modo ESM)
+├── jest.config.ts                   # Jest unitario (modo CommonJS/CJS)
 ├── nest-cli.json / tsconfig*.json   # config de Nest y TypeScript
 ├── .oxlintrc.json / .prettierrc     # lint y formato
 ├── .env.example                     # variables del backend (copiar a .env)
 ├── educoins_platform.html           # demo principal (prototipo UI autocontenido)
 ├── src/                             # backend NestJS
 │   ├── main.ts                      # bootstrap (PORT ?? 3000)
-│   ├── app.module.ts                # módulo raíz
+│   ├── app.module.ts                # módulo raíz (ConfigModule global + PrismaModule + AuthModule + ClassesModule)
 │   ├── app.controller.ts            # GET /
 │   ├── app.service.ts
-│   └── app.controller.spec.ts       # test unitario
+│   ├── app.controller.spec.ts       # test unitario
+│   ├── app.setup.ts                 # configuración transversal (prefijo /api/v1, pipes, helmet, CORS, filtro Prisma)
+│   ├── common/                      # decorators (UsuarioActual, Publico), filters (PrismaExceptionFilter), guards (JwtAuthGuard, RolesGuard, AuthThrottlerGuard), interfaces
+│   ├── config/
+│   │   └── env.validation.ts        # validación .env con zod al arrancar
+│   ├── generated/prisma/            # cliente Prisma generado (postinstall)
+│   ├── modules/
+│   │   ├── auth/                    # H2.1 COMPLETO: login, refresh, logout, perfil; rate limit 5/min/IP
+│   │   ├── autorizacion/            # roles, pertenencia a organización
+│   │   └── classes/                 # PARCIAL: crear/editar/archivar clases
+│   └── prisma/
+│       ├── prisma.module.ts
+│       └── prisma.service.ts
 ├── test/
 │   ├── app.e2e-spec.ts              # test e2e
-│   └── jest-e2e.json                # config Jest e2e (modo ESM)
+│   └── jest-e2e.json                # config Jest e2e (modo CommonJS/CJS)
 ├── frontend/                        # app Next.js (independiente)
 │   ├── package.json                 # scripts: dev (--port 3001) / build / lint
 │   ├── pnpm-lock.yaml               # lockfile propio del frontend
@@ -140,8 +156,9 @@ Estructura **actual** (real, verificada):
 │       ├── features/{auth,admin,teacher,student}/   # lógica y pantallas por rol
 │       ├── components/{ui,features}/ # genéricos y de dominio (minijuegos, etc.)
 │       ├── hooks/                    # hooks reutilizables
-│       ├── lib/api-client.ts         # ÚNICO punto de HTTP (AGENTS §8); sin
-│       │                             #   endpoints inventados aún
+│       ├── lib/api-client.ts         # ÚNICO punto de HTTP; refresh-on-401, cola de concurrencia, normaliza respuestas auth/*
+│       ├── lib/auth.ts               # Sesion (espejo UsuarioRespuestaDto), cookie legible educoins_sesion
+│       ├── middleware.ts             # guard por rol + bloqueo debeCambiarContrasena
 │       └── types/                    # tipos compartidos
 ├── db/
 │   ├── 001_schema.sql               # esquema completo (MVP) + docstring
@@ -149,7 +166,10 @@ Estructura **actual** (real, verificada):
 ├── docs/
 │   ├── plataforma_educativa_bd.md   # especificación de la BD (§7 = verificación 12/12)
 │   ├── post_mvp.md                  # backlog de funcionalidades pendientes
-│   └── contexto_mvp.md             # contexto: reglas, stack, hecho y pendiente
+│   └── contexto_mvp.md             # contexto general: reglas, stack, estado actual (hecho/pendiente)
+├── prisma/
+│   ├── schema.prisma                # modelos PascalCase español → @@map inglés; JSONB, BigInt, CITEXT, enums
+│   └── migrations/                  # migraciones SQL manuales (baselining + triggers/vistas/índices parciales)
 └── .opencode/
     └── agents/
         └── AGENTS.md                # este archivo (guardrails del proyecto)
@@ -157,7 +177,7 @@ Estructura **actual** (real, verificada):
 
 - **No crees carpetas ni archivos raíz nuevos sin aprobación** (excepto los que el plan de la tarea incluya).
 - **No modifiques `jest.config.ts`, `test/jest-e2e.json`, `tsconfig.json` ni los scripts de
-  `package.json` sin aprobación** (ver §2: el modo ESM de Jest es frágil y necesario).
+  `package.json` sin aprobación** (ver §2: el modo CommonJS de Jest es necesario por el grafo mixto ESM/CJS de Nest 12 + throttler).
 - El backend y el frontend son **dos apps con su propio `package.json` y lockfile**.
   `pnpm add X` en la raíz instala en el backend; usa `pnpm --dir frontend add X` para el frontend.
 - `frontend/AGENTS.md` (y `CLAUDE.md`) los genera y regenera `next dev` con las reglas de
@@ -255,7 +275,9 @@ Crea un `ExceptionFilter` en `common/filters` que traduzca:
 
 ## 7. Convenciones de Prisma (puntos donde los modelos suelen equivocarse)
 
-> **Nota:** Prisma aún no existe en el repo. Esta sección aplica cuando el equipo confirme el stack (§2).
+> **Nota:** `prisma/schema.prisma` y `prisma/migrations/` ya existen (cliente generado
+> en `src/generated/prisma` vía `postinstall`). Estas siguen siendo las convenciones a
+> mantener al tocar modelos.
 
 **Estrategia:** el SQL de `db/001_schema.sql` es la base. Lo que Prisma no puede expresar (triggers, funciones, vistas, índices funcionales/parciales, columnas generadas) se mantiene en **migraciones SQL manuales** dentro de `prisma/migrations/` (usar `--create-only` y editar). Para partir de una BD ya creada, sigue la guía oficial de *baselining* de Prisma. No uses `db push` como flujo normal.
 
@@ -319,7 +341,10 @@ Crea un `ExceptionFilter` en `common/filters` que traduzca:
 - Minijuegos: **aún no existen en la BD** (ver `docs/post_mvp.md`); cuando se implementen, un componente por tipo en `components/features/minijuegos/` con interfaz común, y el frontend **nunca** conoce la solución.
 
 ### Git
-- Ramas del repo hoy: `main` y `Alejandro` (andamiaje NestJS). Convención prevista:
+- Ramas del repo hoy: `main`, `Alejandro` (backend de H2.1 + clases parciales) y ramas de
+  trabajo de features (p. ej. `s2_h5_4_login`, con H5.4 + integración del backend real).
+  `main` está actualizado localmente con el merge de `Alejandro` (**sin push** a origin).
+  Convención prevista:
   `main` (solo Tech Lead) → `develop` → `feature/devX-nombre-tarea`.
 - **Prohibido commit directo a `main` o `develop`.** Trabaja en la rama indicada por el usuario.
 - Commits en formato *Conventional Commits*: `feat(submissions): guardar respuestas JSONB`, `fix(redemptions): …`, `docs: …`.
@@ -431,8 +456,9 @@ UPLOAD_MAX_BYTES=
 NEXT_PUBLIC_API_URL=
 ```
 
-> `@nestjs/config` **ya está instalado pero aún no se usa**: `src/main.ts` solo lee
-> `process.env.PORT ?? 3000`. Cablear `ConfigModule` (con `isGlobal`) es parte del trabajo pendiente.
+> `@nestjs/config` **ya está cableado** (`ConfigModule.forRoot({ isGlobal: true, validate: validarEnv })`
+> en `app.module.ts`): la `.env` se valida con `zod` al arrancar (`src/config/env.validation.ts`
+> exige `DATABASE_URL`, `JWT_ACCESS_SECRET` y `JWT_REFRESH_SECRET`; el resto tiene defaults).
 
 **Frontend:** existe `frontend/.env.example` → cópialo a `frontend/.env.local`
 (gitignorado) con `NEXT_PUBLIC_API_URL=http://localhost:3000/api/v1`

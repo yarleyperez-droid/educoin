@@ -19,7 +19,7 @@
 | [`docs/contexto_mvp.md`](docs/contexto_mvp.md) | **Contexto del MVP**: reglas de negocio, stack y decisiones, qué está hecho y qué falta. |
 | [`.opencode/agents/AGENTS.md`](.opencode/agents/AGENTS.md) | Guardrails del proyecto para agentes de IA. |
 | [`package.json`](package.json) | **Backend NestJS** (API REST): scripts, dependencias y `engines`. |
-| [`src/`](src) | Código del backend (NestJS). Hoy solo el andamiaje inicial (`AppModule`, `GET /`). |
+| [`src/`](src) | Código del backend (NestJS). Módulos reales: `auth` (H2.1 completo), `autorizacion`, `classes` (parcial), `common/` (guards, decorators, filters), `config/` (validación .env), `prisma/`, `generated/prisma/`. |
 | [`test/`](test) | Pruebas e2e (Jest + Supertest). |
 | [`frontend/`](frontend) | **Frontend Next.js 16** (App Router + Tailwind 4 + KaTeX). App aparte con su propio lockfile; estructura de capas por rol en `frontend/src/` (`app/(auth|admin|teacher|student)/`, `features/`, `components/`, `lib/api-client.ts`). |
 | [`.env.example`](.env.example) | Variables del backend. Cópialo a `.env` (nunca se commitea). |
@@ -27,28 +27,30 @@
 
 ## Requisitos
 
-- **Node.js ≥ 22** (probado en 22.23.3).
+- **Node.js ≥ 24.9** (`engines.node` en `package.json`; probado en 24.21.0).
 - **pnpm ≥ 11** (`corepack enable pnpm` o `npm i -g pnpm`). **No se usa npm ni yarn**:
   hay dos lockfiles, `pnpm-lock.yaml` (raíz) y `frontend/pnpm-lock.yaml`.
 - **PostgreSQL 14+** (probado en 16) con extensiones `citext` y `pg_trgm`
-  (incluidas en el script).
+  (incluidas en el script / Docker).
 - Opcional: `python3` + `build-essential` por si alguna dependencia nativa
   (`argon2`) tenga que compilarse en tu plataforma.
 
 ## Instalar y arrancar todo
 
 ```bash
-# 1. Dependencias de backend + frontend (una sola vez)
+# 1. Dependencias de backend + frontend (una sola vez; postinstall genera el cliente Prisma)
 pnpm install:all
 
 # 2. Variables de entorno
-cp .env.example .env                    # backend (rellenar)
+cp .env.example .env                    # backend (rellenar; ver "Base de datos")
 cp frontend/.env.example frontend/.env.local   # frontend
 
-# 3. Terminal 1 -> API NestJS en http://localhost:3000
+# 3. Base de datos (ver sección siguiente): docker start educoin-db + esquema/seed
+
+# 4. Terminal 1 -> API NestJS en http://localhost:3000 (prefijo /api/v1)
 pnpm start:dev
 
-# 4. Terminal 2 -> Frontend Next en http://localhost:3001
+# 5. Terminal 2 -> Frontend Next en http://localhost:3001
 pnpm dev:web
 ```
 
@@ -57,30 +59,75 @@ pnpm dev:web
 | Comando | Qué hace |
 |---|---|
 | `pnpm install:all` | Instala backend (raíz) **y** frontend |
-| `pnpm start:dev` | API Nest en watch → `:3000` |
+| `pnpm start:dev` | API Nest en watch → `:3000` (`/api/v1`) |
 | `pnpm dev:web` | Next en watch → `:3001` |
 | `pnpm build` / `pnpm build:web` | Compilar backend (`dist/`) / frontend (`.next/`) |
-| `pnpm typecheck` | `tsc --noEmit` del backend |
+| `pnpm typecheck` | `tsc --noEmit` del backend. Frontend: `pnpm --dir frontend typecheck` |
 | `pnpm lint` | oxlint (backend). Frontend: `pnpm --dir frontend lint` |
 | `pnpm format` / `pnpm format:check` | Prettier |
-| `pnpm test` | Pruebas unitarias (Jest, modo ESM) |
-| `pnpm test:e2e` | Pruebas e2e |
+| `pnpm test` | Pruebas unitarias backend (Jest, modo CommonJS) |
+| `pnpm test:e2e` | Pruebas e2e backend (Jest + Supertest; requiere BD) |
+| `pnpm --dir frontend test` | Pruebas unitarias frontend (Vitest) |
+| `pnpm --dir frontend test:e2e` | E2E frontend (Playwright; levanta backend + Next vía `webServer`) |
 
-## Crear la base de datos
+## Base de datos (Docker)
+
+El proyecto usa un contenedor PostgreSQL 16 gestionado con Docker:
 
 ```bash
-# 1. Crear la BD (UTF8)
-createdb -U <usuario> plataforma_educativa
+# Contenedor: educoin-db (imagen postgres:16)
+# Puerto host: 5434 → 5432 (interno)
+# Usuario: educoins
+# Contraseña: educoins_dev
+# Base de datos: educoins
 
-# 2. Esquema (enum, tablas, índices, triggers, vistas)
-psql -U <usuario> -d plataforma_educativa -v ON_ERROR_STOP=1 -f db/001_schema.sql
+# Arrancar (si ya existe el contenedor):
+docker start educoin-db
 
-# 3. Datos de prueba
-psql -U <usuario> -d plataforma_educativa -v ON_ERROR_STOP=1 -f db/002_seed.sql
-
-# 4. Verificación (§7 de la especificación): ranking, monedas, canjes
-psql -U <usuario> -d plataforma_educativa
+# O crear por primera vez:
+docker run -d \
+  --name educoin-db \
+  -e POSTGRES_USER=educoins \
+  -e POSTGRES_PASSWORD=educoins_dev \
+  -e POSTGRES_DB=educoins \
+  -p 5434:5432 \
+  postgres:16
 ```
+
+### Variables de entorno (backend `.env`)
+
+```bash
+DATABASE_URL=postgresql://educoins:educoins_dev@localhost:5434/educoins
+JWT_ACCESS_SECRET=...mínimo 16 chars...
+JWT_REFRESH_SECRET=...mínimo 16 chars...
+# Opcionales (tienen defaults):
+# JWT_ACCESS_EXPIRES_IN=15m
+# JWT_REFRESH_EXPIRES_IN=7d
+# FRONTEND_URL=http://localhost:3001
+# PORT=3000
+# UPLOAD_MAX_BYTES=10485760
+```
+
+### Esquema y seed (aplicados al contenedor)
+
+```bash
+# 1. Esquema (enum, tablas, índices, triggers, vistas)
+psql -U educoins -h localhost -p 5434 -d educoins -v ON_ERROR_STOP=1 -f db/001_schema.sql
+
+# 2. Datos de prueba (usuarios con hashes argon2 reales)
+psql -U educoins -h localhost -p 5434 -d educoins -v ON_ERROR_STOP=1 -f db/002_seed.sql
+```
+
+### Usuarios de prueba (seed real)
+
+| Usuario | Contraseña | Rol | `must_change_password` |
+|---|---|---|---|
+| `admin` | `Admin123!` | `admin` (global) | `true` |
+| `prof.lopez` | `Prof123!` | `teacher` | `false` |
+| `est.perez` | `Estudiante123!` | `student` | `true` |
+| `est.gomez` | `Estudiante123!` | `student` | `true` |
+
+> Clase de prueba: `Mathematics 10A` (código generado por BD), actividad de 120 monedas, 2 ítems canjeables.
 
 ## Ciclo principal del MVP
 
@@ -95,38 +142,42 @@ ranking global           → ordena por monedas GANADAS (vista)
 
 ## Verificación
 
-El esquema fue verificado en PostgreSQL 16 con **12/12 pruebas** (pruebas
-positivas y negativas) — detalle en
-[`docs/plataforma_educativa_bd.md` §7](docs/plataforma_educativa_bd.md).
+- **Esquema BD**: verificado en PostgreSQL 16 con **12/12 pruebas** — detalle en
+  [`docs/plataforma_educativa_bd.md` §7](docs/plataforma_educativa_bd.md).
+- **Backend**: `pnpm test` (11 suites / 85 tests) y `pnpm test:e2e` (5 suites /
+  36 tests, requieren la BD Docker corriendo).
+- **Frontend**: `pnpm --dir frontend test` (Vitest), `pnpm --dir frontend test:e2e`
+  (Playwright contra backend real + Next; requiere BD Docker), más
+  `typecheck`/`lint`/`build`.
 
 ## Stack
 
 | Capa | Tecnología | Estado |
 |---|---|---|
-| Base de datos | PostgreSQL 14+ (multi-tenant: `organizations`) | ✅ esquema y seeds en `db/` |
-| Backend | **NestJS 12 + TypeScript 6** (API REST) | 🟡 andamiaje inicial: solo `GET /`. Sin módulos de dominio |
-| ORM | **Prisma 7.10** + `@prisma/adapter-pg` + `pg` | 🟡 paquetes instalados. Falta `prisma/schema.prisma` y el baselining |
-| Auth / seguridad | `@nestjs/jwt`, `@nestjs/passport`, `helmet`, `argon2`, `class-validator` | 🟡 instalados, sin cablear |
+| Base de datos | PostgreSQL 14+ (multi-tenant: `organizations`), **Docker `educoin-db` :5434** | ✅ esquema y seed en `db/`, poblados |
+| Backend | **NestJS 12 + TypeScript 6** (API REST, prefijo `/api/v1`) | ✅ módulos `auth` (H2.1), `autorizacion`, `classes` (parcial) |
+| ORM | **Prisma 7.10** + `@prisma/adapter-pg` + `pg` | ✅ `prisma/schema.prisma` + migraciones + cliente generado |
+| Auth / seguridad | `@nestjs/jwt`, passport, helmet, argon2, throttler | ✅ H2.1 cableado: login/refresh/logout/perfil, rate limit 5/min, argon2 |
+| Env | `@nestjs/config` + `zod` (`validarEnv`) | ✅ cableado; `.env` validada al arrancar |
 | API docs | `@nestjs/swagger` | 🟡 instalado, sin configurar |
 | Frontend demo | HTML/CSS plano (`educoins_platform.html`) | ✅ prototipo autocontenido |
-| Frontend final | **Next.js 16 + React 19 + Tailwind 4** (`frontend/`) | 🟡 landing propia + esqueleto de capas por rol (`app/`, `features/`, `components/`, `lib/api-client.ts`). Sin vistas por rol |
+| Frontend final | **Next.js 16 + React 19 + Tailwind 4** (`frontend/`) | 🟡 H5.1–H5.4 completas (api-client con refresh, middleware por rol, login real); faltan paneles por rol |
 | Editor de ecuaciones | **KaTeX 0.19** | 🟡 instalado en `frontend/`, sin integrar |
 | Lint / formato | oxlint + Prettier (backend), ESLint (frontend) | ✅ configurado |
-| Tests | Jest 30 (unit + e2e con Supertest) | ✅ 2 pruebas en verde |
+| Tests | Jest 30 backend (**modo CommonJS**), Vitest + Playwright frontend | ✅ verdes (ver §Verificación) |
 
 ### Pendiente para el equipo
 
-- **Prisma**: crear `prisma/schema.prisma` a partir de `db/001_schema.sql` y hacer
-  el *baselining* (`.opencode/agents/AGENTS.md` §7). **Requiere aprobación**: toca la
-  zona de mayor riesgo.
-- **Cablear lo instalado**: `@nestjs/config` + `helmet` + `ValidationPipe` global +
-  Swagger en `main.ts`; `PrismaService` único inyectable.
-- **Cablear auth**: `JwtAuthGuard` + `RolesGuard` + hash `argon2`.
-- **Frontend**: crear las vistas por rol (el esqueleto de carpetas y
-  `lib/api-client.ts` ya existen en `frontend/src/`).
-- **Puertos acordados**: API `:3000`, frontend `:3001`.
-- Confirmar estrategia de despliegue (el script `pnpm deploy` de `@nestjs/mau`
-  aún no está configurado).
+- **H2.2**: endpoint de cambio de contraseña en el backend (único pendiente
+  de auth; desbloquea reemplazar el mock de `cambiarContrasena` del frontend).
+- **Backend de dominio**: clases completas, actividades, entregas,
+  inscripciones, canjes y ranking (ver `docs/contexto_mvp.md` §5).
+- **Autorización por recurso**: verificar propiedad/organización en cada
+  service de los módulos nuevos (los guards globales ya existen).
+- **Frontend**: paneles por rol (H5.6+).
+- **Swagger** para publicar el contrato de la API.
+- **CI y despliegue**: no hay pipeline; el script `pnpm deploy` de
+  `@nestjs/mau` aún no está configurado. Estrategia pendiente de confirmar.
 
 ## Convenciones rápidas
 
