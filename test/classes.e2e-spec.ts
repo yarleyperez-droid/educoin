@@ -18,7 +18,10 @@ import { PrismaService } from '../src/prisma/prisma.service';
  *
  * La búsqueda necesita una clase de OTRA organización para probar el
  * alcance negativamente: se crea una fixture (org + profesor + clase) en
- * beforeAll y se limpia físicamente en afterAll.
+ * beforeAll y se limpia físicamente en afterAll. Del mismo modo se crea
+ * una clase ARCHIVADA propia de prof.lopez, porque el seed solo genera
+ * 'Mathematics 10A' (active) y el caso "el profesor ve sus archivadas"
+ * necesita un registro archivado real.
  */
 const LOGIN_PROFESOR = { usuarioOEmail: 'prof.lopez', contrasena: 'Prof123!' };
 const LOGIN_ESTUDIANTE = {
@@ -38,6 +41,7 @@ describe('Clases (e2e, datos del seed)', () => {
     orgId?: bigint;
     profesorId?: bigint;
     claseId?: bigint;
+    claseArchivadaId?: bigint;
   } = {};
 
   beforeAll(async () => {
@@ -94,9 +98,32 @@ describe('Clases (e2e, datos del seed)', () => {
     fixture.orgId = org.id;
     fixture.profesorId = profesorFixture.id;
     fixture.claseId = claseFixture.id;
+
+    // Fixture: clase ARCHIVADA del profesor del seed. El seed solo crea
+    // 'Mathematics 10A' (active), así que sin este registro el caso
+    // "el profesor sí encuentra sus clases archivadas" no puede pasar.
+    const profesorSeed = await prisma.users.findFirst({
+      where: { username: 'prof.lopez' },
+    });
+    if (!profesorSeed) {
+      throw new Error('Falta el usuario prof.lopez en el seed (002_seed.sql)');
+    }
+    const claseArchivada = await prisma.classes.create({
+      data: {
+        teacher_id: profesorSeed.id,
+        name: 'Proyecto integrador Renombrado',
+        status: 'archived',
+      },
+    });
+    fixture.claseArchivadaId = claseArchivada.id;
   });
 
   afterAll(async () => {
+    if (fixture.claseArchivadaId !== undefined) {
+      await prisma.classes.delete({
+        where: { id: fixture.claseArchivadaId },
+      });
+    }
     if (fixture.claseId !== undefined) {
       await prisma.classes.delete({ where: { id: fixture.claseId } });
     }
@@ -372,7 +399,8 @@ describe('Clases (e2e, datos del seed)', () => {
     });
 
     it('el estudiante NO ve clases archivadas de su organización', async () => {
-      // 'Proyecto integrador Renombrado' (id 6) está archived en la BD.
+      // 'Proyecto integrador Renombrado' está archived en la BD (fixture
+      // creada en el beforeAll del suite).
       const respuesta = await httpServer
         .get('/api/v1/classes')
         .query({ q: 'Proyecto integrador' })
