@@ -1,17 +1,19 @@
 /**
  * Cliente HTTP único del frontend EduCoins.
  *
- * Responsabilidades de esta versión (T5.1.1 + T5.1.2 + T5.1.3):
+ * Responsabilidades de esta versión (T5.1.1 + T5.1.2 + T5.1.3 + T5.4.3):
  * - Centralizar la base URL en `process.env.NEXT_PUBLIC_API_URL`.
- * - Tipar las respuestas con el contrato `{ data, meta }`.
+ * - Tipar las respuestas con el contrato `{ data, meta }` (con la excepción
+ *   documentada de `auth/*`, que H2.1 devuelve en plano, y del `204` sin
+ *   cuerpo).
  * - Evitar que vistas usen `fetch` con URLs escritas a mano.
  * - Guardar el access token en memoria y adjuntarlo como `Authorization: Bearer`.
- * - Refrescar el token en `401` con cola de peticiones concurrentes, sin bucle infinito.
+ * - Refrescar el token en `401` con cola de peticiones concurrentes, sin
+ *   bucle infinito (sin intentarlo en `auth/login` ni en `auth/refresh`).
  * - Traducir errores HTTP a mensajes de UI en español (409/422 y el resto).
  *
  * Responsabilidades que NO incluye (otras tareas):
  * - Pruebas con mocks (T5.1.4).
- * - Implementar el endpoint `POST auth/refresh` en el backend (H2.1).
  * - Componente de toast / estados de UI (H5.2).
  */
 
@@ -223,6 +225,10 @@ function construirUrl(ruta: string): URL {
  * cookie `httpOnly` del refresh token se envía automáticamente por
  * `credentials: "include"`.
  *
+ * Contrato real de H2.1: la respuesta es **plana** (sin envoltura
+ * `{ data, meta }`): `{ accessToken, tipoToken, expiraEn, usuario }`, el
+ * mismo shape que el login.
+ *
  * Si ya hay un refresh en curso, reutiliza la promesa existente: todas las
  * peticiones concurrentes esperan el mismo resultado y luego reintantan con
  * el token nuevo.
@@ -257,24 +263,17 @@ async function refrescarToken(): Promise<boolean> {
         cuerpo = null;
       }
 
-      if (!esEnvelopeValido(cuerpo)) {
-        setAccessToken(null);
-        return false;
-      }
-
-      const datos = cuerpo.data as unknown;
-
       if (
-        typeof datos !== "object" ||
-        datos === null ||
-        !("accessToken" in datos) ||
-        typeof (datos as { accessToken: unknown }).accessToken !== "string"
+        typeof cuerpo !== "object" ||
+        cuerpo === null ||
+        !("accessToken" in cuerpo) ||
+        typeof (cuerpo as { accessToken: unknown }).accessToken !== "string"
       ) {
         setAccessToken(null);
         return false;
       }
 
-      setAccessToken((datos as { accessToken: string }).accessToken);
+      setAccessToken((cuerpo as { accessToken: string }).accessToken);
       return true;
     } catch {
       setAccessToken(null);
@@ -354,8 +353,21 @@ export async function apiRequest<T>(
     cuerpo = null;
   }
 
+  // 204 No Content (p. ej. `POST auth/logout`): no hay envoltura que validar.
+  if (respuesta.status === 204) {
+    return { data: null as T };
+  }
+
   // 401 con sesión activa y sin refresh previo → refrescar y reintentar una vez.
-  if (respuesta.status === 401 && !reintentado && ruta !== "auth/refresh") {
+  // Excepciones: `auth/refresh` (evita recursión) y `auth/login` (un 401 ahí
+  // son credenciales erróneas, no una sesión vencida: no hay nada que
+  // refrescar y el mensaje del backend debe llegar tal cual).
+  if (
+    respuesta.status === 401 &&
+    !reintentado &&
+    ruta !== "auth/refresh" &&
+    ruta !== "auth/login"
+  ) {
     const refrescado = await refrescarToken();
 
     if (refrescado) {
@@ -377,7 +389,19 @@ export async function apiRequest<T>(
     );
   }
 
+  // Excepción de contrato (H2.1): los endpoints de `auth/*` devuelven el
+  // cuerpo **en plano** (p. ej. `{ accessToken, usuario, … }`), sin la
+  // envoltura `{ data, meta }` de los recursos. Se normaliza aquí para que
+  // las vistas y la capa de auth consuman siempre `respuesta.data`.
   if (!esEnvelopeValido(cuerpo)) {
+    if (
+      ruta.startsWith("auth/") &&
+      typeof cuerpo === "object" &&
+      cuerpo !== null
+    ) {
+      return { data: cuerpo as T };
+    }
+
     throw new ApiError(
       "La respuesta de la API no tiene el formato { data, meta } esperado",
       respuesta.status,

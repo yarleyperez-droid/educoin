@@ -135,7 +135,8 @@ describe("refresco de token en 401 (CA 2)", () => {
     setAccessToken("token-antiguo");
 
     const fetchMock = mockFetch({
-      refresh: { status: 200, body: { data: { accessToken: "token-nuevo" } } },
+      // H2.1: auth/refresh responde en plano (sin envoltura { data, meta }).
+      refresh: { status: 200, body: { accessToken: "token-nuevo" } },
       ruta: [
         { status: 401, body: { message: "Token expirado" } },
         { status: 200, body: { data: { id: 7, nombre: "Aula 7" } } },
@@ -178,7 +179,8 @@ describe("refresco de token en 401 (CA 2)", () => {
     setAccessToken("token-antiguo");
 
     const fetchMock = mockFetch({
-      refresh: { status: 200, body: { data: { accessToken: "token-nuevo" } } },
+      // H2.1: auth/refresh responde en plano (sin envoltura { data, meta }).
+      refresh: { status: 200, body: { accessToken: "token-nuevo" } },
       ruta: [
         { status: 401, body: { message: "Token expirado" } },
         { status: 401, body: { message: "Token expirado" } },
@@ -321,5 +323,37 @@ describe("ayudantes y cabeceras", () => {
     expect(new Headers(init.headers).get("Content-Type")).toBe(
       "application/json",
     );
+  });
+});
+
+describe("casos especiales de auth (T5.4.3)", () => {
+  it("un 401 en auth/login NO dispara refresh: el mensaje del backend llega tal cual", async () => {
+    setAccessToken("token-antiguo");
+
+    const fetchMock = mockFetch({
+      ruta: [
+        {
+          status: 401,
+          body: { message: "El usuario o la contraseña son erróneos." },
+        },
+      ],
+    });
+
+    const error = await capturarError(api.post("auth/login", {}));
+
+    expect(error).toBeInstanceOf(ApiError);
+    expect((error as ApiError).status).toBe(401);
+    expect((error as ApiError).message).toBe(
+      "El usuario o la contraseña son erróneos.",
+    );
+    expect(contarLlamadas(fetchMock, "auth/refresh")).toBe(0);
+  });
+
+  it("un 204 (p. ej. auth/logout) resuelve con data null sin exigir envoltura", async () => {
+    mockFetch({ ruta: [{ status: 204 }] });
+
+    const respuesta = await api.post<null>("auth/logout", undefined);
+
+    expect(respuesta).toEqual({ data: null });
   });
 });
