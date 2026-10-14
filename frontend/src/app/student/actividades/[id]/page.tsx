@@ -1,52 +1,91 @@
 /**
  * Cuestionario del estudiante (`/student/actividades/[id]`)
- * — T5.8.1 (PRO-394).
+ * — T5.8.1 (PRO-394) + T5.8.2 (PRO-395).
  *
- * Abre una actividad **publicada** y renderiza sus preguntas con KaTeX
- * saneado (CA 1 de H5.8). Esta tarea **no envía respuestas**: el formulario
- * operativo y el bloqueo de doble envío llegan con T5.8.2 (PRO-395).
+ * Abre una actividad **publicada**, renderiza sus preguntas con KaTeX
+ * saneado y permite **enviar las respuestas una sola vez** (CA 1–3 de
+ * H5.8):
  *
- * Contrato con el backend:
- * - Los datos llegan por `features/estudiante/api/actividades-estudiante.ts`
- *   (proyección **sin** `is_correct`/`expected_answer`; mock hoy, H3.3
- *   después).
- * - Si la actividad no existe o no está publicada → aviso + enlace al
- *   listado (nada de estados intermedios).
+ * - El formulario es **controlado** por esta página (fuente única de las
+ *   respuestas); sin enviar, nada pierde lo escrito.
+ * - **Protección de doble envío en dos capas:** el botón desaparece al
+ *   tener entrega (y la vista la re-lee al montar para el caso "recarga"),
+ *   y si el servidor aún así devuelve `409`, el mensaje se muestra en un
+ *   `role="alert"` sin romper la vista.
+ * - Los estados de la entrega (`graded`, feedback…) llegan con T5.8.3.
  *
- * Importa el CSS de KaTeX aquí porque es donde se usan las fórmulas
- * (App Router permite CSS global en cualquier componente).
+ * Contrato con el backend: datos por `features/estudiante/api/*` (mock de
+ * H3.3/H3.4 hoy; T5.8.4 reemplaza los interiores). La vista solo lee
+ * `error.message` de `ApiError`.
  */
 
 "use client";
 
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 
 import "katex/dist/katex.min.css";
 
 import { obtenerParaEstudiante } from "@/features/estudiante/api/actividades-estudiante";
+import {
+  enviarRespuestas,
+  obtenerEntrega,
+  type Entrega,
+} from "@/features/estudiante/api/entregas";
 import { PreguntaCuestionario } from "@/features/estudiante/componentes/pregunta-cuestionario";
-import type { ActividadEstudiante } from "@/features/estudiante/contrato/cuestionario";
+import type {
+  ActividadEstudiante,
+  PreguntaEstudiante,
+} from "@/features/estudiante/contrato/cuestionario";
+import type { Respuesta } from "@/features/estudiante/contrato/entregas";
 import { ApiError } from "@/lib/api-client";
 
 /** Mensaje cuando la actividad no existe o no está publicada. */
 const MENSAJE_NO_ENCONTRADA =
   "No encontramos esta actividad o todavía no está publicada.";
 
+/** Mensaje cuando el estudiante intenta enviar incompleto. */
+const MENSAJE_INCOMPLETO =
+  "Responde todas las preguntas antes de enviar.";
+
+/** Mensaje del bloqueo tras el envío. */
+const MENSAJE_ENVIADO = "Respuestas enviadas";
+
+/** Texto del bloqueo: ya no hay reintento (UNIQUE de la BD). */
+const MENSAJE_SIN_REINTENTO =
+  "Tu entrega ya fue registrada. Solo se permite un intento por actividad.";
+
 /** Mensaje genérico para errores inesperados que no son `ApiError`. */
 const MENSAJE_ERROR_GENERICO = "Ocurrió un error inesperado. Intenta de nuevo.";
 
 /**
- * Vista del cuestionario de una actividad publicada.
+ * Convierte el estado del formulario en el JSONB `answers`.
  *
- * Componente cliente: carga la actividad por `id` de la ruta al montar
- * y pinta sus preguntas con {@link PreguntaCuestionario}.
+ * Solo incluye `question_position` + `option`/`text` — nunca secretos ni
+ * campos de calificación (spec §Contrato 2).
  *
- * Estados cubiertos (AGENTS.md §8): carga, error y el caso "no existe /
- * no publicada".
+ * @param actividad Actividad que se está respondiendo.
+ * @param respuestas Valor por posición (`position` → texto elegido).
+ * @returns `answers` listo para enviar.
+ */
+function construirAnswers(
+  actividad: ActividadEstudiante,
+  respuestas: Record<number, string>,
+): Respuesta[] {
+  return actividad.preguntas.map((pregunta: PreguntaEstudiante) => {
+    const valor = respuestas[pregunta.position] ?? "";
+
+    return pregunta.type === "test"
+      ? { question_position: pregunta.position, option: valor }
+      : { question_position: pregunta.position, text: valor };
+  });
+}
+
+/**
+ * Cuestionario con envío de respuestas (una sola vez).
  *
- * @returns Cabecera de la actividad y lista de preguntas.
+ * @returns Vista de la actividad con formulario o bloqueo de envío.
  */
 export default function CuestionarioPage() {
   const parametros = useParams<{ id: string }>();
@@ -56,21 +95,34 @@ export default function CuestionarioPage() {
   const [actividad, setActividad] = useState<ActividadEstudiante | null>(null);
   const [error, setError] = useState<string | null>(null);
 
+  const [respuestas, setRespuestas] = useState<Record<number, string>>({});
+  const [entrega, setEntrega] = useState<Entrega | null>(null);
+  const [enviando, setEnviando] = useState(false);
+  const [errorEnvio, setErrorEnvio] = useState<string | null>(null);
+
   useEffect(() => {
     let vigente = true;
 
     async function cargar(): Promise<void> {
       try {
-        const encontrada = await obtenerParaEstudiante(actividadId);
+        // Actividad y entrega en paralelo: si ya se envió, la vista debe
+        // arrancar bloqueada aunque la página se recargue.
+        const [actividadLeida, entregaLeida] = await Promise.all([
+          obtenerParaEstudiante(actividadId),
+          obtenerEntrega(actividadId),
+        ]);
 
-        if (vigente) {
-          if (encontrada) {
-            setActividad(encontrada);
-            setError(null);
-          } else {
-            setActividad(null);
-            setError(MENSAJE_NO_ENCONTRADA);
-          }
+        if (!vigente) {
+          return;
+        }
+
+        if (actividadLeida) {
+          setActividad(actividadLeida);
+          setEntrega(entregaLeida);
+          setError(null);
+        } else {
+          setActividad(null);
+          setError(MENSAJE_NO_ENCONTRADA);
         }
       } catch (e) {
         if (vigente) {
@@ -92,6 +144,62 @@ export default function CuestionarioPage() {
       vigente = false;
     };
   }, [actividadId]);
+
+  /**
+   * Registra la respuesta de una pregunta (estado controlado).
+   *
+   * @param position Posición de la pregunta.
+   * @param valor Texto de la opción o respuesta literal.
+   */
+  function responder(position: number, valor: string): void {
+    setRespuestas((previas) => ({ ...previas, [position]: valor }));
+    setErrorEnvio(null);
+  }
+
+  /**
+   * Envía el formulario de respuestas.
+   *
+   * Validación en cliente (todas respondidas) → `enviarRespuestas` →
+   * bloqueo con la entrega. Ante un error **no se limpia** nada.
+   *
+   * @param evento Evento de envío del formulario.
+   */
+  async function manejarEnvio(evento: FormEvent<HTMLFormElement>): Promise<void> {
+    evento.preventDefault();
+
+    if (!actividad) {
+      return;
+    }
+
+    const sinResponder = actividad.preguntas.some(
+      (pregunta) => (respuestas[pregunta.position] ?? "").trim() === "",
+    );
+
+    if (sinResponder) {
+      setErrorEnvio(MENSAJE_INCOMPLETO);
+      return;
+    }
+
+    setErrorEnvio(null);
+    setEnviando(true);
+
+    try {
+      const creada = await enviarRespuestas(
+        actividadId,
+        construirAnswers(actividad, respuestas),
+      );
+
+      setEntrega(creada);
+    } catch (e) {
+      // El 409 (doble envío) y el 422 llegan con su mensaje en español;
+      // las respuestas escritas se conservan siempre.
+      setErrorEnvio(
+        e instanceof ApiError ? e.message : MENSAJE_ERROR_GENERICO,
+      );
+    } finally {
+      setEnviando(false);
+    }
+  }
 
   if (cargando) {
     return (
@@ -143,18 +251,70 @@ export default function CuestionarioPage() {
         </Link>
       </div>
 
-      <div className="mt-6 space-y-4">
-        {actividad.preguntas.map((pregunta) => (
-          <PreguntaCuestionario
-            key={pregunta.position}
-            pregunta={pregunta}
-          />
-        ))}
-      </div>
+      {entrega !== null ? (
+        <section aria-live="polite" className="mt-6">
+          <div className="rounded-md border border-green-200 bg-green-50 p-4">
+            <p className="text-sm font-medium text-green-800">
+              {MENSAJE_ENVIADO}
+            </p>
+            <p className="mt-1 text-xs text-green-700">{MENSAJE_SIN_REINTENTO}</p>
+          </div>
 
-      <p className="mt-6 rounded-md border border-dashed border-neutral-300 p-4 text-center text-xs text-neutral-500">
-        El envío de respuestas estará disponible próximamente (T5.8.2).
-      </p>
+          <p className="mt-4 text-xs text-neutral-500">
+            Enviado el{" "}
+            {entrega.enviadaEn !== null
+              ? new Date(entrega.enviadaEn).toLocaleString("es-CO")
+              : "—"}
+            . El resultado se mostrará cuando esté calificada.
+          </p>
+
+          <div className="mt-4">
+            <Link
+              href="/student/actividades"
+              className="rounded-md bg-neutral-900 px-4 py-2 text-sm font-medium text-white hover:bg-neutral-700 focus:outline-none focus:ring-2 focus:ring-neutral-500 focus:ring-offset-2"
+            >
+              Volver a mis actividades
+            </Link>
+          </div>
+        </section>
+      ) : (
+        <form onSubmit={manejarEnvio} noValidate className="mt-6 space-y-4">
+          <div className="space-y-4">
+            {actividad.preguntas.map((pregunta) => (
+              <PreguntaCuestionario
+                key={pregunta.position}
+                pregunta={pregunta}
+                valor={respuestas[pregunta.position]}
+                onChange={(valor) => responder(pregunta.position, valor)}
+                deshabilitado={enviando}
+              />
+            ))}
+          </div>
+
+          {errorEnvio !== null && (
+            <p
+              role="alert"
+              className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700"
+            >
+              {errorEnvio}
+            </p>
+          )}
+
+          <div className="flex items-center gap-3">
+            <button
+              type="submit"
+              disabled={enviando}
+              aria-busy={enviando}
+              className="rounded-md bg-neutral-900 px-4 py-2 text-sm font-medium text-white hover:bg-neutral-700 focus:outline-none focus:ring-2 focus:ring-neutral-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {enviando ? "Enviando…" : "Enviar respuestas"}
+            </button>
+            <span className="text-xs text-neutral-500">
+              Solo puedes enviar una vez.
+            </span>
+          </div>
+        </form>
+      )}
     </div>
   );
 }

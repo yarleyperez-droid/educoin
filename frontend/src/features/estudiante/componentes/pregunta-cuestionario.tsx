@@ -12,12 +12,15 @@
  *   `trust: false`); **solo** el HTML generado por KaTeX usa
  *   `dangerouslySetInnerHTML` (ver la política en `util/formulas.ts`).
  *
- * Controles por tipo (alcance de T5.8.1):
- * - `test` → grupo de radios **deshabilitados**: la vista aún no envía
- *   respuestas (el formulario operativo llega con T5.8.2 / PRO-395).
- * - `completion` → campo de texto deshabilitado.
+ * Controles por tipo (T5.8.2 / PRO-395 los hace operativos):
+ * - `test` → grupo de radios controlados (`valor` = texto de la opción
+ *   elegida).
+ * - `completion` → campo de texto controlado.
  * - `file` / `minigame` → aviso (tipos sin UI en el MVP,
  *   `docs/post_mvp.md`).
+ *
+ * El componente es **controlado por la vista** (una sola fuente de verdad
+ * de las respuestas): sin `onChange` queda en modo solo lectura.
  */
 
 import type { PreguntaEstudiante } from "../contrato/cuestionario";
@@ -57,15 +60,32 @@ function Enunciado({ texto }: { texto: string }) {
 interface PreguntaCuestionarioProps {
   /** Pregunta en su forma segura (sin secretos). */
   pregunta: PreguntaEstudiante;
+
+  /** Valor actual de la respuesta (texto de opción o respuesta literal). */
+  valor?: string;
+
+  /** Notifica el cambio de la respuesta (modo formulario de T5.8.2). */
+  onChange?: (valor: string) => void;
+
+  /** Bloquea la edición (p. ej. enviando o entrega ya enviada). */
+  deshabilitado?: boolean;
 }
 
 /**
  * Renderiza una pregunta completa del cuestionario.
  *
- * @param props Pregunta a mostrar.
+ * @param props Pregunta, valor controlado y manejadores.
  * @returns Tarjeta de la pregunta con su enunciado y controles.
  */
-export function PreguntaCuestionario({ pregunta }: PreguntaCuestionarioProps) {
+export function PreguntaCuestionario({
+  pregunta,
+  valor,
+  onChange,
+  deshabilitado = false,
+}: PreguntaCuestionarioProps) {
+  const operativo = onChange !== undefined;
+  const bloqueado = deshabilitado || !operativo;
+
   return (
     <article className="rounded-md border border-neutral-200 p-4">
       <div className="flex items-center justify-between gap-2">
@@ -82,7 +102,7 @@ export function PreguntaCuestionario({ pregunta }: PreguntaCuestionarioProps) {
       </p>
 
       {pregunta.type === "test" && (
-        <fieldset className="mt-3" disabled>
+        <fieldset className="mt-3" disabled={bloqueado}>
           <legend className="sr-only">Opciones de respuesta</legend>
           <ul className="space-y-2">
             {(pregunta.options ?? []).map((opcion, indice) => (
@@ -90,7 +110,9 @@ export function PreguntaCuestionario({ pregunta }: PreguntaCuestionarioProps) {
                 <input
                   type="radio"
                   name={`opcion-${pregunta.position}`}
-                  disabled
+                  checked={valor === opcion.text}
+                  disabled={bloqueado}
+                  onChange={() => onChange?.(opcion.text)}
                   aria-label={`Opción ${indice + 1}: ${opcion.text}`}
                   className="h-4 w-4 accent-neutral-900"
                 />
@@ -112,9 +134,11 @@ export function PreguntaCuestionario({ pregunta }: PreguntaCuestionarioProps) {
           <input
             id={`respuesta-${pregunta.position}`}
             type="text"
-            disabled
+            value={valor ?? ""}
+            disabled={bloqueado}
+            onChange={(e) => onChange?.(e.target.value)}
             placeholder="Tu respuesta"
-            className="mt-1 w-full rounded-md border border-neutral-300 bg-neutral-50 px-3 py-2 text-sm text-neutral-900 placeholder-neutral-400 disabled:cursor-not-allowed disabled:opacity-60"
+            className="mt-1 w-full rounded-md border border-neutral-300 bg-neutral-50 px-3 py-2 text-sm text-neutral-900 placeholder-neutral-400 focus:border-neutral-500 focus:bg-white focus:outline-none focus:ring-2 focus:ring-neutral-300 disabled:cursor-not-allowed disabled:opacity-60"
           />
         </div>
       )}
