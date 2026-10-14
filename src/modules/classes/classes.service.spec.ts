@@ -15,6 +15,7 @@ import {
   MENSAJE_ACTUALIZACION_VACIA,
   mensajeClaseCreada,
 } from './classes.service';
+import type { BuscarClasesQueryDto } from './dto/buscar-clases.dto';
 
 type ConsultaProfesor = { where: object; select: object };
 type ConsultaCreate = { data: object; select: object };
@@ -28,6 +29,11 @@ interface PrismaMock {
     create: jest.Mock<Promise<unknown>, [ConsultaCreate]>;
     update: jest.Mock<Promise<unknown>, [ConsultaUpdate]>;
   };
+  enrollments: {
+    findMany: jest.Mock<Promise<unknown[]>, [object]>;
+    count: jest.Mock<Promise<number>, [object]>;
+  };
+  $queryRaw: jest.Mock<Promise<unknown[]>, [Prisma.Sql]>;
 }
 
 interface AutorizacionMock {
@@ -43,6 +49,43 @@ const PROFESOR: UsuarioAutenticado = {
   role: 'teacher',
   organizacionId: '1',
   debeCambiarContrasena: false,
+};
+
+const ESTUDIANTE: UsuarioAutenticado = {
+  id: '3',
+  username: 'est.perez',
+  role: 'student',
+  organizacionId: '1',
+  debeCambiarContrasena: false,
+};
+
+const ADMIN: UsuarioAutenticado = {
+  id: '1',
+  username: 'admin',
+  role: 'admin',
+  organizacionId: null,
+  debeCambiarContrasena: false,
+};
+
+const FILA_ENCONTRADA = {
+  id: BigInt(1),
+  name: 'Mathematics 10A',
+  status: 'active' as const,
+  created_at: new Date('2026-10-08T02:53:19.614Z'),
+  first_name: 'Ana',
+  last_name: 'López',
+};
+
+const INSCRIPCION_ENCONTRADA = {
+  id: BigInt(1),
+  status: 'active' as const,
+  enrolled_at: new Date('2026-10-08T02:53:19.000Z'),
+  users: {
+    id: BigInt(3),
+    username: 'est.perez',
+    first_name: 'Juan',
+    last_name: 'Pérez',
+  },
 };
 
 const CLASE_CREADA = {
@@ -79,6 +122,11 @@ describe('ClassesService', () => {
         create: jest.fn<Promise<unknown>, [ConsultaCreate]>(),
         update: jest.fn<Promise<unknown>, [ConsultaUpdate]>(),
       },
+      enrollments: {
+        findMany: jest.fn<Promise<unknown[]>, [object]>(),
+        count: jest.fn<Promise<number>, [object]>(),
+      },
+      $queryRaw: jest.fn<Promise<unknown[]>, [Prisma.Sql]>(),
     };
     autorizacion = {
       verificarPertenencia: jest.fn<
@@ -320,6 +368,350 @@ describe('ClassesService', () => {
         PROFESOR,
       );
       await expect(promesa).rejects.toMatchObject({ code: 'P2002' });
+    });
+  });
+
+  describe('buscar', () => {
+    /** Texto y valores del SQL capturado en la llamada n de $queryRaw. */
+    const sqlDe = (indice: number): { sql: string; values: unknown[] } => {
+      const captura = prisma.$queryRaw.mock.calls[indice][0] as unknown as {
+        sql: string;
+        values: unknown[];
+      };
+      return captura;
+    };
+
+    const consulta = (
+      sobrescrituras: Partial<BuscarClasesQueryDto> = {},
+    ): BuscarClasesQueryDto => ({
+      q: 'matema',
+      ...sobrescrituras,
+    });
+
+    it('mapea filas y meta de la paginación estándar { data, meta }', async () => {
+      prisma.$queryRaw
+        .mockResolvedValueOnce([FILA_ENCONTRADA])
+        .mockResolvedValueOnce([{ total: BigInt(12) }]);
+
+      const resultado = await classesService.buscar(
+        consulta({ page: 2, limit: 20 }),
+        ESTUDIANTE,
+      );
+
+      expect(resultado).toEqual({
+        data: [
+          {
+            id: '1',
+            nombre: 'Mathematics 10A',
+            estado: 'active',
+            profesorNombre: 'Ana López',
+            creadoEn: '2026-10-08T02:53:19.614Z',
+          },
+        ],
+        meta: { total: 12, page: 2, limit: 20 },
+      });
+    });
+
+    it('usa la página 1 y 20 filas por defecto', async () => {
+      prisma.$queryRaw
+        .mockResolvedValueOnce([])
+        .mockResolvedValueOnce([{ total: 0 }]);
+
+      const resultado = await classesService.buscar(consulta(), ESTUDIANTE);
+
+      expect(resultado.meta).toEqual({ total: 0, page: 1, limit: 20 });
+    });
+
+    it('el SQL combina similitud trigram con subcadena y ordena por similitud', async () => {
+      prisma.$queryRaw
+        .mockResolvedValueOnce([])
+        .mockResolvedValueOnce([{ total: 0 }]);
+
+      await classesService.buscar(consulta({ q: 'matema' }), ESTUDIANTE);
+
+      const { sql } = sqlDe(0);
+      expect(sql).toContain('c.name % ?');
+      expect(sql).toContain('c.name ILIKE ?');
+      expect(sql).toContain('ORDER BY similarity(c.name, ?)');
+      expect(sql).toContain('LIMIT ?');
+      expect(sql).toContain('OFFSET ?');
+    });
+
+    it('calcula el OFFSET por página y límite', async () => {
+      prisma.$queryRaw
+        .mockResolvedValueOnce([])
+        .mockResolvedValueOnce([{ total: 0 }]);
+
+      await classesService.buscar(consulta({ page: 3, limit: 20 }), ADMIN);
+
+      expect(sqlDe(0).values).toContain(40);
+    });
+
+    it('el profesor solo busca SUS clases: condición teacher_id con su id', async () => {
+      prisma.$queryRaw
+        .mockResolvedValueOnce([])
+        .mockResolvedValueOnce([{ total: 0 }]);
+
+      await classesService.buscar(consulta(), PROFESOR);
+
+      const { sql, values } = sqlDe(0);
+      expect(sql).toContain('c.teacher_id = ?');
+      expect(values).toContain(BigInt(2));
+      expect(sql).not.toContain('organization_id');
+    });
+
+    it('el estudiante solo ve clases activas de SU organización', async () => {
+      prisma.$queryRaw
+        .mockResolvedValueOnce([])
+        .mockResolvedValueOnce([{ total: 0 }]);
+
+      await classesService.buscar(consulta(), ESTUDIANTE);
+
+      const { sql, values } = sqlDe(0);
+      expect(sql).toContain('u.organization_id = ?');
+      expect(sql).toContain("c.status = 'active'");
+      expect(values).toContain(BigInt(1));
+      expect(sql).not.toContain('teacher_id = ?');
+    });
+
+    it('un estudiante sin organización no recibe resultados (condición false)', async () => {
+      prisma.$queryRaw
+        .mockResolvedValueOnce([])
+        .mockResolvedValueOnce([{ total: 0 }]);
+
+      await classesService.buscar(consulta(), {
+        ...ESTUDIANTE,
+        organizacionId: null,
+      });
+
+      const { sql } = sqlDe(0);
+      expect(sql).toContain('AND false');
+    });
+
+    it('el admin no recibe filtro adicional', async () => {
+      prisma.$queryRaw
+        .mockResolvedValueOnce([])
+        .mockResolvedValueOnce([{ total: 0 }]);
+
+      await classesService.buscar(consulta(), ADMIN);
+
+      const { sql } = sqlDe(0);
+      expect(sql).toContain('AND true');
+      expect(sql).not.toContain('teacher_id = ?');
+      expect(sql).not.toContain('organization_id = ?');
+    });
+
+    it('escapa los wildcards % y _ del ILIKE para que busquen literal', async () => {
+      prisma.$queryRaw
+        .mockResolvedValueOnce([])
+        .mockResolvedValueOnce([{ total: 0 }]);
+
+      await classesService.buscar(consulta({ q: '100%_a' }), ADMIN);
+
+      const { values } = sqlDe(0);
+      expect(values).toContain('%100\\%\\_a%');
+    });
+
+    it('el conteo del total repite el mismo WHERE en una segunda query', async () => {
+      prisma.$queryRaw
+        .mockResolvedValueOnce([])
+        .mockResolvedValueOnce([{ total: BigInt(7) }]);
+
+      const resultado = await classesService.buscar(consulta(), PROFESOR);
+
+      expect(prisma.$queryRaw).toHaveBeenCalledTimes(2);
+      const conteo = sqlDe(1);
+      expect(conteo.sql).toContain('count(*) AS total');
+      expect(conteo.sql).toContain('c.name % ?');
+      expect(conteo.values).toContain(BigInt(2));
+      expect(resultado.meta.total).toBe(7);
+    });
+
+    it('tolera filas sin resultados y conteo vacío (meta.total 0)', async () => {
+      prisma.$queryRaw
+        .mockResolvedValueOnce([])
+        .mockResolvedValueOnce([{ total: BigInt(0) }]);
+
+      const resultado = await classesService.buscar(consulta(), ADMIN);
+
+      expect(resultado).toEqual({
+        data: [],
+        meta: { total: 0, page: 1, limit: 20 },
+      });
+    });
+  });
+
+  describe('listarEstudiantes', () => {
+    it('mapea inscripciones a identidad + estado con { data, meta }', async () => {
+      prisma.enrollments.findMany.mockResolvedValue([INSCRIPCION_ENCONTRADA]);
+      prisma.enrollments.count.mockResolvedValue(2);
+
+      const resultado = await classesService.listarEstudiantes(
+        '1',
+        { page: 1, limit: 20 },
+        PROFESOR,
+      );
+
+      expect(resultado).toEqual({
+        data: [
+          {
+            id: '1',
+            estudianteId: '3',
+            username: 'est.perez',
+            nombre: 'Juan Pérez',
+            estado: 'active',
+            inscritoEn: '2026-10-08T02:53:19.000Z',
+          },
+        ],
+        meta: { total: 2, page: 1, limit: 20 },
+      });
+    });
+
+    it('re-verifica la pertenencia de la clase antes de consultar (segunda capa)', async () => {
+      prisma.enrollments.findMany.mockResolvedValue([]);
+      prisma.enrollments.count.mockResolvedValue(0);
+
+      await classesService.listarEstudiantes('1', {}, PROFESOR);
+
+      expect(autorizacion.verificarPertenencia).toHaveBeenCalledWith(
+        'clase',
+        '1',
+        PROFESOR,
+      );
+      expect(prisma.enrollments.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({ where: { class_id: BigInt(1) } }),
+      );
+    });
+
+    it('la consulta no lee monedas ni email (mínima exposición)', async () => {
+      prisma.enrollments.findMany.mockResolvedValue([]);
+      prisma.enrollments.count.mockResolvedValue(0);
+
+      await classesService.listarEstudiantes('1', {}, PROFESOR);
+
+      const consulta = prisma.enrollments.findMany.mock.calls[0][0] as Record<
+        string,
+        Record<string, unknown>
+      >;
+      const camposLeidos = Object.keys(consulta.select);
+      expect(camposLeidos).not.toContain('coins_earned');
+      expect(camposLeidos).not.toContain('coins_spent');
+      expect(camposLeidos).not.toContain('coins_available');
+      const camposUsuario = Object.keys(
+        consulta.select.users as Record<string, unknown>,
+      );
+      expect(camposUsuario).not.toContain('email');
+      expect(camposUsuario).not.toContain('password_hash');
+    });
+
+    it('pagina con skip/take según page y limit (defaults 1 y 20)', async () => {
+      prisma.enrollments.findMany.mockResolvedValue([]);
+      prisma.enrollments.count.mockResolvedValue(0);
+
+      await classesService.listarEstudiantes(
+        '1',
+        { page: 3, limit: 10 },
+        PROFESOR,
+      );
+
+      expect(prisma.enrollments.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({ skip: 20, take: 10 }),
+      );
+
+      await classesService.listarEstudiantes('1', {}, PROFESOR);
+      expect(prisma.enrollments.findMany).toHaveBeenLastCalledWith(
+        expect.objectContaining({ skip: 0, take: 20 }),
+      );
+    });
+
+    it('clase ajena o inexistente: propaga el 404 sin consultar enrollments', async () => {
+      autorizacion.verificarPertenencia.mockRejectedValue(
+        new NotFoundException(MENSAJE_RECURSO_NO_ENCONTRADO),
+      );
+
+      await expect(
+        classesService.listarEstudiantes('999', {}, PROFESOR),
+      ).rejects.toThrow(NotFoundException);
+      expect(prisma.enrollments.findMany).not.toHaveBeenCalled();
+      expect(prisma.enrollments.count).not.toHaveBeenCalled();
+    });
+
+    it('clase sin inscriptos devuelve lista vacía con total 0', async () => {
+      prisma.enrollments.findMany.mockResolvedValue([]);
+      prisma.enrollments.count.mockResolvedValue(0);
+
+      const resultado = await classesService.listarEstudiantes(
+        '1',
+        {},
+        PROFESOR,
+      );
+
+      expect(resultado).toEqual({
+        data: [],
+        meta: { total: 0, page: 1, limit: 20 },
+      });
+    });
+  });
+
+  describe('flujo: un profesor busca una clase por nombre y la archiva', () => {
+    it('el id que devuelve la búsqueda sirve para archivar la propia clase', async () => {
+      const claseDelFlujo = {
+        ...FILA_ENCONTRADA,
+        id: BigInt(9),
+        name: 'Flujo Unit Clase',
+      };
+      prisma.$queryRaw
+        .mockResolvedValueOnce([claseDelFlujo])
+        .mockResolvedValueOnce([{ total: BigInt(1) }]);
+
+      const busqueda = await classesService.buscar(
+        { q: 'Flujo Unit' },
+        PROFESOR,
+      );
+
+      expect(busqueda.data).toEqual([
+        {
+          id: '9',
+          nombre: 'Flujo Unit Clase',
+          estado: 'active',
+          profesorNombre: 'Ana López',
+          creadoEn: '2026-10-08T02:53:19.614Z',
+        },
+      ]);
+
+      prisma.classes.update.mockResolvedValue({
+        ...CLASE_CREADA,
+        id: BigInt(9),
+        status: 'archived' as const,
+      });
+
+      const archivada = await classesService.actualizar(
+        busqueda.data[0].id,
+        { estado: 'archived' },
+        PROFESOR,
+      );
+
+      // El id del resultado de la búsqueda es el que llega al UPDATE.
+      expect(autorizacion.verificarPertenencia).toHaveBeenCalledWith(
+        'clase',
+        '9',
+        PROFESOR,
+      );
+      expect(prisma.classes.update).toHaveBeenCalledWith(
+        expect.objectContaining({ where: { id: BigInt(9) } }),
+      );
+      expect(archivada.estado).toBe('archived');
+    });
+
+    it('el guard corta el flujo si la clase a archivar no es suya (404, sin UPDATE)', async () => {
+      autorizacion.verificarPertenencia.mockRejectedValue(
+        new NotFoundException(MENSAJE_RECURSO_NO_ENCONTRADO),
+      );
+
+      await expect(
+        classesService.actualizar('999', { estado: 'archived' }, PROFESOR),
+      ).rejects.toThrow(new NotFoundException(MENSAJE_RECURSO_NO_ENCONTRADO));
+      expect(prisma.classes.update).not.toHaveBeenCalled();
     });
   });
 });
