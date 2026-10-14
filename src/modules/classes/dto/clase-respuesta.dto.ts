@@ -26,3 +26,31 @@ export class ClaseCreadaRespuestaDto {
   mensaje!: string;
   clase!: ClaseRespuestaDto;
 }
+
+/**
+ * Ítem del listado de búsqueda de clases. SIN código de unión: verlo en
+ * una búsqueda permitiría auto-inscribirse sin que el profesor comparta
+ * el código (rompería el propósito del código). Tampoco expone ids
+ * internos (teacher_id/organization_id), solo el nombre del profesor
+ * para que el estudiante distinga su clase.
+ */
+export class ClaseListadoDto {
+  id!: string;
+  nombre!: string;
+  estado!: class_status;
+  profesorNombre!: string;
+  creadoEn!: string;
+}
+
+/** Meta de la paginación estándar de listados (AGENTS.md §8). */
+export class ListadoMetaDto {
+  total!: number;
+  page!: number;
+  limit!: number;
+}
+
+/** Sobre estándar de listados: { data, meta } (AGENTS.md §8). */
+export class ListadoClasesDto {
+  data!: ClaseListadoDto[];
+  meta!: ListadoMetaDto;
+}

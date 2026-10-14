@@ -7,11 +7,18 @@ import { configurarApp } from './../src/app.setup';
 import { MENSAJE_NO_AUTENTICADO } from '../src/common/guards/jwt-auth.guard';
 import { MENSAJE_SIN_ROL } from '../src/common/guards/roles.guard';
 import { MENSAJE_RECURSO_NO_ENCONTRADO } from '../src/modules/autorizacion/autorizacion.service';
+import { PrismaService } from '../src/prisma/prisma.service';
 
 /**
- * Creación de clases (e2e, BD real con datos del seed):
- * POST /api/v1/classes solo para teacher, con el código de unión
- * generado internamente por la BD (DEFAULT de classes.code).
+ * Clases de profesores (e2e, BD real con datos del seed):
+ * - POST  /api/v1/classes   → solo teacher; código de unión generado por la BD.
+ * - PATCH /api/v1/classes/:id → editar/archivar con @PerteneceA.
+ * - GET   /api/v1/classes   → búsqueda por nombre con pg_trgm; estudiante
+ *   ve clases activas de SU organización, profesor solo las suyas.
+ *
+ * La búsqueda necesita una clase de OTRA organización para probar el
+ * alcance negativamente: se crea una fixture (org + profesor + clase) en
+ * beforeAll y se limpia físicamente en afterAll.
  */
 const LOGIN_PROFESOR = { usuarioOEmail: 'prof.lopez', contrasena: 'Prof123!' };
 const LOGIN_ESTUDIANTE = {
@@ -20,12 +27,18 @@ const LOGIN_ESTUDIANTE = {
 };
 const LOGIN_ADMIN = { usuarioOEmail: 'admin', contrasena: 'Admin123!' };
 
-describe('Creación de clases (e2e, datos del seed)', () => {
+describe('Clases (e2e, datos del seed)', () => {
   let app: INestApplication<App>;
   let httpServer: ReturnType<typeof request>;
+  let prisma: PrismaService;
   let tokenProfesor = '';
   let tokenEstudiante = '';
   let tokenAdmin = '';
+  const fixture: {
+    orgId?: bigint;
+    profesorId?: bigint;
+    claseId?: bigint;
+  } = {};
 
   beforeAll(async () => {
     const moduleFixture: TestingModule = await Test.createTestingModule({
@@ -36,6 +49,7 @@ describe('Creación de clases (e2e, datos del seed)', () => {
     configurarApp(app);
     await app.init();
     httpServer = request(app.getHttpServer());
+    prisma = app.get(PrismaService);
 
     const loginProfesor = await httpServer
       .post('/api/v1/auth/login')
@@ -49,9 +63,49 @@ describe('Creación de clases (e2e, datos del seed)', () => {
     tokenProfesor = loginProfesor.body.accessToken;
     tokenEstudiante = loginEstudiante.body.accessToken;
     tokenAdmin = loginAdmin.body.accessToken;
+
+    // Fixture: clase de OTRA organización (clase ajena a prof.lopez y
+    // a la organización de est.perez) para los casos negativos de alcance.
+    const unicidad = Date.now();
+    const org = await prisma.organizations.create({
+      data: {
+        name: `Org Fixture E2E ${unicidad}`,
+        type: 'school',
+      },
+    });
+    const profesorFixture = await prisma.users.create({
+      data: {
+        organization_id: org.id,
+        role: 'teacher',
+        username: `prof.fixture.${unicidad}`,
+        email: `prof.fixture.${unicidad}@educoins.test`,
+        password_hash: 'SOLO-FIXTURE-NO-LOGUEABLE',
+        first_name: 'Fito',
+        last_name: 'Fijo',
+        must_change_password: false,
+      },
+    });
+    const claseFixture = await prisma.classes.create({
+      data: {
+        teacher_id: profesorFixture.id,
+        name: 'Mathematics OtherOrg',
+      },
+    });
+    fixture.orgId = org.id;
+    fixture.profesorId = profesorFixture.id;
+    fixture.claseId = claseFixture.id;
   });
 
   afterAll(async () => {
+    if (fixture.claseId !== undefined) {
+      await prisma.classes.delete({ where: { id: fixture.claseId } });
+    }
+    if (fixture.profesorId !== undefined) {
+      await prisma.users.delete({ where: { id: fixture.profesorId } });
+    }
+    if (fixture.orgId !== undefined) {
+      await prisma.organizations.delete({ where: { id: fixture.orgId } });
+    }
     await app.close();
   });
 
@@ -278,6 +332,335 @@ describe('Creación de clases (e2e, datos del seed)', () => {
         .set('Authorization', `Bearer ${tokenProfesor}`)
         .send({ estado: 'deleted' });
       expect(estadoInvalido.status).toBe(400);
+    });
+  });
+
+  describe('GET /classes (búsqueda pg_trgm por rol)', () => {
+    it('el estudiante encuentra la clase del seed AUN CON un error de tipeo', async () => {
+      // 'mathemtics 1a' no es subcadena de 'Mathematics 10A': solo la
+      // similitud de trigramas (operador %) puede encontrarla.
+      const respuesta = await httpServer
+        .get('/api/v1/classes')
+        .query({ q: 'mathemtics 1a' })
+        .set('Authorization', `Bearer ${tokenEstudiante}`);
+
+      expect(respuesta.status).toBe(200);
+      const nombres = respuesta.body.data.map(
+        (c: { nombre: string }) => c.nombre,
+      );
+      expect(nombres).toContain('Mathematics 10A');
+      // La clase de la otra organización no debe aparecerle.
+      expect(nombres).not.toContain('Mathematics OtherOrg');
+      expect(respuesta.body.meta.total).toBeGreaterThanOrEqual(1);
+      // El ítem no expone código de unión ni ids internos.
+      expect(respuesta.body.data[0]).not.toHaveProperty('codigo');
+      expect(respuesta.body.data[0]).not.toHaveProperty('code');
+    });
+
+    it('el estudiante encuentra por subcadena (ILIKE vía índice trgm)', async () => {
+      const respuesta = await httpServer
+        .get('/api/v1/classes')
+        .query({ q: 'mathe' })
+        .set('Authorization', `Bearer ${tokenEstudiante}`);
+
+      expect(respuesta.status).toBe(200);
+      expect(
+        respuesta.body.data.some(
+          (c: { nombre: string }) => c.nombre === 'Mathematics 10A',
+        ),
+      ).toBe(true);
+    });
+
+    it('el estudiante NO ve clases archivadas de su organización', async () => {
+      // 'Proyecto integrador Renombrado' (id 6) está archived en la BD.
+      const respuesta = await httpServer
+        .get('/api/v1/classes')
+        .query({ q: 'Proyecto integrador' })
+        .set('Authorization', `Bearer ${tokenEstudiante}`);
+
+      expect(respuesta.status).toBe(200);
+      const nombres = respuesta.body.data.map(
+        (c: { nombre: string }) => c.nombre,
+      );
+      expect(nombres).not.toContain('Proyecto integrador Renombrado');
+    });
+
+    it('el estudiante NO ve clases de otra organización aunque coincidan', async () => {
+      const respuesta = await httpServer
+        .get('/api/v1/classes')
+        .query({ q: 'mathematics' })
+        .set('Authorization', `Bearer ${tokenEstudiante}`);
+
+      expect(respuesta.status).toBe(200);
+      const nombres = respuesta.body.data.map(
+        (c: { nombre: string }) => c.nombre,
+      );
+      expect(nombres).toContain('Mathematics 10A');
+      expect(nombres).not.toContain('Mathematics OtherOrg');
+    });
+
+    it('el profesor solo ve SUS clases (ni archivadas de otros ni de otra org)', async () => {
+      const respuesta = await httpServer
+        .get('/api/v1/classes')
+        .query({ q: 'mathematics' })
+        .set('Authorization', `Bearer ${tokenProfesor}`);
+
+      expect(respuesta.status).toBe(200);
+      const nombres = respuesta.body.data.map(
+        (c: { nombre: string }) => c.nombre,
+      );
+      expect(nombres).toContain('Mathematics 10A');
+      expect(nombres).not.toContain('Mathematics OtherOrg');
+    });
+
+    it('el profesor SÍ encuentra sus clases archivadas (para reactivarlas)', async () => {
+      const respuesta = await httpServer
+        .get('/api/v1/classes')
+        .query({ q: 'Proyecto integrador' })
+        .set('Authorization', `Bearer ${tokenProfesor}`);
+
+      expect(respuesta.status).toBe(200);
+      const archivada = respuesta.body.data.find(
+        (c: { nombre: string }) =>
+          c.nombre === 'Proyecto integrador Renombrado',
+      );
+      expect(archivada).toMatchObject({ estado: 'archived' });
+      // El nombre del profesor depende del encoding con que se aplicó el
+      // seed (hoy almacena mojibake: ver reporte de bugs); solo se
+      // comprueba que venga el nombre de pila.
+      expect(String(archivada.profesorNombre)).toMatch(/^Ana /);
+    });
+
+    it('el admin ve clases de todas las organizaciones (rol global)', async () => {
+      const respuesta = await httpServer
+        .get('/api/v1/classes')
+        .query({ q: 'mathematics' })
+        .set('Authorization', `Bearer ${tokenAdmin}`);
+
+      expect(respuesta.status).toBe(200);
+      const nombres = respuesta.body.data.map(
+        (c: { nombre: string }) => c.nombre,
+      );
+      expect(nombres).toContain('Mathematics 10A');
+      expect(nombres).toContain('Mathematics OtherOrg');
+    });
+
+    it('sin coincidencias devuelve 200 con lista y total en cero', async () => {
+      const respuesta = await httpServer
+        .get('/api/v1/classes')
+        .query({ q: 'zzzzzzzzzz' })
+        .set('Authorization', `Bearer ${tokenEstudiante}`);
+
+      expect(respuesta.status).toBe(200);
+      expect(respuesta.body).toEqual({
+        data: [],
+        meta: { total: 0, page: 1, limit: 20 },
+      });
+    });
+
+    it('valida los parámetros: q corto, page y limit fuera de rango', async () => {
+      const qCorto = await httpServer
+        .get('/api/v1/classes')
+        .query({ q: 'ab' })
+        .set('Authorization', `Bearer ${tokenEstudiante}`);
+      expect(qCorto.status).toBe(400);
+
+      const pageCero = await httpServer
+        .get('/api/v1/classes')
+        .query({ q: 'matema', page: 0 })
+        .set('Authorization', `Bearer ${tokenEstudiante}`);
+      expect(pageCero.status).toBe(400);
+
+      const limitGrande = await httpServer
+        .get('/api/v1/classes')
+        .query({ q: 'matema', limit: 99 })
+        .set('Authorization', `Bearer ${tokenEstudiante}`);
+      expect(limitGrande.status).toBe(400);
+
+      const sinQ = await httpServer
+        .get('/api/v1/classes')
+        .set('Authorization', `Bearer ${tokenEstudiante}`);
+      expect(sinQ.status).toBe(400);
+    });
+
+    it('sin token la búsqueda no pasa del guard JWT (401)', async () => {
+      const respuesta = await httpServer
+        .get('/api/v1/classes')
+        .query({ q: 'matema' });
+
+      expect(respuesta.status).toBe(401);
+      expect(respuesta.body.message).toBe(MENSAJE_NO_AUTENTICADO);
+    });
+  });
+
+  describe('GET /classes/:id/estudiantes (inscriptos de la clase propia)', () => {
+    it('el profesor lista los estudiantes inscritos en SU clase del seed', async () => {
+      // Clase 1 = 'Mathematics 10A' de prof.lopez; el seed inscribe a
+      // est.perez y est.gomez. Las aserciones usan username (ASCII)
+      // porque los nombres del seed tienen el mojibake ya reportado.
+      const respuesta = await httpServer
+        .get('/api/v1/classes/1/estudiantes')
+        .set('Authorization', `Bearer ${tokenProfesor}`);
+
+      expect(respuesta.status).toBe(200);
+      expect(respuesta.body.meta).toEqual({ total: 2, page: 1, limit: 20 });
+
+      const usernames = respuesta.body.data.map(
+        (e: { username: string }) => e.username,
+      );
+      expect(usernames).toEqual(
+        expect.arrayContaining(['est.perez', 'est.gomez']),
+      );
+      expect(respuesta.body.data).toHaveLength(2);
+
+      // Identidad + estado solamente: sin monedas ni email.
+      const primero = respuesta.body.data[0];
+      expect(primero).toMatchObject({
+        estado: 'active',
+        nombre: expect.any(String),
+        inscritoEn: expect.any(String),
+      });
+      expect(primero.id).toMatch(/^\d+$/);
+      expect(primero.estudianteId).toMatch(/^\d+$/);
+      expect(primero).not.toHaveProperty('monedasGanadas');
+      expect(primero).not.toHaveProperty('email');
+    });
+
+    it('una clase nueva sin inscriptos devuelve lista vacía con total 0', async () => {
+      const creada = await httpServer
+        .post('/api/v1/classes')
+        .set('Authorization', `Bearer ${tokenProfesor}`)
+        .send({ nombre: `Clase Sin Estudiantes E2E ${Date.now()}` });
+      expect(creada.status).toBe(201);
+      const id = creada.body.clase.id as string;
+
+      const respuesta = await httpServer
+        .get(`/api/v1/classes/${id}/estudiantes`)
+        .set('Authorization', `Bearer ${tokenProfesor}`);
+
+      expect(respuesta.status).toBe(200);
+      expect(respuesta.body).toEqual({
+        data: [],
+        meta: { total: 0, page: 1, limit: 20 },
+      });
+    });
+
+    it('clase inexistente → 404 estándar (anti-enumeración)', async () => {
+      const respuesta = await httpServer
+        .get('/api/v1/classes/999999/estudiantes')
+        .set('Authorization', `Bearer ${tokenProfesor}`);
+
+      expect(respuesta.status).toBe(404);
+      expect(respuesta.body.message).toBe(MENSAJE_RECURSO_NO_ENCONTRADO);
+    });
+
+    it('estudiante y admin reciben 403 (solo profesores gestionan inscriptos)', async () => {
+      const estudiante = await httpServer
+        .get('/api/v1/classes/1/estudiantes')
+        .set('Authorization', `Bearer ${tokenEstudiante}`);
+      expect(estudiante.status).toBe(403);
+      expect(estudiante.body.message).toBe(MENSAJE_SIN_ROL);
+
+      const admin = await httpServer
+        .get('/api/v1/classes/1/estudiantes')
+        .set('Authorization', `Bearer ${tokenAdmin}`);
+      expect(admin.status).toBe(403);
+    });
+
+    it('valida la paginación: page=0 y limit=99 → 400', async () => {
+      const pageCero = await httpServer
+        .get('/api/v1/classes/1/estudiantes')
+        .query({ page: 0 })
+        .set('Authorization', `Bearer ${tokenProfesor}`);
+      expect(pageCero.status).toBe(400);
+
+      const limitGrande = await httpServer
+        .get('/api/v1/classes/1/estudiantes')
+        .query({ limit: 99 })
+        .set('Authorization', `Bearer ${tokenProfesor}`);
+      expect(limitGrande.status).toBe(400);
+    });
+
+    it('sin token el listado no pasa del guard JWT (401)', async () => {
+      const respuesta = await httpServer.get('/api/v1/classes/1/estudiantes');
+
+      expect(respuesta.status).toBe(401);
+      expect(respuesta.body.message).toBe(MENSAJE_NO_AUTENTICADO);
+    });
+  });
+
+  describe('Flujo: un profesor busca una clase por nombre y la archiva', () => {
+    it('crear → buscar → archivar → re-buscar, con el guard cortando clases ajenas', async () => {
+      const nombreUnico = `Flujo E2E ${Date.now()}`;
+
+      // 1. El profesor crea la clase con la que correrá el flujo.
+      const creada = await httpServer
+        .post('/api/v1/classes')
+        .set('Authorization', `Bearer ${tokenProfesor}`)
+        .send({ nombre: nombreUnico });
+      expect(creada.status).toBe(201);
+      const id = creada.body.clase.id as string;
+
+      // 2. La busca por su nombre y el resultado entrega el mismo id.
+      const busqueda = await httpServer
+        .get('/api/v1/classes')
+        .query({ q: nombreUnico })
+        .set('Authorization', `Bearer ${tokenProfesor}`);
+      expect(busqueda.status).toBe(200);
+      const encontrada = busqueda.body.data.find(
+        (c: { id: string }) => c.id === id,
+      );
+      expect(encontrada).toMatchObject({
+        nombre: nombreUnico,
+        estado: 'active',
+      });
+
+      // 3. La archiva (PATCH con @PerteneceA: es SU clase).
+      const archivada = await httpServer
+        .patch(`/api/v1/classes/${id}`)
+        .set('Authorization', `Bearer ${tokenProfesor}`)
+        .send({ estado: 'archived' });
+      expect(archivada.status).toBe(200);
+      expect(archivada.body.estado).toBe('archived');
+
+      // 4. Su búsqueda sigue listándola — el profesor ve sus archivadas.
+      const reBusquedaProfesor = await httpServer
+        .get('/api/v1/classes')
+        .query({ q: nombreUnico })
+        .set('Authorization', `Bearer ${tokenProfesor}`);
+      expect(reBusquedaProfesor.status).toBe(200);
+      const trasArchivar = reBusquedaProfesor.body.data.find(
+        (c: { id: string }) => c.id === id,
+      );
+      expect(trasArchivar).toMatchObject({ estado: 'archived' });
+
+      // 5. El estudiante ya no la ve (filtro de estado por rol en la búsqueda).
+      const busquedaEstudiante = await httpServer
+        .get('/api/v1/classes')
+        .query({ q: nombreUnico })
+        .set('Authorization', `Bearer ${tokenEstudiante}`);
+      expect(busquedaEstudiante.status).toBe(200);
+      expect(
+        busquedaEstudiante.body.data.some((c: { id: string }) => c.id === id),
+      ).toBe(false);
+
+      // 6. Guard de pertenencia: la clase de la OTRA organización es
+      // ajena → el PATCH responde el 404 estándar, no 403 ni 200.
+      const idClaseAjena = String(fixture.claseId);
+      const ajena = await httpServer
+        .patch(`/api/v1/classes/${idClaseAjena}`)
+        .set('Authorization', `Bearer ${tokenProfesor}`)
+        .send({ estado: 'archived' });
+      expect(ajena.status).toBe(404);
+      expect(ajena.body.message).toBe(MENSAJE_RECURSO_NO_ENCONTRADO);
+
+      // 7. El estudiante no llega a la pertenencia: RolesGuard da 403.
+      const estudiante = await httpServer
+        .patch(`/api/v1/classes/${id}`)
+        .set('Authorization', `Bearer ${tokenEstudiante}`)
+        .send({ estado: 'archived' });
+      expect(estudiante.status).toBe(403);
+      expect(estudiante.body.message).toBe(MENSAJE_SIN_ROL);
     });
   });
 });
