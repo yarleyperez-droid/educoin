@@ -302,6 +302,12 @@ export default function NuevaClasePage() {
               Crear otra clase
             </button>
             <Link
+              href={`/teacher/clases/${claseCreada.id}/actividades/nueva`}
+              className="text-sm font-medium text-neutral-700 underline hover:text-neutral-900"
+            >
+              Añadir una actividad
+            </Link>
+            <Link
               href="/teacher"
               className="text-sm text-neutral-600 hover:text-neutral-900"
             >
