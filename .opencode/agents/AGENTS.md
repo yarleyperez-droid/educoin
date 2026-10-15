@@ -341,12 +341,14 @@ Crea un `ExceptionFilter` en `common/filters` que traduzca:
 - Minijuegos: **aún no existen en la BD** (ver `docs/post_mvp.md`); cuando se implementen, un componente por tipo en `components/features/minijuegos/` con interfaz común, y el frontend **nunca** conoce la solución.
 
 ### Git
-- Ramas del repo hoy: `main`, `Alejandro` (backend de H2.1 + clases parciales) y ramas de
-  trabajo de features (p. ej. `s2_h5_4_login`, con H5.4 + integración del backend real).
-  `main` está actualizado localmente con el merge de `Alejandro` (**sin push** a origin).
-  Convención prevista:
-  `main` (solo Tech Lead) → `develop` → `feature/devX-nombre-tarea`.
-- **Prohibido commit directo a `main` o `develop`.** Trabaja en la rama indicada por el usuario.
+- Ramas del repo hoy: `main`, `develop` (creada en H6.2 / PRO-293) y ramas de
+  equipo/features: `Alejandro` (backend H2.1 + clases parciales), `s2_h5_6_panel_profesor`,
+  `s2_h5_8_cuestionario`, `feature/H1.1-configuracion-entorno`, entre otras.
+  Convención **vigente** (no "prevista"):
+  `main` (solo Tech Lead, protegida) → `develop` → `feature/...` (p. ej. `feature/devX-nombre-tarea`
+  o `sN_hX_Y_descripcion`).
+- **Prohibido commit directo a `main` o `develop`.** Los cambios entran a `develop` mediante PR,
+  y a `main` solo mediante PR desde `develop` (revisión del Tech Lead).
 - Commits en formato *Conventional Commits*: `feat(submissions): guardar respuestas JSONB`, `fix(redemptions): …`, `docs: …`.
 - No hagas `git push`, `merge`, `rebase` ni `reset --hard` salvo que el usuario lo pida explícitamente.
 - Nunca subas `.env`, secretos, llaves ni volcados de datos reales.

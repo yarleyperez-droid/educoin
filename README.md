@@ -178,6 +178,31 @@ ranking global           → ordena por monedas GANADAS (vista)
 - **Swagger** para publicar el contrato de la API.
 - **CI y despliegue**: no hay pipeline; el script `pnpm deploy` de
   `@nestjs/mau` aún no está configurado. Estrategia pendiente de confirmar.
+  - Nota: el flujo de ramas y PRs ya existe (H6.2 / PRO-293); el CI por PR llegará con H6.4.
+
+## Flujo de ramas y PRs
+
+### Ramas
+| Rama | Propósito | Acceso |
+|---|---|---|
+| `main` | Producción (solo releases) | **Protegida**: sin commits directos, PR obligatorio; solo Tech Lead fusiona |
+| `develop` | Integración continua del equipo | Fusionada solo vía PR desde ramas de feature |
+| `feature/devX-nombre-tarea`<br/>`sN_hX_Y_descripcion` | Trabajo individual por tarea | Cualquier dev; PR hacia `develop` |
+
+> Convención establecida en **H6.2 / PRO-293 (Sprint 0)**.
+
+### Flujo estándar
+```
+main → develop → feature/... → PR a develop → merge → PR develop → main (Tech Lead)
+```
+
+### Reglas obligatorias
+- **Nunca** commit directo a `main` ni a `develop`.
+- PRs de tamaño manejable (una tarea lógica por PR).
+- Commits en **Conventional Commits**: `feat(...)`, `fix(...)`, `docs: ...`, etc.
+- **Nunca** subir `.env`, secretos, llaves ni lockfiles ajenos (`package-lock.json`).
+- Antes de pedir revisión: ejecutar `pnpm typecheck`, `pnpm lint`, `pnpm test` (y sus equivalentes en `frontend/`) y que pasen en verde.
+- La protección de `main` a nivel de GitHub (regla de rama) queda a cargo del Tech Lead; el flujo se cumple igual vía PR.
 
 ## Convenciones rápidas
 
