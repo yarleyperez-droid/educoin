@@ -23,10 +23,12 @@
  * - Validar en cliente (sin llamar a la capa si falla): campos no vacíos,
  *   nueva contraseña de al menos 8 caracteres, nueva distinta de la actual y
  *   confirmación coincidente.
- * - Estado de carga: botón deshabilitado con el texto "Guardando…" mientras
- *   hay una petición en curso.
- * - Errores de envío en un área `role="alert"` con **solo** `error.message`
- *   de `ApiError`, **conservando lo escrito** en los tres campos.
+ * - Estado de carga: mientras hay una petición en curso el botón se
+ *   sustituye por `<EstadoCarga />` del kit UI (H5.2, `role="status"` +
+ *   `aria-live`), con los campos deshabilitados.
+ * - Errores de envío en el **toast accesible** del kit UI (H5.2): variante
+ *   `error` + `aria-live`, con **solo** el mensaje legible de `ApiError`
+ *   (`mensajeDeErrorApi`), **conservando lo escrito** en los tres campos.
  * - Éxito → navegación **completa** con
  *   `window.location.assign(rutaPorRol(...))` (con la sesión actualizada, el
  *   middleware ya no lo bloquea porque la cookie quedó con el flag en
@@ -56,11 +58,15 @@ import { useRouter } from "next/navigation";
 import { useEffect, useState, type FormEvent } from "react";
 
 import {
+  EstadoCarga,
+  mensajeDeErrorApi,
+  useToast,
+} from "@/components/ui";
+import {
   cambiarContrasena,
   leerSesionActual,
   rutaPorRol,
 } from "@/features/auth/api/auth";
-import { ApiError } from "@/lib/api-client";
 
 /** Mensaje de validación cuando falta algún campo del formulario. */
 const MENSAJE_CAMPOS_INCOMPLETOS =
@@ -78,10 +84,6 @@ const MENSAJE_NUEVA_IGUAL_A_ACTUAL =
 const MENSAJE_CONFIRMACION_DIFIERE =
   "La confirmación no coincide con la nueva contraseña.";
 
-/** Mensaje genérico para errores inesperados que no son `ApiError`. */
-const MENSAJE_ERROR_GENERICO =
-  "Ocurrió un error inesperado. Intenta de nuevo.";
-
 /**
  * Formulario de cambio obligatorio de contraseña.
  *
@@ -95,10 +97,11 @@ const MENSAJE_ERROR_GENERICO =
  * - **Vacío / validación:** `errorCampo` con el primer problema detectado
  *   (vacío, < 8, igual a actual, confirmación distinta); no se llama a la
  *   capa de auth.
- * - **Carga de envío:** `cargando` deshabilita el botón y muestra
- *   "Guardando…".
- * - **Error de envío:** `errorEnvio` en un área `role="alert"` con solo el
- *   mensaje de `ApiError` (o uno genérico), conservando lo escrito.
+ * - **Carga de envío:** `cargando` sustituye el botón por
+ *   `<EstadoCarga mensaje="Guardando…" />`; los campos quedan deshabilitados.
+ * - **Error de envío:** toast `error` con `mensajeDeErrorApi(error)`,
+ *   conservando lo escrito. Las validaciones de campo siguen en el área
+ *   `role="alert"` en línea.
  *
  * El renderizado **no depende de la sesión** (formulario siempre visible) para
  * evitar el hydration mismatch: el servidor prerenderiza sin `document`, pero
@@ -108,6 +111,7 @@ const MENSAJE_ERROR_GENERICO =
  */
 export default function CambiarContrasenaPage() {
   const router = useRouter();
+  const { mostrar } = useToast();
 
   /**
    * Sesión vigente, leída una sola vez al crear el estado.
@@ -125,7 +129,6 @@ export default function CambiarContrasenaPage() {
   const [confirmacion, setConfirmacion] = useState("");
   const [cargando, setCargando] = useState(false);
   const [errorCampo, setErrorCampo] = useState<string | null>(null);
-  const [errorEnvio, setErrorEnvio] = useState<string | null>(null);
 
   /**
    * Redirige a `/login` cuando no hay una sesión válida.
@@ -144,10 +147,11 @@ export default function CambiarContrasenaPage() {
    * Procesa el envío del formulario.
    *
    * Flujo: valida en cliente (sin llamar a la capa) → llama a
-   * `cambiarContrasena` → redirige al panel del rol con `rutaPorRol`.
-   * Cualquier `ApiError` se muestra tal cual (`error.message`); los errores
-   * ajenos a la API se traducen a un mensaje genérico (sin filtrar detalles
-   * internos). Los campos no se limpian: se conserva lo escrito para corregir.
+   * `cambiarContrasena` → redirige al panel del rol con `rutaPorRol`. Si
+   * falla, `mensajeDeErrorApi` extrae el mensaje legible (`ApiError.message`)
+   * o devuelve el genérico (sin filtrar detalles internos) y se anuncia con
+   * el toast `error` del kit UI (H5.2). Los campos no se limpian: se conserva
+   * lo escrito para corregir.
    *
    * La redirección de éxito usa `window.location.assign` (navegación completa)
    * en vez de `router.push` para evitar que Next reutilice un redirect 307
@@ -159,7 +163,6 @@ export default function CambiarContrasenaPage() {
     evento: FormEvent<HTMLFormElement>,
   ): Promise<void> {
     evento.preventDefault();
-    setErrorEnvio(null);
 
     if (
       contrasenaActual.trim() === "" ||
@@ -196,11 +199,7 @@ export default function CambiarContrasenaPage() {
 
       window.location.assign(rutaPorRol(sesionActualizada.role));
     } catch (error) {
-      if (error instanceof ApiError) {
-        setErrorEnvio(error.message);
-      } else {
-        setErrorEnvio(MENSAJE_ERROR_GENERICO);
-      }
+      mostrar(mensajeDeErrorApi(error), "error");
     } finally {
       setCargando(false);
     }
@@ -234,7 +233,7 @@ export default function CambiarContrasenaPage() {
               disabled={cargando}
               aria-invalid={errorCampo !== null}
               aria-describedby={errorCampo !== null ? "error-campo" : undefined}
-              className="mt-1 w-full rounded-md border border-neutral-300 px-3 py-2 text-sm text-neutral-900 placeholder-neutral-400 focus:border-neutral-500 focus:outline-none focus:ring-2 focus:ring-neutral-300 disabled:cursor-not-allowed disabled:opacity-60"
+              className="mt-1 w-full rounded-md border border-neutral-500 px-3 py-2 text-sm text-neutral-900 placeholder-neutral-500 focus:border-neutral-700 focus:outline-none focus:ring-2 focus:ring-neutral-700 disabled:cursor-not-allowed disabled:opacity-60"
             />
           </div>
 
@@ -255,7 +254,7 @@ export default function CambiarContrasenaPage() {
               disabled={cargando}
               aria-invalid={errorCampo !== null}
               aria-describedby={errorCampo !== null ? "error-campo" : undefined}
-              className="mt-1 w-full rounded-md border border-neutral-300 px-3 py-2 text-sm text-neutral-900 placeholder-neutral-400 focus:border-neutral-500 focus:outline-none focus:ring-2 focus:ring-neutral-300 disabled:cursor-not-allowed disabled:opacity-60"
+              className="mt-1 w-full rounded-md border border-neutral-500 px-3 py-2 text-sm text-neutral-900 placeholder-neutral-500 focus:border-neutral-700 focus:outline-none focus:ring-2 focus:ring-neutral-700 disabled:cursor-not-allowed disabled:opacity-60"
             />
           </div>
 
@@ -276,7 +275,7 @@ export default function CambiarContrasenaPage() {
               disabled={cargando}
               aria-invalid={errorCampo !== null}
               aria-describedby={errorCampo !== null ? "error-campo" : undefined}
-              className="mt-1 w-full rounded-md border border-neutral-300 px-3 py-2 text-sm text-neutral-900 placeholder-neutral-400 focus:border-neutral-500 focus:outline-none focus:ring-2 focus:ring-neutral-300 disabled:cursor-not-allowed disabled:opacity-60"
+              className="mt-1 w-full rounded-md border border-neutral-500 px-3 py-2 text-sm text-neutral-900 placeholder-neutral-500 focus:border-neutral-700 focus:outline-none focus:ring-2 focus:ring-neutral-700 disabled:cursor-not-allowed disabled:opacity-60"
             />
           </div>
 
@@ -286,20 +285,16 @@ export default function CambiarContrasenaPage() {
             </p>
           )}
 
-          {errorEnvio !== null && (
-            <p id="error-envio" role="alert" className="text-sm text-red-700">
-              {errorEnvio}
-            </p>
+          {cargando ? (
+            <EstadoCarga mensaje="Guardando tu contraseña…" />
+          ) : (
+            <button
+              type="submit"
+              className="w-full rounded-md bg-neutral-900 px-4 py-2 text-sm font-medium text-white hover:bg-neutral-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-700 focus-visible:ring-offset-2"
+            >
+              Cambiar contraseña
+            </button>
           )}
-
-          <button
-            type="submit"
-            disabled={cargando}
-            aria-busy={cargando}
-            className="w-full rounded-md bg-neutral-900 px-4 py-2 text-sm font-medium text-white hover:bg-neutral-700 focus:outline-none focus:ring-2 focus:ring-neutral-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60"
-          >
-            {cargando ? "Guardando…" : "Cambiar contraseña"}
-          </button>
         </form>
       </div>
     </main>
