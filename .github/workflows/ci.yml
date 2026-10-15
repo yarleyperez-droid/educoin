@@ -1,0 +1,121 @@
+# CI en cada PR — H6.4 / PRO-295 (Sprint 1)
+#
+# Corre la calidad completa del repo en cada pull request (y en cada push a
+# `develop`): typecheck, lint, build, tests unitarios, tests e2e (con
+# PostgreSQL efímero) y el build del frontend.
+#
+# Decisiones (spec/features/022-h6-4-ci-en-cada-pr/):
+# - Dos jobs en paralelo (backend / frontend) para mantener el tiempo bajo.
+# - Los secretos JWT se generan por corrida: nunca viven en el repo (.env está
+#   gitignored y aquí no se crea archivo alguno).
+# - La BD es un service container efímero: esquema + seed en cada ejecución,
+#   igual que el flujo local documentado en README §Base de datos.
+name: CI
+
+on:
+  pull_request:
+    branches: [main, develop]
+  push:
+    branches: [develop]
+
+# Solo lectura: el CI nunca escribe en el repo (el merge lo hace una persona).
+permissions:
+  contents: read
+
+# Si llega otro push al mismo PR, cancela la corrida anterior en vuelo.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend:
+    name: Backend · typecheck, lint, build, test, test:e2e
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: educoins
+          POSTGRES_PASSWORD: educoins_dev
+          POSTGRES_DB: educoins
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      # Misma BD local que describe README (puerto 5432 = interno del runner).
+      DATABASE_URL: postgresql://educoins:educoins_dev@localhost:5432/educoins
+      FRONTEND_URL: http://localhost:3001
+      NODE_ENV: test
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Instalar pnpm (corepack) y Node 24
+        uses: pnpm/action-setup@v4
+        with:
+          version: 11
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+
+      # Secretos JWT efímeros (≥16 chars exige env.validation); se descartan
+      # al terminar la corrida. Nunca se usan los de desarrollo ni los reales.
+      - name: Generar secretos JWT de prueba
+        run: |
+          echo "JWT_ACCESS_SECRET=$(openssl rand -hex 48)" >> "$GITHUB_ENV"
+          echo "JWT_REFRESH_SECRET=$(openssl rand -hex 48)" >> "$GITHUB_ENV"
+
+      - name: Instalar dependencias (postinstall genera el cliente Prisma)
+        run: pnpm install --frozen-lockfile
+
+      - name: typecheck
+        run: pnpm typecheck
+
+      - name: lint
+        run: pnpm lint
+
+      - name: build (nest)
+        run: pnpm build
+
+      - name: test (unitarios)
+        run: pnpm test
+
+      - name: Esquema y seed de la BD efímera
+        run: |
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f db/001_schema.sql
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f db/002_seed.sql
+
+      - name: test:e2e (Jest + Supertest contra la BD del service)
+        run: pnpm test:e2e
+
+  frontend:
+    name: Frontend · build (Next.js)
+    runs-on: ubuntu-latest
+    env:
+      # Solo para que `next build` no falle por env faltante; el valor real
+      # lo inyecta el despliegue.
+      NEXT_PUBLIC_API_URL: http://localhost:3000/api/v1
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Instalar pnpm (corepack) y Node 24
+        uses: pnpm/action-setup@v4
+        with:
+          version: 11
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: frontend/pnpm-lock.yaml
+
+      - name: Instalar dependencias del frontend
+        run: pnpm --dir frontend install --frozen-lockfile
+
+      - name: build (next build)
+        run: pnpm --dir frontend build
