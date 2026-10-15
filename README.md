@@ -156,6 +156,21 @@ ranking global           → ordena por monedas GANADAS (vista)
   Verificado con un PR sano en **verde** y un PR con error intencional en **rojo**.
   Nota: `db/002_seed.sql` lleva hashes argon2id reales de las contraseñas de
   esta sección; sin ellos los e2e de login fallan en CI.
+- **Kit UI y accesibilidad (H5.2 / PRO-283)**: componentes en
+  [`frontend/src/components/ui/`](frontend/src/components/ui/) — `EstadoCarga`
+  (`role="status"` + `aria-live`), `EstadoVacio` (acción sugerida),
+  `EstadoError` (`role="alert"`) y toast accesible propio (auto-ocultado 3 s,
+  sin librerías de runtime); 13 tests con Testing Library. Auditoría de
+  contraste **WCAG AA** (T5.2.3): 3 fallos detectados y corregidos —
+
+  | Elemento | Antes | Después | Mínimo |
+  |---|---:|---:|---:|
+  | placeholder de inputs | 2.52:1 (`neutral-400`) | 4.74:1 (`neutral-500`) | 4.5:1 |
+  | texto atenuado del kit | 4.37:1 (`--muted` del prototipo) | 5.43:1 (`#6b6a63`) | 4.5:1 |
+  | anillo de foco | 1.48:1 (`ring-neutral-300`) | 10.37:1 (`ring-neutral-700`) | 3:1 |
+
+  El resto (labels, `text-red-700` 6.47:1, botón primario 17.93:1, toast de
+  éxito 5.34:1 y de error 7.07:1) cumple AA sin cambios.
 
 ## Stack
 

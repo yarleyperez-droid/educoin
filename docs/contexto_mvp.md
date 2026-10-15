@@ -119,6 +119,14 @@ Todas las cuentas nacen con `must_change_password = TRUE`.
 - **Guards/Decorators globales**: `JwtAuthGuard` (JWT acceso vida corta), `RolesGuard` (`@Roles(...)`), `AuthThrottlerGuard`, `@UsuarioActual`, `@Publico` en `src/common/`.
 - **Frontend Next.js 16** (H5.1–H5.4 **completas**): `lib/api-client.ts` (HTTP único, access token en memoria, refresh-on-401 con cola de concurrencia, normaliza `auth/*` a `{data}`, 204→`data:null`, 401 login no dispara refresh); `lib/auth.ts` (`Sesion` espejo `UsuarioRespuestaDto` = `{id, username, email, role, nombre, apellido, organizacionId (string|null), debeCambiarContrasena}`, cookie legible `educoins_sesion` para middleware Edge); `middleware.ts` (guard por rol + bloqueo `debeCambiarContrasena` → `/cambiar-contrasena`); `features/auth/api/auth.ts` (`iniciarSesion`/`cerrarSesion` reales; `cambiarContrasena` = **MOCK documentado pendiente H2.2**); E2E Playwright con `webServer` array (Nest `:3000` + Next `:3001`), usuarios del seed reales; unit Vitest con stubs de fetch.
 - **Tests backend**: Jest en **modo CommonJS/CJS** (`jest.config.ts` y `test/jest-e2e.json` sin `extensionsToTreatAsEsm`/`useESM`, con `moduleNameMapper` para cliente Prisma); `pnpm test` / `pnpm test:e2e` en verde (11 suites unitarias).
+- **Kit UI y accesibilidad (H5.2 / PRO-283)**: componentes reutilizables
+  `frontend/src/components/ui/` (`EstadoCarga` `role="status"`, `EstadoVacio` con
+  acción sugerida, `EstadoError` `role="alert"`, `ProveedorToast`/`useToast` con
+  auto-ocultado 3 s, sin librerías de runtime), provider montado en `app/layout.tsx`,
+  13 tests con Testing Library (`*.test.tsx` + jsdom) y auditoría T5.2.3 con contraste
+  WCAG AA medido (3 fallos corregidos: placeholder `neutral-400` 2.52:1 → `neutral-500`
+  4.74:1; `--muted` 4.37:1 → `#6b6a63` 5.43:1; anillo de foco `neutral-300` 1.48:1 →
+  `neutral-700` 10.37:1).
 - **Servidor verificado en vivo**: API `:3000` → 200 · Next `:3001` → 200.
 - **Deps limpias**: pnpm lockfiles correctos en ambas apps.
 
@@ -145,7 +153,11 @@ Todas las cuentas nacen con `must_change_password = TRUE`.
 
 ### 5.4 Frontend — paneles por rol (H5.6/H5.8+)
 - H5.4 solo cubre auth. Faltan: panel admin (organizaciones, usuarios), panel profesor (clases, actividades, revisión/calificación, ítems), panel estudiante (dashboard, cuestionario, billetera, canjes, rankings, progreso).
-- Estados UI obligatorios: carga / vacío / error en toda vista con datos.
+- Estados UI obligatorios: carga / vacío / error en toda vista con datos —
+  **kit ya creado en H5.2 / PRO-283** (`frontend/src/components/ui/`: `EstadoCarga`,
+  `EstadoVacio`, `EstadoError` y toast accesible con `aria-live`); las vistas de
+  `develop` (login y cambio de contraseña) ya lo usan y las ramas en vuelo
+  (`s2_h5_6_panel_profesor`, `s2_h5_8_cuestionario`) deben adoptarlo al integrarse.
 - Decidir destino de `educoins_platform.html` (referencia o descarte).
 
 ### 5.5 API Docs
