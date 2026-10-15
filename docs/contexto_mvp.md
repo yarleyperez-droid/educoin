@@ -154,7 +154,11 @@ Todas las cuentas nacen con `must_change_password = TRUE`.
 ### 5.6 Calidad, seguridad y entrega
 - `helmet` + CORS + `ValidationPipe` global + rate limiting **ya cableados**; auditoría de que ninguna respuesta filtre `password_hash`, `is_correct`, `expected_answer` al estudiante.
 - Pruebas por funcionalidad (unit + e2e + casos negativos de rol/recurso ajeno/validación BD) siguiendo checklist "terminado" de AGENTS.md §12.
-- CI: `typecheck`, `lint`, `build`, `test`, `test:e2e` (+ build frontend) en cada PR; rama `develop` y flujo PR (hoy `main` + `Alejandro` + `s2_h5_4_login`).
+- CI: pipeline real en `.github/workflows/ci.yml` (H6.4 / PRO-295): `typecheck`,
+  `lint`, `build`, `test`, `test:e2e` (PostgreSQL 16 efímero con esquema + seed)
+  **y** build del frontend, en cada PR a `main`/`develop` y en cada push a
+  `develop`; verificado en verde con PR sano y en rojo con error intencional.
+  Flujo de ramas desde H6.2: `main` protegida → `develop` → `feature/...` vía PR.
 - Despliegue backend + frontend + PostgreSQL (Docker `educoin-db` puerto host 5434), variables fuera del repo, datos demo sembrados, guía arranque 5 min.
 
 ---

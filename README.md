@@ -144,11 +144,18 @@ ranking global           → ordena por monedas GANADAS (vista)
 
 - **Esquema BD**: verificado en PostgreSQL 16 con **12/12 pruebas** — detalle en
   [`docs/plataforma_educativa_bd.md` §7](docs/plataforma_educativa_bd.md).
-- **Backend**: `pnpm test` (11 suites / 85 tests) y `pnpm test:e2e` (5 suites /
-  36 tests, requieren la BD Docker corriendo).
+- **Backend**: `pnpm test` (11 suites / 104 tests) y `pnpm test:e2e` (5 suites /
+  53 tests, requieren la BD Docker corriendo).
 - **Frontend**: `pnpm --dir frontend test` (Vitest), `pnpm --dir frontend test:e2e`
   (Playwright contra backend real + Next; requiere BD Docker), más
   `typecheck`/`lint`/`build`.
+- **CI (H6.4 / PRO-295)**: cada PR a `main`/`develop` y cada push a `develop`
+  corren [.github/workflows/ci.yml](.github/workflows/ci.yml) — backend
+  (`typecheck`, `lint`, `build`, `test`, `test:e2e` contra PostgreSQL 16
+  efímero con esquema + seed por corrida) **y** `build` del frontend, en paralelo.
+  Verificado con un PR sano en **verde** y un PR con error intencional en **rojo**.
+  Nota: `db/002_seed.sql` lleva hashes argon2id reales de las contraseñas de
+  esta sección; sin ellos los e2e de login fallan en CI.
 
 ## Stack
 
@@ -176,9 +183,9 @@ ranking global           → ordena por monedas GANADAS (vista)
   service de los módulos nuevos (los guards globales ya existen).
 - **Frontend**: paneles por rol (H5.6+).
 - **Swagger** para publicar el contrato de la API.
-- **CI y despliegue**: no hay pipeline; el script `pnpm deploy` de
-  `@nestjs/mau` aún no está configurado. Estrategia pendiente de confirmar.
-  - Nota: el flujo de ramas y PRs ya existe (H6.2 / PRO-293); el CI por PR llegará con H6.4.
+- **Despliegue**: el script `pnpm deploy` de `@nestjs/mau` aún no está
+  configurado; estrategia pendiente de confirmar.
+  - Hecho: flujo de ramas y PR (H6.2 / PRO-293) **y** CI en cada PR (H6.4 / PRO-295).
 
 ## Flujo de ramas y PRs
 
