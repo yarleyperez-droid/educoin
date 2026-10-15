@@ -54,6 +54,10 @@ pnpm start:dev
 pnpm dev:web
 ```
 
+> **Documentación de la API (H1.3):** UI en <http://localhost:3000/api> y spec
+> OpenAPI JSON en <http://localhost:3000/api-json> (todas las rutas bajo
+> `/api/v1`, esquema de seguridad JWT bearer).
+
 ### Comandos
 
 | Comando | Qué hace |
@@ -156,6 +160,13 @@ ranking global           → ordena por monedas GANADAS (vista)
   Verificado con un PR sano en **verde** y un PR con error intencional en **rojo**.
   Nota: `db/002_seed.sql` lleva hashes argon2id reales de las contraseñas de
   esta sección; sin ellos los e2e de login fallan en CI.
+- **Contrato OpenAPI (H1.3 / PRO-267)**: `GET /api` (Swagger UI) y
+  `GET /api-json` (spec `openapi 3.0`) generados en el arranque desde
+  `src/swagger.config.ts`; los esquemas de los 12 DTO los infiere el plugin CLI
+  de `@nestjs/swagger` (`nest-cli.json`). Suite `test/swagger.e2e-spec.ts`
+  (5 tests: prefijo `/api/v1`, `securitySchemes` bearer aplicado a las rutas
+  protegidas, convención `{ data, meta }` + códigos, UI). Verificado además en
+  arranque compilado (`pnpm build` → `node dist/main` → esquemas reales).
 - **Kit UI y accesibilidad (H5.2 / PRO-283)**: componentes en
   [`frontend/src/components/ui/`](frontend/src/components/ui/) — `EstadoCarga`
   (`role="status"` + `aria-live`), `EstadoVacio` (acción sugerida),
@@ -197,7 +208,7 @@ ranking global           → ordena por monedas GANADAS (vista)
 - **Autorización por recurso**: verificar propiedad/organización en cada
   service de los módulos nuevos (los guards globales ya existen).
 - **Frontend**: paneles por rol (H5.6+).
-- **Swagger** para publicar el contrato de la API.
+- **Swagger**: ✅ contrato publicado en `/api` (H1.3 / PRO-267).
 - **Despliegue**: el script `pnpm deploy` de `@nestjs/mau` aún no está
   configurado; estrategia pendiente de confirmar.
   - Hecho: flujo de ramas y PR (H6.2 / PRO-293) **y** CI en cada PR (H6.4 / PRO-295).

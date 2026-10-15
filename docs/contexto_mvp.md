@@ -161,7 +161,14 @@ Todas las cuentas nacen con `must_change_password = TRUE`.
 - Decidir destino de `educoins_platform.html` (referencia o descarte).
 
 ### 5.5 API Docs
-- Swagger/OpenAPI en `/api` con prefijo `/api/v1` (hoy el frontend deriva tipos del código real del backend, no de Swagger).
+- **Swagger/OpenAPI publicado (H1.3 / PRO-267)**: UI en `GET /api`, spec en
+  `GET /api-json`, todas las rutas documentadas bajo `/api/v1`, securityScheme
+  bearer JWT aplicado a `/auth/perfil` y a todo `/classes`, convenciones
+  `{ data, meta }` + códigos (201/409/422/401/403 y compañía) en la
+  descripción, y esquemas de DTO inferidos por el plugin CLI de
+  `@nestjs/swagger` (habilitado en `nest-cli.json`).
+- El frontend sigue derivando tipos del código real (H5.4); consumir la spec
+  para generar tipos queda como mejora, no como requisito.
 
 ### 5.6 Calidad, seguridad y entrega
 - `helmet` + CORS + `ValidationPipe` global + rate limiting **ya cableados**; auditoría de que ninguna respuesta filtre `password_hash`, `is_correct`, `expected_answer` al estudiante.
