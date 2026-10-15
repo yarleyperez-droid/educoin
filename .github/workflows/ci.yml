@@ -82,13 +82,16 @@ jobs:
       - name: build (nest)
         run: pnpm build
 
-      - name: test (unitarios)
-        run: pnpm test
-
+      # IMPORTANTE: el esquema se aplica ANTES de cualquier test. La suite
+      # "unitaria" incluye `test/prisma-smoke.spec.ts`, que consulta tablas
+      # reales (probado en CI: sin schema falla con "table does not exist").
       - name: Esquema y seed de la BD efímera
         run: |
           psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f db/001_schema.sql
           psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f db/002_seed.sql
+
+      - name: test (unitarios)
+        run: pnpm test
 
       - name: test:e2e (Jest + Supertest contra la BD del service)
         run: pnpm test:e2e
