@@ -14,9 +14,9 @@
 | [`educoins_platform.html`](educoins_platform.html) | **Demo principal** (prototipo de interfaz autocontenido: HTML + CSS, sin dependencias). Ábrelo directo en el navegador. |
 | [`db/001_schema.sql`](db/001_schema.sql) | Esquema completo de la BD (9 tablas, 10 enums, 7 triggers, 3 vistas) — *docstring de cabecera con uso y convenciones*. |
 | [`db/002_seed.sql`](db/002_seed.sql) | Datos de prueba mínimos para recorrer todo el ciclo — *docstring de cabecera*. |
-| [`docs/plataforma_educativa_bd.md`](docs/plataforma_educativa_bd.md) | **Especificación de la BD**: reglas de negocio, diagrama Mermaid, estructura JSONB, resultados de verificación. |
-| [`docs/post_mvp.md`](docs/post_mvp.md) | **Backlog post-MVP**: funcionalidades planificadas (minijuegos, modalidades, aprobación de canjes…) que *no existen aún* en la BD. |
-| [`docs/contexto_mvp.md`](docs/contexto_mvp.md) | **Contexto del MVP**: reglas de negocio, stack y decisiones, qué está hecho y qué falta. |
+| [`docs/EduCoin.md`](docs/EduCoin.md) | **Ficha técnica oficial** (Plan de Dirección Técnica v1.0): requerimientos por rol (Dev 1/2/3), stack permitido, estándares de código y flujo Git. |
+| [`docs/post_mvp.md`](docs/post_mvp.md) | **Post-MVP (backlog + planes, documento único)**: trazabilidad contra la ficha (§0), funcionalidades planificadas que *no existen aún* en la BD (Parte I) + plan de la épica E7 — canje con aprobación (Parte II) + plan de la épica E8 — minijuegos como pregunta de actividad (Parte III) + plan de la épica E9 — KaTeX + responsive (Parte IV). |
+| [`docs/guard_pertenencia.md`](docs/guard_pertenencia.md) | **Guard `@PerteneceA`**: cómo funciona la verificación de propiedad de recursos y cómo declararla en endpoints nuevos. |
 | [`.opencode/agents/AGENTS.md`](.opencode/agents/AGENTS.md) | Guardrails del proyecto para agentes de IA. |
 | [`package.json`](package.json) | **Backend NestJS** (API REST): scripts, dependencias y `engines`. |
 | [`src/`](src) | Código del backend (NestJS). Módulos reales: `auth` (H2.1 completo), `autorizacion`, `classes` (parcial), `common/` (guards, decorators, filters), `config/` (validación .env), `prisma/`, `generated/prisma/`. |
@@ -146,8 +146,11 @@ ranking global           → ordena por monedas GANADAS (vista)
 
 ## Verificación
 
-- **Esquema BD**: verificado en PostgreSQL 16 con **12/12 pruebas** — detalle en
-  [`docs/plataforma_educativa_bd.md` §7](docs/plataforma_educativa_bd.md).
+- **Esquema BD**: verificado en PostgreSQL 16 con **12/12 pruebas** (2026-10-02):
+  otorgamiento de monedas, contadores, canje + stock, ranking, unicidad de clase,
+  saldo sin negativo, organización compartida, recalificación sin duplicar,
+  reversión de canje, bloqueo a actividad `draft` y auditoría en `coin_movements`.
+  La regresión continua la cubre `test:e2e` en CI.
 - **Backend**: `pnpm test` (11 suites / 104 tests) y `pnpm test:e2e` (5 suites /
   53 tests, requieren la BD Docker corriendo).
 - **Frontend**: `pnpm --dir frontend test` (Vitest), `pnpm --dir frontend test:e2e`
@@ -204,7 +207,8 @@ ranking global           → ordena por monedas GANADAS (vista)
 - **H2.2**: endpoint de cambio de contraseña en el backend (único pendiente
   de auth; desbloquea reemplazar el mock de `cambiarContrasena` del frontend).
 - **Backend de dominio**: clases completas, actividades, entregas,
-  inscripciones, canjes y ranking (ver `docs/contexto_mvp.md` §5).
+  inscripciones, canjes y ranking (estado y asignación en **Linear**;
+  plan post-MVP en `docs/post_mvp.md`).
 - **Autorización por recurso**: verificar propiedad/organización en cada
   service de los módulos nuevos (los guards globales ya existen).
 - **Frontend**: paneles por rol (H5.6+).
