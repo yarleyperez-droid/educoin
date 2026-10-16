@@ -6,6 +6,7 @@ import { PrismaModule } from './prisma/prisma.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { ClassesModule } from './modules/classes/classes.module';
 import { RedemptionsModule } from './modules/redemptions/redemptions.module';
+import { WalletModule } from './modules/wallet/wallet.module';
 import { validarEnv } from './config/env.validation';
 
 @Module({
@@ -15,6 +16,7 @@ import { validarEnv } from './config/env.validation';
     AuthModule,
     ClassesModule,
     RedemptionsModule,
+    WalletModule,
   ],
   controllers: [AppController],
   providers: [AppService],
