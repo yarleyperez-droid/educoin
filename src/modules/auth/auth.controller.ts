@@ -39,6 +39,7 @@ import {
   THROTTLER_REFRESH,
 } from './guards/auth-throttler.guard';
 import { IniciarSesionDto } from './dto/iniciar-sesion.dto';
+import { CambiarContrasenaDto } from './dto/cambiar-contrasena.dto';
 import {
   SesionRespuestaDto,
   UsuarioRespuestaDto,
@@ -75,9 +76,12 @@ export class AuthController {
     description:
       'Sesión iniciada: access token en el cuerpo y refresh token en la cookie httpOnly.',
   })
-  @ApiBadRequestResponse({ description: 'Credenciales con formato inválido (400).' })
+  @ApiBadRequestResponse({
+    description: 'Credenciales con formato inválido (400).',
+  })
   @ApiUnauthorizedResponse({
-    description: 'Credenciales erróneas o cuenta inactiva (401, mensaje genérico).',
+    description:
+      'Credenciales erróneas o cuenta inactiva (401, mensaje genérico).',
   })
   @ApiTooManyRequestsResponse({
     description: 'Rate limit de login: 5 intentos por minuto por IP (429).',
@@ -154,6 +158,22 @@ export class AuthController {
     return this.authService.obtenerPerfil(usuario.id);
   }
 
+  @Post('cambiar-contrasena')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @ApiBearerAuth()
+  @ApiUnauthorizedResponse({
+    description: 'Sesión inválida o contraseña actual incorrecta.',
+  })
+  async cambiarContrasena(
+    @UsuarioActual() usuario: UsuarioAutenticado,
+    @Body() dto: CambiarContrasenaDto,
+  ): Promise<void> {
+    await this.authService.cambiarContrasena(
+      usuario.id,
+      dto.contrasenaActual,
+      dto.contrasenaNueva,
+    );
+  }
   private armarSesion(
     sesion: SesionInterna,
     respuesta: Response,
