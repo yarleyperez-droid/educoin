@@ -151,8 +151,8 @@ ranking global           → ordena por monedas GANADAS (vista)
   saldo sin negativo, organización compartida, recalificación sin duplicar,
   reversión de canje, bloqueo a actividad `draft` y auditoría en `coin_movements`.
   La regresión continua la cubre `test:e2e` en CI.
-- **Backend**: `pnpm test` (11 suites / 104 tests) y `pnpm test:e2e` (5 suites /
-  53 tests, requieren la BD Docker corriendo).
+- **Backend**: `pnpm test` (16 suites / 139 tests) y `pnpm test:e2e` (10 suites /
+  95 tests, requieren la BD Docker corriendo).
 - **Frontend**: `pnpm --dir frontend test` (Vitest), `pnpm --dir frontend test:e2e`
   (Playwright contra backend real + Next; requiere BD Docker), más
   `typecheck`/`lint`/`build`.
@@ -207,6 +207,16 @@ ranking global           → ordena por monedas GANADAS (vista)
 
   El resto (labels, `text-red-700` 6.47:1, botón primario 17.93:1, toast de
   éxito 5.34:1 y de error 7.07:1) cumple AA sin cambios.
+- **Endurecimiento transversal (H6.1 / PRO-292)**: CORS limitado a
+  `FRONTEND_URL` (el ACAO se fija siempre al origen del frontend y jamás
+  refleja orígenes ajenos ni `*`), helmet y `ValidationPipe` globales
+  (`whitelist` + `transform`) **cubiertos por tests**, rate limit **global**
+  de 300/min por IP (`src/modules/rate-limit/` + `RateLimitGlobalGuard`,
+  registrado antes que `JwtAuthGuard`: flood → **429** sin verificar JWT) y
+  auditoría de filtraciones sin `password_hash`/`is_correct`/`expected_answer`
+  (`test/helpers/auditoria-respuestas.ts`, reutilizable en H6.3). Suite
+  `test/seguridad-transversal.e2e-spec.ts` (8 tests) + 11 unit; el rate limit
+  de auth (5/min) quedó intacto.
 
 ## Stack
 
