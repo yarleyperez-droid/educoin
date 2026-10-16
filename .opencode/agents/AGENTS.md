@@ -94,11 +94,10 @@
 Antes de tocar datos, consulta en este orden:
 
 1. **`db/001_schema.sql`** — script ejecutable real (tablas, enums, índices, triggers, funciones, vistas). **Es la máxima autoridad.**
-2. `docs/plataforma_educativa_bd.md` — especificación: reglas de negocio, diagrama Mermaid, estructura JSONB, resultados de verificación.
-3. `db/002_seed.sql` — datos de prueba (muestra de flujos reales).
-4. `docs/post_mvp.md` — pendientes/planificados. **NO existen en la BD**; solo referencia de futuro.
-5. `docs/contexto_mvp.md` — contexto general: reglas de negocio, stack, estado actual (hecho/pendiente).
-6. Este archivo.
+2. `db/002_seed.sql` — datos de prueba (muestra de flujos reales).
+3. `docs/post_mvp.md` — Parte I: backlog de pendientes; Parte II: plan de la épica E7 (canje revisable); Parte III: plan de la épica E8 (minijuegos como pregunta); Parte IV: plan de la épica E9 (KaTeX + responsive). **Nada de la Parte I existe en la BD**; las Partes II–IV están publicadas en Linear.
+4. `docs/guard_pertenencia.md` — cómo declarar `@PerteneceA` en endpoints nuevos.
+5. Este archivo.
 
 > Si un futuro `schema.prisma` y el SQL discrepan, **el SQL de `db/` gana**. Repórtalo, no lo "arregles" en silencio.
 
@@ -164,9 +163,8 @@ Estructura **actual** (real, verificada):
 │   ├── 001_schema.sql               # esquema completo (MVP) + docstring
 │   └── 002_seed.sql                 # datos de prueba + docstring
 ├── docs/
-│   ├── plataforma_educativa_bd.md   # especificación de la BD (§7 = verificación 12/12)
-│   ├── post_mvp.md                  # backlog de funcionalidades pendientes
-│   └── contexto_mvp.md             # contexto general: reglas, stack, estado actual (hecho/pendiente)
+│   ├── post_mvp.md                  # post-MVP: backlog de pendientes + planes épicas E7 (canje revisable), E8 (minijuegos) y E9 (KaTeX + responsive)
+│   └── guard_pertenencia.md         # guard @PerteneceA: verificación de propiedad de recursos
 ├── prisma/
 │   ├── schema.prisma                # modelos PascalCase español → @@map inglés; JSONB, BigInt, CITEXT, enums
 │   └── migrations/                  # migraciones SQL manuales (baselining + triggers/vistas/índices parciales)
@@ -338,7 +336,7 @@ Crea un `ExceptionFilter` en `common/filters` que traduzca:
 - Estados de UI obligatorios: carga, vacío y error en toda vista con datos.
 - Responsive (mobile-first) y accesibilidad básica (labels, foco, contraste).
 - **KaTeX:** renderiza ecuaciones solo desde contenido saneado (ver sección 9).
-- Minijuegos: **aún no existen en la BD** (ver `docs/post_mvp.md`); cuando se implementen, un componente por tipo en `components/features/minijuegos/` con interfaz común, y el frontend **nunca** conoce la solución.
+- Minijuegos: **aún no existen en la BD** (planificados como épica E8, `docs/post_mvp.md` Parte III); cuando se implementen, un componente por tipo en `components/features/minijuegos/` con interfaz común, y el frontend **nunca** conoce la solución.
 
 ### Git
 - Ramas del repo hoy: `main`, `develop` (creada en H6.2 / PRO-293) y ramas de
@@ -471,7 +469,7 @@ NEXT_PUBLIC_API_URL=
 ## 14. Recomendaciones de uso con OpenCode (para el equipo humano)
 
 - Este archivo vive en **`.opencode/agents/AGENTS.md`** (convención del proyecto; OpenCode también lee un `AGENTS.md` en la raíz si lo hubiera).
-- Consulta la especificación de la BD por ruta (`docs/plataforma_educativa_bd.md`) en lugar de pegarla completa en cada prompt; lo mismo con `docs/post_mvp.md` cuando se planifique futuro.
+- Consulta el esquema por ruta (`db/001_schema.sql`) en lugar de pegarlo completo en cada prompt; lo mismo con `docs/post_mvp.md` cuando se planifique futuro.
 - Da **una tarea por prompt**, con rama, módulo y criterio de aceptación. Ejemplo:
   > *"En `apps/api/src/modules/submissions` (cuando exista), implementa el guardado de respuestas JSONB siguiendo la sección 11 de AGENTS.md. Tabla: `submissions`. Solo el estudiante dueño de la inscripción. Primero muéstrame el plan."*
 - Pide **plan antes de código** en tareas grandes y revisa el diff antes de aceptar.

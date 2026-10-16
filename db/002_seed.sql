@@ -18,8 +18,8 @@
 --     desarrollo: jamás reutilizar estas contraseñas fuera del seed.
 --   · Todas las semillas respetan los triggers: los estudiantes y el
 --     profesor pertenecen a la misma organización que la clase.
---   · Después de ejecutar este archivo, aplicar las pruebas de la
---     sección §7 de docs/plataforma_educativa_bd.md.
+--   · Después de ejecutar este archivo, smoke-test de los flujos del
+--     README §Ciclo principal (o correr test:e2e, que hace lo mismo).
 -- =====================================================================
 
 BEGIN;

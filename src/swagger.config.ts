@@ -52,7 +52,7 @@ const DESCRIPCION = `
 | 404 | Recurso inexistente o ajeno (\`@PerteneceA\`, anti-enumeración) |
 | 409 | Conflicto de unicidad (Prisma \`P2002\`, p. ej. nombre de clase repetido) |
 | 422 | Regla de negocio rechazada por la BD (\`RAISE EXCEPTION\`) |
-| 429 | Rate limit de auth (5 intentos/min por IP) |
+| 429 | Rate limit global (300/min por IP) o de auth (5 intentos/min) |
 
 ## Autenticación
 

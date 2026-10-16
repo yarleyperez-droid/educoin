@@ -14,9 +14,9 @@
 | [`educoins_platform.html`](educoins_platform.html) | **Demo principal** (prototipo de interfaz autocontenido: HTML + CSS, sin dependencias). Ábrelo directo en el navegador. |
 | [`db/001_schema.sql`](db/001_schema.sql) | Esquema completo de la BD (9 tablas, 10 enums, 7 triggers, 3 vistas) — *docstring de cabecera con uso y convenciones*. |
 | [`db/002_seed.sql`](db/002_seed.sql) | Datos de prueba mínimos para recorrer todo el ciclo — *docstring de cabecera*. |
-| [`docs/plataforma_educativa_bd.md`](docs/plataforma_educativa_bd.md) | **Especificación de la BD**: reglas de negocio, diagrama Mermaid, estructura JSONB, resultados de verificación. |
-| [`docs/post_mvp.md`](docs/post_mvp.md) | **Backlog post-MVP**: funcionalidades planificadas (minijuegos, modalidades, aprobación de canjes…) que *no existen aún* en la BD. |
-| [`docs/contexto_mvp.md`](docs/contexto_mvp.md) | **Contexto del MVP**: reglas de negocio, stack y decisiones, qué está hecho y qué falta. |
+| [`docs/EduCoin.md`](docs/EduCoin.md) | **Ficha técnica oficial** (Plan de Dirección Técnica v1.0): requerimientos por rol (Dev 1/2/3), stack permitido, estándares de código y flujo Git. |
+| [`docs/post_mvp.md`](docs/post_mvp.md) | **Post-MVP (backlog + planes, documento único)**: trazabilidad contra la ficha (§0), funcionalidades planificadas que *no existen aún* en la BD (Parte I) + plan de la épica E7 — canje con aprobación (Parte II) + plan de la épica E8 — minijuegos como pregunta de actividad (Parte III) + plan de la épica E9 — KaTeX + responsive (Parte IV). |
+| [`docs/guard_pertenencia.md`](docs/guard_pertenencia.md) | **Guard `@PerteneceA`**: cómo funciona la verificación de propiedad de recursos y cómo declararla en endpoints nuevos. |
 | [`.opencode/agents/AGENTS.md`](.opencode/agents/AGENTS.md) | Guardrails del proyecto para agentes de IA. |
 | [`package.json`](package.json) | **Backend NestJS** (API REST): scripts, dependencias y `engines`. |
 | [`src/`](src) | Código del backend (NestJS). Módulos reales: `auth` (H2.1 completo), `autorizacion`, `classes` (parcial), `common/` (guards, decorators, filters), `config/` (validación .env), `prisma/`, `generated/prisma/`. |
@@ -146,10 +146,13 @@ ranking global           → ordena por monedas GANADAS (vista)
 
 ## Verificación
 
-- **Esquema BD**: verificado en PostgreSQL 16 con **12/12 pruebas** — detalle en
-  [`docs/plataforma_educativa_bd.md` §7](docs/plataforma_educativa_bd.md).
-- **Backend**: `pnpm test` (11 suites / 104 tests) y `pnpm test:e2e` (5 suites /
-  53 tests, requieren la BD Docker corriendo).
+- **Esquema BD**: verificado en PostgreSQL 16 con **12/12 pruebas** (2026-10-02):
+  otorgamiento de monedas, contadores, canje + stock, ranking, unicidad de clase,
+  saldo sin negativo, organización compartida, recalificación sin duplicar,
+  reversión de canje, bloqueo a actividad `draft` y auditoría en `coin_movements`.
+  La regresión continua la cubre `test:e2e` en CI.
+- **Backend**: `pnpm test` (16 suites / 139 tests) y `pnpm test:e2e` (10 suites /
+  95 tests, requieren la BD Docker corriendo).
 - **Frontend**: `pnpm --dir frontend test` (Vitest), `pnpm --dir frontend test:e2e`
   (Playwright contra backend real + Next; requiere BD Docker), más
   `typecheck`/`lint`/`build`.
@@ -160,6 +163,28 @@ ranking global           → ordena por monedas GANADAS (vista)
   Verificado con un PR sano en **verde** y un PR con error intencional en **rojo**.
   Nota: `db/002_seed.sql` lleva hashes argon2id reales de las contraseñas de
   esta sección; sin ellos los e2e de login fallan en CI.
+- **Catálogo de ítems (H4.1 / PRO-279)**: `src/modules/items/` con CRUD
+  del profesor (`POST/GET/PATCH/DELETE /api/v1/items`, solo rol teacher):
+  validación por tipo en el Service → **422** antes de tocar la BD
+  (`fun_activity` exige stock, `grade_bonus` exige grade_points, costo > 0),
+  propiedad ajena/inexistente → **403 uniforme** (sin filtrar existencia),
+  duplicado → 409 y borrado **lógico** (`status='deleted'`, la FK de
+  `redemptions` prohíbe el físico). Suite `test/items.e2e-spec.ts`
+  (11 tests) + 9 unit.
+- **Billetera del estudiante (H4.2 / PRO-280)**: `src/modules/wallet/` con
+  `GET /api/v1/wallet` (saldo leído de la vista `student_coins`, sin recalcular)
+  y `GET /api/v1/wallet/movements` (historial de `coin_movements` con
+  `{ data, meta }`, orden descendente y la clase de cada movimiento). Solo el
+  propio estudiante (`?studentId=` ajeno → 403; rol ≠ student → 403). Suite
+  `test/wallet.e2e-spec.ts` (7 tests) y 5 unit del helper.
+- **Canje instantáneo (H4.4 / PRO-282)**: módulo `src/modules/redemptions/`
+  con `GET /api/v1/redemptions/preview` (costo/saldo/stock), `POST /api/v1/redemptions`
+  (atómico, costo congelado por trigger) y `POST /api/v1/redemptions/:id/reverse`
+  (anulación; monedas y stock revueltos por el trigger `fn_reverse_redemption`;
+  `reversed_at` lo sella la app porque el trigger es AFTER UPDATE). Documentado
+  en el contrato de H1.3 con tag `redemptions`. Suite `test/redemptions.e2e-spec.ts`
+  (11 tests: CAs 1–4, rollback total de saldo/stock, doble anulación 409,
+  404 anti-enumeración y 403 para roles ≠ student).
 - **Contrato OpenAPI (H1.3 / PRO-267)**: `GET /api` (Swagger UI) y
   `GET /api-json` (spec `openapi 3.0`) generados en el arranque desde
   `src/swagger.config.ts`; los esquemas de los 12 DTO los infiere el plugin CLI
@@ -182,6 +207,16 @@ ranking global           → ordena por monedas GANADAS (vista)
 
   El resto (labels, `text-red-700` 6.47:1, botón primario 17.93:1, toast de
   éxito 5.34:1 y de error 7.07:1) cumple AA sin cambios.
+- **Endurecimiento transversal (H6.1 / PRO-292)**: CORS limitado a
+  `FRONTEND_URL` (el ACAO se fija siempre al origen del frontend y jamás
+  refleja orígenes ajenos ni `*`), helmet y `ValidationPipe` globales
+  (`whitelist` + `transform`) **cubiertos por tests**, rate limit **global**
+  de 300/min por IP (`src/modules/rate-limit/` + `RateLimitGlobalGuard`,
+  registrado antes que `JwtAuthGuard`: flood → **429** sin verificar JWT) y
+  auditoría de filtraciones sin `password_hash`/`is_correct`/`expected_answer`
+  (`test/helpers/auditoria-respuestas.ts`, reutilizable en H6.3). Suite
+  `test/seguridad-transversal.e2e-spec.ts` (8 tests) + 11 unit; el rate limit
+  de auth (5/min) quedó intacto.
 
 ## Stack
 
@@ -204,7 +239,8 @@ ranking global           → ordena por monedas GANADAS (vista)
 - **H2.2**: endpoint de cambio de contraseña en el backend (único pendiente
   de auth; desbloquea reemplazar el mock de `cambiarContrasena` del frontend).
 - **Backend de dominio**: clases completas, actividades, entregas,
-  inscripciones, canjes y ranking (ver `docs/contexto_mvp.md` §5).
+  inscripciones, canjes y ranking (estado y asignación en **Linear**;
+  plan post-MVP en `docs/post_mvp.md`).
 - **Autorización por recurso**: verificar propiedad/organización en cada
   service de los módulos nuevos (los guards globales ya existen).
 - **Frontend**: paneles por rol (H5.6+).
