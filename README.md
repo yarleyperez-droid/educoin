@@ -163,6 +163,12 @@ ranking global           → ordena por monedas GANADAS (vista)
   Verificado con un PR sano en **verde** y un PR con error intencional en **rojo**.
   Nota: `db/002_seed.sql` lleva hashes argon2id reales de las contraseñas de
   esta sección; sin ellos los e2e de login fallan en CI.
+- **Billetera del estudiante (H4.2 / PRO-280)**: `src/modules/wallet/` con
+  `GET /api/v1/wallet` (saldo leído de la vista `student_coins`, sin recalcular)
+  y `GET /api/v1/wallet/movements` (historial de `coin_movements` con
+  `{ data, meta }`, orden descendente y la clase de cada movimiento). Solo el
+  propio estudiante (`?studentId=` ajeno → 403; rol ≠ student → 403). Suite
+  `test/wallet.e2e-spec.ts` (7 tests) y 5 unit del helper.
 - **Canje instantáneo (H4.4 / PRO-282)**: módulo `src/modules/redemptions/`
   con `GET /api/v1/redemptions/preview` (costo/saldo/stock), `POST /api/v1/redemptions`
   (atómico, costo congelado por trigger) y `POST /api/v1/redemptions/:id/reverse`
