@@ -163,6 +163,14 @@ ranking global           → ordena por monedas GANADAS (vista)
   Verificado con un PR sano en **verde** y un PR con error intencional en **rojo**.
   Nota: `db/002_seed.sql` lleva hashes argon2id reales de las contraseñas de
   esta sección; sin ellos los e2e de login fallan en CI.
+- **Catálogo de ítems (H4.1 / PRO-279)**: `src/modules/items/` con CRUD
+  del profesor (`POST/GET/PATCH/DELETE /api/v1/items`, solo rol teacher):
+  validación por tipo en el Service → **422** antes de tocar la BD
+  (`fun_activity` exige stock, `grade_bonus` exige grade_points, costo > 0),
+  propiedad ajena/inexistente → **403 uniforme** (sin filtrar existencia),
+  duplicado → 409 y borrado **lógico** (`status='deleted'`, la FK de
+  `redemptions` prohíbe el físico). Suite `test/items.e2e-spec.ts`
+  (11 tests) + 9 unit.
 - **Billetera del estudiante (H4.2 / PRO-280)**: `src/modules/wallet/` con
   `GET /api/v1/wallet` (saldo leído de la vista `student_coins`, sin recalcular)
   y `GET /api/v1/wallet/movements` (historial de `coin_movements` con
