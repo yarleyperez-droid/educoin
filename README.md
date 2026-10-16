@@ -163,6 +163,14 @@ ranking global           → ordena por monedas GANADAS (vista)
   Verificado con un PR sano en **verde** y un PR con error intencional en **rojo**.
   Nota: `db/002_seed.sql` lleva hashes argon2id reales de las contraseñas de
   esta sección; sin ellos los e2e de login fallan en CI.
+- **Canje instantáneo (H4.4 / PRO-282)**: módulo `src/modules/redemptions/`
+  con `GET /api/v1/redemptions/preview` (costo/saldo/stock), `POST /api/v1/redemptions`
+  (atómico, costo congelado por trigger) y `POST /api/v1/redemptions/:id/reverse`
+  (anulación; monedas y stock revueltos por el trigger `fn_reverse_redemption`;
+  `reversed_at` lo sella la app porque el trigger es AFTER UPDATE). Documentado
+  en el contrato de H1.3 con tag `redemptions`. Suite `test/redemptions.e2e-spec.ts`
+  (11 tests: CAs 1–4, rollback total de saldo/stock, doble anulación 409,
+  404 anti-enumeración y 403 para roles ≠ student).
 - **Contrato OpenAPI (H1.3 / PRO-267)**: `GET /api` (Swagger UI) y
   `GET /api-json` (spec `openapi 3.0`) generados en el arranque desde
   `src/swagger.config.ts`; los esquemas de los 12 DTO los infiere el plugin CLI
