@@ -175,8 +175,7 @@ describe('Guards globales de JWT y rol (e2e)', () => {
 
     expect(respuesta.status).toBe(401);
   });
-
-  it('cambiar contraseña funciona con la contraseña actual correcta', async () => {
+  it('cambiar contraseña permite completar el cambio inicial y desbloquea la API', async () => {
     const admin = await prisma.users.findFirst({
       where: { username: 'admin' },
       select: {
@@ -187,30 +186,75 @@ describe('Guards globales de JWT y rol (e2e)', () => {
     });
 
     expect(admin).not.toBeNull();
+
     if (!admin) {
       throw new Error('No se encontró el administrador de prueba');
     }
 
     try {
-      const respuesta = await httpServer
+      // Simular que el administrador todavía debe cambiar su contraseña.
+      await prisma.users.update({
+        where: { id: admin.id },
+        data: { must_change_password: true },
+      });
+
+      // Iniciar sesión para obtener un token con el cambio pendiente.
+      const loginInicial = await httpServer.post('/api/v1/auth/login').send({
+        usuarioOEmail: LOGIN_ADMIN.usuarioOEmail,
+        contrasena: LOGIN_ADMIN.contrasena,
+      });
+
+      expect(loginInicial.status).toBe(201);
+      expect(loginInicial.body.accessToken).toBeDefined();
+
+      const tokenInicial = loginInicial.body.accessToken;
+
+      // La API protegida debe estar bloqueada antes del cambio.
+      const perfilBloqueado = await httpServer
+        .get('/api/v1/auth/perfil')
+        .set('Authorization', `Bearer ${tokenInicial}`);
+
+      expect(perfilBloqueado.status).toBe(401);
+      expect(perfilBloqueado.body.message).toBe(
+        'Debes cambiar tu contraseña inicial antes de continuar.',
+      );
+
+      // Cambiar la contraseña usando la contraseña inicial correcta.
+      const respuestaCambio = await httpServer
         .post('/api/v1/auth/cambiar-contrasena')
-        .set('Authorization', `Bearer ${tokenAdmin}`)
+        .set('Authorization', `Bearer ${tokenInicial}`)
         .send({
           contrasenaActual: LOGIN_ADMIN.contrasena,
           contrasenaNueva: 'NuevaClave123!',
         });
 
-      expect(respuesta.status).toBe(204);
+      expect(respuestaCambio.status).toBe(204);
 
-      const loginNuevo = await httpServer
-        .post('/api/v1/auth/login')
-        .send({
-          usuarioOEmail: LOGIN_ADMIN.usuarioOEmail,
-          contrasena: 'NuevaClave123!',
-        });
+      // Comprobar que la base de datos ya no exige el cambio inicial.
+      const adminActualizado = await prisma.users.findUnique({
+        where: { id: admin.id },
+        select: { must_change_password: true },
+      });
+
+      expect(adminActualizado?.must_change_password).toBe(false);
+
+      // Comprobar que la contraseña nueva permite iniciar sesión.
+      const loginNuevo = await httpServer.post('/api/v1/auth/login').send({
+        usuarioOEmail: LOGIN_ADMIN.usuarioOEmail,
+        contrasena: 'NuevaClave123!',
+      });
 
       expect(loginNuevo.status).toBe(201);
+      expect(loginNuevo.body.accessToken).toBeDefined();
+
+      // El usuario debe poder entrar a la API con la nueva sesión.
+      const perfilDesbloqueado = await httpServer
+        .get('/api/v1/auth/perfil')
+        .set('Authorization', `Bearer ${loginNuevo.body.accessToken}`);
+
+      expect(perfilDesbloqueado.status).toBe(200);
     } finally {
+      // Restaurar las credenciales originales para no afectar otras pruebas.
       await prisma.users.update({
         where: { id: admin.id },
         data: {
