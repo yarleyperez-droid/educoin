@@ -96,6 +96,30 @@ describe('Guards globales de JWT y rol (e2e)', () => {
     expect(estudiante.body.username).toBe('est.perez');
   });
 
+  it('bloquea las rutas protegidas si el usuario debe cambiar su contraseña', async () => {
+    const config = app.get(ConfigService);
+    const jwt = new JwtService({
+      secret: config.getOrThrow<string>('JWT_ACCESS_SECRET'),
+    });
+
+    const tokenCambioPendiente = jwt.sign({
+      id: '1',
+      username: 'admin',
+      role: 'admin',
+      organizacionId: null,
+      debeCambiarContrasena: true,
+    });
+
+    const respuesta = await httpServer
+      .get('/api/v1/auth/perfil')
+      .set('Authorization', `Bearer ${tokenCambioPendiente}`);
+
+    expect(respuesta.status).toBe(401);
+    expect(respuesta.body.message).toBe(
+      'Debes cambiar tu contraseña inicial antes de continuar.',
+    );
+  });
+
   it('rechaza con 401 un token EXPIRADO (caducidad validada en e2e)', async () => {
     const config = app.get(ConfigService);
     const jwt = new JwtService({
