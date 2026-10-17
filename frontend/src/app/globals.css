@@ -3,6 +3,19 @@
 :root {
   --background: #ffffff;
   --foreground: #171717;
+
+  /*
+   * Tokens de estado del kit UI (H5.2 / PRO-283).
+   * Fuente visual: `docs/prototipo-educoins.html:12` (spec 005 la declara
+   * fuente de verdad). `--muted` se oscureció de `#7a7971` a `#6b6a63`
+   * porque el original da 4.37:1 sobre blanco y no cumple AA para texto
+   * (auditoría T5.2.3).
+   */
+  --success: #2d7a2d; /* 5.34:1 sobre blanco */
+  --success-bg: #eaf3de;
+  --danger: #a32d2d; /* 7.07:1 sobre blanco */
+  --danger-bg: #fcebeb;
+  --muted: #6b6a63; /* 5.43:1 sobre blanco */
 }
 
 body {

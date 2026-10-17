@@ -7,6 +7,17 @@ import {
   Post,
   Query,
 } from '@nestjs/common';
+import {
+  ApiBadRequestResponse,
+  ApiBearerAuth,
+  ApiConflictResponse,
+  ApiCreatedResponse,
+  ApiForbiddenResponse,
+  ApiNotFoundResponse,
+  ApiOkResponse,
+  ApiUnauthorizedResponse,
+  ApiUnprocessableEntityResponse,
+} from '@nestjs/swagger';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { PerteneceA } from '../../common/decorators/pertenece-a.decorator';
 import { UsuarioActual } from '../../common/decorators/usuario-actual.decorator';
@@ -16,12 +27,12 @@ import { CrearClaseDto } from './dto/crear-clase.dto';
 import { ActualizarClaseDto } from './dto/actualizar-clase.dto';
 import { BuscarClasesQueryDto } from './dto/buscar-clases.dto';
 import { ListarEstudiantesQueryDto } from './dto/listar-estudiantes.dto';
-import type {
+import {
   ClaseCreadaRespuestaDto,
   ClaseRespuestaDto,
   ListadoClasesDto,
 } from './dto/clase-respuesta.dto';
-import type { ListadoEstudiantesDto } from './dto/estudiante-inscrito-respuesta.dto';
+import { ListadoEstudiantesDto } from './dto/estudiante-inscrito-respuesta.dto';
 
 /**
  * Endpoints de clases bajo /api/v1/classes (AGENTS.md §8):
@@ -47,11 +58,29 @@ import type { ListadoEstudiantesDto } from './dto/estudiante-inscrito-respuesta.
  * (teacher_id = usuario.id, misma regla de AutorizacionService) y el
  * estudiante queda acotado a su organización. Sin @Roles: los tres roles
  * pueden buscar; el rol cambia el FILTRO, no el permiso de entrada.
+ *
+ * Documentación OpenAPI (H1.3 / PRO-267): todo el controlador está
+ * protegido por los guards globales, así que el security bearer y los
+ * errores 401/403 se declaran una vez a nivel de clase y se heredan en
+ * cada ruta; los 409 (P2002), 422 (regla de BD), 400 (validación) y 404
+ * (@PerteneceA) se documentan por método.
  */
+@ApiBearerAuth()
+@ApiUnauthorizedResponse({
+  description: 'Sin token, token inválido o expirado (401).',
+})
+@ApiForbiddenResponse({
+  description: 'Rol insuficiente para la operación (403).',
+})
 @Controller('classes')
 export class ClassesController {
   constructor(private readonly classesService: ClassesService) {}
 
+  @ApiOkResponse({
+    type: ListadoClasesDto,
+    description:
+      'Clases del usuario con paginación estándar { data, meta } (meta = { total, page, limit }).',
+  })
   @Get()
   buscar(
     @Query() query: BuscarClasesQueryDto,
@@ -62,6 +91,17 @@ export class ClassesController {
 
   @Roles('teacher')
   @PerteneceA('clase', 'id')
+  @ApiOkResponse({
+    type: ListadoEstudiantesDto,
+    description:
+      'Inscriptos de la clase con paginación estándar { data, meta }.',
+  })
+  @ApiBadRequestResponse({
+    description: 'Paginación fuera de rango (page o limit inválidos).',
+  })
+  @ApiNotFoundResponse({
+    description: 'Clase inexistente o ajena (respuesta estándar anti-enumeración).',
+  })
   @Get(':id/estudiantes')
   listarEstudiantes(
     @Param('id') id: string,
@@ -72,6 +112,17 @@ export class ClassesController {
   }
 
   @Roles('teacher')
+  @ApiCreatedResponse({
+    type: ClaseCreadaRespuestaDto,
+    description: 'Clase creada; incluye el código de unión generado por la BD.',
+  })
+  @ApiBadRequestResponse({ description: 'Datos inválidos (400).' })
+  @ApiConflictResponse({
+    description: 'Ya existe una clase con ese nombre para el profesor (409, P2002).',
+  })
+  @ApiUnprocessableEntityResponse({
+    description: 'Regla de negocio rechazada por la BD (422, RAISE EXCEPTION).',
+  })
   @Post()
   crear(
     @Body() dto: CrearClaseDto,
@@ -82,6 +133,20 @@ export class ClassesController {
 
   @Roles('teacher')
   @PerteneceA('clase', 'id')
+  @ApiOkResponse({
+    type: ClaseRespuestaDto,
+    description: 'Clase actualizada (nombre y/o estado: archivar/reactivar).',
+  })
+  @ApiBadRequestResponse({ description: 'Datos inválidos (400).' })
+  @ApiNotFoundResponse({
+    description: 'Clase inexistente o ajena (404, @PerteneceA).',
+  })
+  @ApiConflictResponse({
+    description: 'El nuevo nombre ya existe para el profesor (409, P2002).',
+  })
+  @ApiUnprocessableEntityResponse({
+    description: 'Regla de negocio rechazada por la BD (422).',
+  })
   @Patch(':id')
   actualizar(
     @Param('id') id: string,

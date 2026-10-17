@@ -12,10 +12,11 @@
  *   capa de auth si falta alguno) y mostrar el mensaje de validación.
  * - Mostrar el estado de carga: botón deshabilitado con el texto
  *   "Verificando…" mientras hay una petición en curso.
- * - Mostrar errores de credenciales en un área `role="alert"` con **solo**
- *   `error.message` de `ApiError` — nunca se ramifica por código HTTP ni se
- *   muestran `error.detalles` (spec §Contrato con el backend, punto 3). Con
- *   H2.1 el mensaje real es "El usuario o la contraseña son erróneos.".
+ * - Anunciar los errores de envío con el **toast accesible** del kit UI
+ *   (H5.2 / PRO-283): variante `error`, región `aria-live`, con **solo** el
+ *   mensaje legible de `ApiError` (`mensajeDeErrorApi`) — nunca se ramifica
+ *   por código HTTP ni se muestran `error.detalles`. Con H2.1 el mensaje real
+ *   es "El usuario o la contraseña son erróneos.".
  * - Redirigir al panel del rol tras el login (`rutaPorRol`).
  *
  * Contrato con el backend:
@@ -30,15 +31,16 @@
 import { useRouter } from "next/navigation";
 import { useState, type FormEvent } from "react";
 
+import {
+  EstadoCarga,
+  mensajeDeErrorApi,
+  useToast,
+} from "@/components/ui";
 import { iniciarSesion, rutaPorRol } from "@/features/auth/api/auth";
-import { ApiError } from "@/lib/api-client";
 
 /** Mensaje de validación cuando falta algún campo del formulario. */
 const MENSAJE_CAMPOS_INCOMPLETOS =
   "Ingresa tu usuario o correo y tu contraseña para continuar.";
-
-/** Mensaje genérico para errores inesperados que no son `ApiError`. */
-const MENSAJE_ERROR_GENERICO = "Ocurrió un error inesperado. Intenta de nuevo.";
 
 /**
  * Formulario de inicio de sesión.
@@ -51,34 +53,35 @@ const MENSAJE_ERROR_GENERICO = "Ocurrió un error inesperado. Intenta de nuevo."
  * Estados cubiertos (AGENTS.md §8: carga, vacío y error):
  * - **Vacío / validación:** `errorCampo` si identificador o contraseña
  *   vienen vacíos (con `trim`); no se llama a la capa de auth.
- * - **Carga:** `cargando` deshabilita el botón y muestra "Verificando…".
- * - **Error de envío:** `errorEnvio` en un área `role="alert"` con solo el
- *   mensaje de `ApiError` (o uno genérico si el error no es de la API).
+ * - **Carga:** `cargando` sustituye el botón por `<EstadoCarga />`
+ *   (kit UI, `role="status"` + `aria-live`); los campos quedan deshabilitados.
+ * - **Error de envío:** toast `error` con `mensajeDeErrorApi(error)` —
+ *   validaciones de campo siguen en el área `role="alert"` en línea.
  *
  * @returns Formulario de login centrado sobre el fondo neutro del layout.
  */
 export default function LoginPage() {
   const router = useRouter();
+  const { mostrar } = useToast();
 
   const [identificador, setIdentificador] = useState("");
   const [contrasena, setContrasena] = useState("");
   const [cargando, setCargando] = useState(false);
   const [errorCampo, setErrorCampo] = useState<string | null>(null);
-  const [errorEnvio, setErrorEnvio] = useState<string | null>(null);
 
   /**
    * Procesa el envío del formulario.
    *
    * Flujo: valida campos vacíos (sin llamar a la capa) → llama a
-   * `iniciarSesion` → redirige al panel del rol con `rutaPorRol`. Cualquier
-   * `ApiError` se muestra tal cual (`error.message`); los errores ajenos a
-   * la API se traducen a un mensaje genérico (sin filtrar detalles internos).
+   * `iniciarSesion` → redirige al panel del rol con `rutaPorRol`. Si falla,
+   * `mensajeDeErrorApi` extrae el mensaje legible (`ApiError.message`) o
+   * devuelve el genérico (sin filtrar detalles internos) y se anuncia con el
+   * toast `error` del kit UI (H5.2).
    *
    * @param evento Evento de envío del formulario.
    */
   async function manejarEnvio(evento: FormEvent<HTMLFormElement>): Promise<void> {
     evento.preventDefault();
-    setErrorEnvio(null);
 
     const identificadorNormalizado = identificador.trim();
 
@@ -98,11 +101,7 @@ export default function LoginPage() {
 
       router.push(rutaPorRol(sesion.role));
     } catch (error) {
-      if (error instanceof ApiError) {
-        setErrorEnvio(error.message);
-      } else {
-        setErrorEnvio(MENSAJE_ERROR_GENERICO);
-      }
+      mostrar(mensajeDeErrorApi(error), "error");
     } finally {
       setCargando(false);
     }
@@ -136,7 +135,7 @@ export default function LoginPage() {
               disabled={cargando}
               aria-invalid={errorCampo !== null}
               aria-describedby={errorCampo !== null ? "error-campo" : undefined}
-              className="mt-1 w-full rounded-md border border-neutral-300 px-3 py-2 text-sm text-neutral-900 placeholder-neutral-400 focus:border-neutral-500 focus:outline-none focus:ring-2 focus:ring-neutral-300 disabled:cursor-not-allowed disabled:opacity-60"
+              className="mt-1 w-full rounded-md border border-neutral-500 px-3 py-2 text-sm text-neutral-900 placeholder-neutral-500 focus:border-neutral-700 focus:outline-none focus:ring-2 focus:ring-neutral-700 disabled:cursor-not-allowed disabled:opacity-60"
             />
           </div>
 
@@ -157,7 +156,7 @@ export default function LoginPage() {
               disabled={cargando}
               aria-invalid={errorCampo !== null}
               aria-describedby={errorCampo !== null ? "error-campo" : undefined}
-              className="mt-1 w-full rounded-md border border-neutral-300 px-3 py-2 text-sm text-neutral-900 placeholder-neutral-400 focus:border-neutral-500 focus:outline-none focus:ring-2 focus:ring-neutral-300 disabled:cursor-not-allowed disabled:opacity-60"
+              className="mt-1 w-full rounded-md border border-neutral-500 px-3 py-2 text-sm text-neutral-900 placeholder-neutral-500 focus:border-neutral-700 focus:outline-none focus:ring-2 focus:ring-neutral-700 disabled:cursor-not-allowed disabled:opacity-60"
             />
           </div>
 
@@ -167,20 +166,16 @@ export default function LoginPage() {
             </p>
           )}
 
-          {errorEnvio !== null && (
-            <p id="error-envio" role="alert" className="text-sm text-red-700">
-              {errorEnvio}
-            </p>
+          {cargando ? (
+            <EstadoCarga mensaje="Verificando tus credenciales…" />
+          ) : (
+            <button
+              type="submit"
+              className="w-full rounded-md bg-neutral-900 px-4 py-2 text-sm font-medium text-white hover:bg-neutral-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-700 focus-visible:ring-offset-2"
+            >
+              Iniciar sesión
+            </button>
           )}
-
-          <button
-            type="submit"
-            disabled={cargando}
-            aria-busy={cargando}
-            className="w-full rounded-md bg-neutral-900 px-4 py-2 text-sm font-medium text-white hover:bg-neutral-700 focus:outline-none focus:ring-2 focus:ring-neutral-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60"
-          >
-            {cargando ? "Verificando…" : "Iniciar sesión"}
-          </button>
         </form>
       </div>
     </main>

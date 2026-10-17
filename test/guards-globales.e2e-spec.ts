@@ -1,5 +1,6 @@
 import { INestApplication } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { PrismaService } from '../src/prisma/prisma.service';
 import { JwtService } from '@nestjs/jwt';
 import { Test, TestingModule } from '@nestjs/testing';
 import request from 'supertest';
@@ -15,6 +16,7 @@ const LOGIN_ESTUDIANTE = {
 };
 
 describe('Guards globales de JWT y rol (e2e)', () => {
+  let prisma: PrismaService;
   let app: INestApplication<App>;
   let httpServer: ReturnType<typeof request>;
   let tokenAdmin = '';
@@ -28,6 +30,7 @@ describe('Guards globales de JWT y rol (e2e)', () => {
     app = moduleFixture.createNestApplication();
     configurarApp(app);
     await app.init();
+    prisma = app.get(PrismaService);
     httpServer = request(app.getHttpServer());
   });
 
@@ -63,6 +66,18 @@ describe('Guards globales de JWT y rol (e2e)', () => {
 
   it('una ruta protegida rechaza con 401 si falta el token', async () => {
     const respuesta = await httpServer.get('/api/v1/auth/perfil');
+    expect(respuesta.status).toBe(401);
+    expect(respuesta.body.message).toBe(MENSAJE_NO_AUTENTICADO);
+  });
+
+  it('cambiar contrasena rechaza con 401 si falta el token', async () => {
+    const respuesta = await httpServer
+      .post('/api/v1/auth/cambiar-contrasena')
+      .send({
+        contrasenaActual: 'Admin123!',
+        contrasenaNueva: 'NuevaClave123!',
+      });
+
     expect(respuesta.status).toBe(401);
     expect(respuesta.body.message).toBe(MENSAJE_NO_AUTENTICADO);
   });
@@ -123,5 +138,62 @@ describe('Guards globales de JWT y rol (e2e)', () => {
       .set('Authorization', `Bearer ${tokenAjeno}`);
     expect(respuesta.status).toBe(401);
     expect(respuesta.body.message).toBe(MENSAJE_NO_AUTENTICADO);
+  });
+
+  it('cambiar contraseña rechaza con 401 si la contraseña actual es incorrecta', async () => {
+    const respuesta = await httpServer
+      .post('/api/v1/auth/cambiar-contrasena')
+      .set('Authorization', `Bearer ${tokenAdmin}`)
+      .send({
+        contrasenaActual: 'ClaveIncorrecta123!',
+        contrasenaNueva: 'NuevaClave123!',
+      });
+
+    expect(respuesta.status).toBe(401);
+  });
+
+  it('cambiar contraseña funciona con la contraseña actual correcta', async () => {
+    const admin = await prisma.users.findFirst({
+      where: { username: 'admin' },
+      select: {
+        id: true,
+        password_hash: true,
+        must_change_password: true,
+      },
+    });
+
+    expect(admin).not.toBeNull();
+    if (!admin) {
+      throw new Error('No se encontró el administrador de prueba');
+    }
+
+    try {
+      const respuesta = await httpServer
+        .post('/api/v1/auth/cambiar-contrasena')
+        .set('Authorization', `Bearer ${tokenAdmin}`)
+        .send({
+          contrasenaActual: LOGIN_ADMIN.contrasena,
+          contrasenaNueva: 'NuevaClave123!',
+        });
+
+      expect(respuesta.status).toBe(204);
+
+      const loginNuevo = await httpServer
+        .post('/api/v1/auth/login')
+        .send({
+          usuarioOEmail: LOGIN_ADMIN.usuarioOEmail,
+          contrasena: 'NuevaClave123!',
+        });
+
+      expect(loginNuevo.status).toBe(201);
+    } finally {
+      await prisma.users.update({
+        where: { id: admin.id },
+        data: {
+          password_hash: admin.password_hash,
+          must_change_password: admin.must_change_password,
+        },
+      });
+    }
   });
 });

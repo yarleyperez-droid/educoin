@@ -2,6 +2,8 @@ import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 
+import { ProveedorToast } from "@/components/ui";
+
 const geistSans = Geist({
   variable: "--font-geist-sans",
   subsets: ["latin"],
@@ -25,7 +27,9 @@ export default function RootLayout({
   return (
     <html lang="es">
       <body className={`${geistSans.variable} ${geistMono.variable} antialiased`}>
-        {children}
+        {/* Proveedor del toast accesible (H5.2 / PRO-283): una sola montura
+            para toda la app, de modo que cualquier vista pueda usar useToast. */}
+        <ProveedorToast>{children}</ProveedorToast>
       </body>
     </html>
   );
