@@ -10,6 +10,7 @@ import {
   UnauthorizedException,
   UseGuards,
 } from '@nestjs/common';
+import { PermitirCambioContrasena } from '../../common/decorators/permitir-cambio-contrasena.decorator';
 import { ConfigService } from '@nestjs/config';
 import { AuthGuard } from '@nestjs/passport';
 import { SkipThrottle } from '@nestjs/throttler';
@@ -157,7 +158,7 @@ export class AuthController {
   ): Promise<UsuarioRespuestaDto> {
     return this.authService.obtenerPerfil(usuario.id);
   }
-
+  @PermitirCambioContrasena()
   @Post('cambiar-contrasena')
   @HttpCode(HttpStatus.NO_CONTENT)
   @ApiBearerAuth()
