@@ -1,39 +1,44 @@
 /**
- * Fachada de datos de clases del panel docente (T5.6.1, PRO-385).
+ * Fachada de datos de clases del panel docente (T5.6.1 → T5.6.4, PRO-388).
  *
  * Punto único entre las vistas (`app/teacher/clases/...`) y el transporte.
- * **Hoy el interior es un mock del contrato de H3.1** (ver
- * `clases-mock.ts`); **T5.6.4 (PRO-388) reemplaza solo el cuerpo** de estas
- * funciones por `api.post/api.get/api.patch` sin cambiar las firmas, con el
- * mismo criterio que T5.4.3 aplicó a `features/auth/api/auth.ts`.
+ * Desde T5.6.4 habla con la **API real de H3.1** mediante
+ * `apiPlano`/`api` de `@/lib/api-client`; los mocks de T5.6.1 ya no
+ * existen. Las firmas de T5.6.1 se conservan, salvo {@link obtenerClase}
+ * que pasó a asíncrona (justificado en su docstring).
  *
- * ## Contrato con el backend (H3.1, verificado en `main`)
+ * ## Contrato con el backend (H3.1, verificado en `test/classes.e2e-spec.ts`)
+ *
+ * Los endpoints **unitarios** de H3.1 devuelven su DTO **en plano** (sin
+ * la envoltura `{ data, meta }` de los listados); por eso van por
+ * `apiPlano`:
  *
  * - `POST /api/v1/classes` (`@Roles('teacher')`): body
  *   `CrearClaseDto { nombre }` (MinLength 8, MaxLength 150) → `201` con
- *   `{ data: { mensaje, clase: ClaseRespuestaDto } }`. El **código de unión
+ *   `{ mensaje, clase: ClaseRespuestaDto }`. El **código de unión
  *   solo llega aquí** (lo genera la BD tras el INSERT); el cliente jamás lo
  *   envía (AGENTS.md §7).
- * - `GET /api/v1/classes?q=&page=&limit=` (T5.6.3): `q` obligatorio (≥ 3
- *   caracteres, mecánica pg_trgm) → `{ data: ClaseListadoDto[], meta }`.
+ * - `GET /api/v1/classes/:id` (`@Roles('teacher')` + `@PerteneceA`):
+ *   `ClaseRespuestaDto` en plano (incluye `codigo`); `404` si la clase no
+ *   existe o es ajena.
  * - `PATCH /api/v1/classes/:id` (T5.6.3): `{ nombre?, estado? }`, al menos
- *   uno; `@PerteneceA` devuelve `403` si la clase es ajena.
+ *   uno; `@PerteneceA` devuelve `403` si la clase es ajena y `404` si no
+ *   existe — el cliente **no** pre-comprueba la existencia: el 404 real ya
+ *   llega como `ApiError`.
+ *
+ * El único listado, `GET /api/v1/classes?q=&page=&limit=` (T5.6.3), sí usa
+ * la envoltura estándar `api.get` → `{ data: ClaseListadoDto[], meta }`
+ * (con `q` obligatorio ≥ 3 caracteres, mecánica pg_trgm).
  *
  * Los errores siempre salen como `ApiError` con `message` en español: la
  * vista solo muestra `error.message` y nunca ramifica por código HTTP
- * (spec §Contrato, punto 3).
+ * (spec §Contrato, punto 3). La única excepción es {@link obtenerClase},
+ * que traduce el `404` a `null` para el estado "no encontrada" de la vista.
  */
 
-import { ApiError } from "@/lib/api-client";
+import { ApiError, api, apiPlano } from "@/lib/api-client";
 
 import type { Clase, ClaseListado, EstadoClase, Meta } from "../tipos";
-
-import {
-  actualizarClaseMock,
-  buscarClasesMock,
-  crearClaseMock,
-  obtenerClaseMock,
-} from "./clases-mock";
 
 /** Nombre mínimo de la clase (misma regla que `CrearClaseDto`, H3.1). */
 export const LONGITUD_MINIMA_NOMBRE = 8;
@@ -63,8 +68,47 @@ const MENSAJE_SIN_CAMBIOS = "Debes cambiar el nombre o el estado de la clase.";
 const MENSAJE_ESTADO_INVALIDO =
   'El estado de la clase debe ser "active" o "archived".';
 
-/** Mensaje cuando la clase pedida no existe. */
-const MENSAJE_CLASE_NO_ENCONTRADA = "No se encontró la clase solicitada.";
+/**
+ * `ClaseRespuestaDto` de H3.1 tal cual sale del backend.
+ *
+ * Shape idéntico a {@link Clase}; existe como tipo aparte para que el
+ * mapper {@link aClase} sea el único punto de traducción (AGENTS.md §5) y
+ * un cambio del Swagger se absorba aquí.
+ */
+interface ClaseBackend {
+  id: string;
+  profesorId: string;
+  nombre: string;
+  codigo: string;
+  estado: EstadoClase;
+  creadoEn: string;
+  actualizadoEn: string;
+}
+
+/** `ClaseCreadaRespuestaDto` de H3.1: `{ mensaje, clase }` en plano. */
+interface ClaseCreadaBackend {
+  mensaje: string;
+  clase: ClaseBackend;
+}
+
+/**
+ * Traduce `ClaseRespuestaDto` al tipo de dominio {@link Clase}.
+ *
+ * @param backend DTO plano de H3.1 (puede llegar con IDs numéricos según
+ *   el serializador, así que se normalizan a `string`).
+ * @returns La clase con el vocabulario del frontend.
+ */
+function aClase(backend: ClaseBackend): Clase {
+  return {
+    id: String(backend.id),
+    profesorId: String(backend.profesorId),
+    nombre: backend.nombre,
+    codigo: backend.codigo,
+    estado: backend.estado,
+    creadoEn: backend.creadoEn,
+    actualizadoEn: backend.actualizadoEn,
+  };
+}
 
 /**
  * Crea una clase y devuelve su código de unión.
@@ -73,10 +117,6 @@ const MENSAJE_CLASE_NO_ENCONTRADA = "No se encontró la clase solicitada.";
  * `trim`) **antes** de llamar al transporte, para que la vista muestre el
  * error sin una ida y vuelta — la BD y el backend vuelven a validar por su
  * parte (doble validación, AGENTS.md §6).
- *
- * **MOCK temporal:** el cuerpo llama a `crearClaseMock`; T5.6.4 (PRO-388)
- * lo sustituirá por `api.post<ClaseCreadaRespuestaDto>("classes", …)` y el
- * mapeo `env.data.clase → Clase`, sin tocar esta firma ni las vistas.
  *
  * @param datos Nombre de la clase (se normaliza con `trim`).
  * @returns La clase creada: incluye `codigo` de 8 caracteres y estado
@@ -98,7 +138,11 @@ export async function crearClase(datos: { nombre: string }): Promise<Clase> {
     throw new ApiError(MENSAJE_NOMBRE_LARGO, 422);
   }
 
-  return crearClaseMock({ nombre });
+  const respuesta = await apiPlano.post<ClaseCreadaBackend>("classes", {
+    nombre,
+  });
+
+  return aClase(respuesta.clase);
 }
 
 /**
@@ -113,14 +157,14 @@ export interface ResultadoBusquedaClases {
 }
 
 /**
- * Busca clases del profesor por nombre (simula `GET /classes`).
+ * Busca clases del profesor por nombre (`GET /classes`).
  *
  * Reproduce `BuscarClasesQueryDto` (H3.1): **`q` obligatorio con ≥ 3
  * caracteres** (mecánica pg_trgm: los trigramas se extraen de 3
- * caracteres) y `limit` acotado a 1..50; `page` se normaliza a ≥ 1.
- *
- * **MOCK temporal:** el cuerpo llama a `buscarClasesMock`; T5.6.4 lo
- * sustituirá por `api.get("classes?q=…")`, sin tocar esta firma.
+ * caracteres) y `limit` acotado a 1..50; `page` se normaliza a ≥ 1. El
+ * backend ya devuelve `ClaseListadoDto` con el vocabulario del frontend,
+ * así que el resultado viaja tal cual (la envoltura `{ data, meta }` de
+ * los listados es la estándar de `api.get`).
  *
  * @param q Texto de búsqueda (se normaliza con `trim`).
  * @param page Página 1-indexada (por defecto 1).
@@ -139,40 +183,64 @@ export async function buscarClases(
     throw new ApiError(MENSAJE_BUSQUEDA_CORTA, 422);
   }
 
-  return buscarClasesMock(texto, Math.max(page, 1), limit);
+  const pagina = Math.max(page, 1);
+  const parametros = new URLSearchParams({
+    q: texto,
+    page: String(pagina),
+    limit: String(limit),
+  });
+
+  const respuesta = await api.get<ClaseListado[]>(`classes?${parametros}`);
+
+  return {
+    data: respuesta.data,
+    // `meta` es opcional solo en el tipado de `ApiEnvelope`; el listado de
+    // H3.1 siempre lo trae (e2e). El fallback mantiene el shape coherente
+    // si el backend llegara a omitirlo.
+    meta: respuesta.meta ?? { total: respuesta.data.length, page: pagina, limit },
+  };
 }
 
 /**
- * Obtiene una clase por su id (andamio del detalle, T5.6.3).
+ * Obtiene una clase por su id (`GET /classes/:id`, T5.6.4).
  *
- * ⚠️ **Límite del contrato actual:** H3.1 **no** expone `GET
- * `/classes/:id`` (solo colección con `q`), por lo que hoy esta función
- * lee el catálogo mock. T5.6.4 deberá resolverlo con el API real (o el
- * backend deberá añadir el endpoint) — decisión registrada en los
- * riesgos del plan de T5.6.3.
+ * Asíncrona desde T5.6.4 porque antes leía un catálogo local síncrono y
+ * ahora hace una petición real (H3.1 expone el detalle desde esta tarea).
+ * El `404` (clase inexistente o ajena) se traduce a `null` para que la
+ * vista maneje su estado "no encontrada" sin ramificar por código HTTP;
+ * el resto de errores se propagan como `ApiError`.
  *
  * @param id Identificador de la clase.
- * @returns La clase, o `null` si no existe en la sesión actual.
+ * @returns La clase (con `codigo` de unión), o `null` si no existe o no
+ *   pertenece al profesor autenticado.
  */
-export function obtenerClase(id: string): Clase | null {
-  return obtenerClaseMock(id);
+export async function obtenerClase(id: string): Promise<Clase | null> {
+  try {
+    return aClase(await apiPlano.get<ClaseBackend>(`classes/${id}`));
+  } catch (error) {
+    if (error instanceof ApiError && error.status === 404) {
+      return null;
+    }
+
+    throw error;
+  }
 }
 
 /**
- * Edita una clase (simula `PATCH /classes/:id`).
+ * Edita una clase (`PATCH /classes/:id`).
  *
  * Réplica de `ActualizarClaseDto` (H3.1): al menos un campo, `nombre` de
  * 8–150 tras `trim` y `estado ∈ { active, archived }`. El código de unión
  * y el profesor **no** son editables (prevención de IDOR: el profesor sale
- * del token en el backend real).
- *
- * **MOCK temporal:** T5.6.4 lo sustituirá por `api.patch(...)`.
+ * del token en el backend real). La existencia **no** se pre-comprueba:
+ * el backend responde `404` (clase inexistente o ajena) con su mensaje en
+ * español, que `ApiError.message` ya transporta.
  *
  * @param id Identificador de la clase a editar.
  * @param parche Campos a cambiar (`nombre` y/o `estado`).
  * @returns La clase actualizada.
  * @throws {ApiError} 400 sin campos; 422 por nombre/estado inválidos;
- *   404 si la clase no existe.
+ *   404 si la clase no existe (del backend).
  */
 export async function actualizarClase(
   id: string,
@@ -213,9 +281,7 @@ export async function actualizarClase(
     parcheValidado.estado = parche.estado;
   }
 
-  if (!obtenerClaseMock(id)) {
-    throw new ApiError(MENSAJE_CLASE_NO_ENCONTRADA, 404);
-  }
-
-  return actualizarClaseMock(id, parcheValidado);
+  return aClase(
+    await apiPlano.patch<ClaseBackend>(`classes/${id}`, parcheValidado),
+  );
 }

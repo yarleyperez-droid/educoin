@@ -3,14 +3,14 @@
  *
  * ## De dónde sale este esquema
  *
- * H3.3 (PRO-275) **todavía no publicó sus DTOs** (está en Backlog), así que
- * el esquema se deriva de las dos fuentes que sí son autoridad:
+ * H3.3 publicó sus DTOs (`src/modules/activities/dto/`) y este contrato
+ * quedó alineado con ellos en T5.6.4; las fuentes originales siguen siendo:
  * - `db/001_schema.sql` §activities: `questions JSONB DEFAULT '[]' CHECK
  *   (jsonb_typeof='array')` y la estructura documentada en el comentario de
  *   la columna;
  * - AGENTS.md §5: tipos de pregunta `test | completion | file | minigame`.
  *
- * **PROVISIONAL por diseño:** si el contrato real de H3.3 difiere, se ajusta
+ * **Aislamiento por diseño:** si el contrato real de H3.3 cambia, se ajusta
  * **solo este archivo** (la vista y la fachada `api/actividades.ts` no
  * cambian) — mismo criterio de aislamiento que `lib/auth.ts` con H2.x.
  *
@@ -184,7 +184,7 @@ export const BorradorActividadSchema = z.object({
     .string()
     .trim()
     .min(1, "El título de la actividad no puede estar vacío.")
-    .max(150, "El título no puede superar los 150 caracteres."),
+    .max(200, "El título no puede superar los 200 caracteres."),
 
   /** Descripción opcional (`activities.description`). */
   descripcion: z

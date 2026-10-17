@@ -141,6 +141,39 @@ export class ClassesService {
   }
 
   /**
+   * Devuelve la ficha completa de una clase OWN del profesor para el
+   * detalle del panel (T5.6.4). Es el único endpoint que expone el
+   * `codigo` de unión a la vista de detalle: el listado de búsqueda lo
+   * omite a propósito (ver ClaseListadoDto) para que nadie pueda
+   * auto-inscribirse sin que el profesor comparta el código.
+   *
+   * Segunda capa de pertenencia (AGENTS.md §8): el guard HTTP ya filtró
+   * las clases ajenas con 404, y aquí se re-verifica con
+   * AutorizacionService (que además descarta ids no numéricos con el
+   * mismo 404 estándar). El NotFoundException del final es defensa en
+   * profundidad: entre la comprobación de pertenencia y la lectura la
+   * clase pudo desaparecer y el cliente debe recibir el 404 estándar en
+   * lugar de un error de mapeo sobre una fila ausente.
+   */
+  async obtener(
+    id: string,
+    usuario: UsuarioAutenticado,
+  ): Promise<ClaseRespuestaDto> {
+    await this.autorizacion.verificarPertenencia('clase', id, usuario);
+
+    const clase = await this.prisma.classes.findFirst({
+      where: { id: BigInt(id) },
+      select: CAMPOS_CLASE,
+    });
+
+    if (clase === null) {
+      throw new NotFoundException(MENSAJE_RECURSO_NO_ENCONTRADO);
+    }
+
+    return this.aClaseRespuesta(clase);
+  }
+
+  /**
    * Edita parcialmente una clase del profesor autenticado: nombre y/o
    * estado ('archived' archiva, 'active' reactiva). Segunda capa de
    * pertenencia (AGENTS.md §8): re-verifica con AutorizacionService la

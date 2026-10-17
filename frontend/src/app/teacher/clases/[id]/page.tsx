@@ -7,12 +7,12 @@
  * ("Editar" y "Publicar") y **ninguna** para `published` (CA 3 de H5.6:
  * no se ofrece la reversión a borrador).
  *
- * Contrato con el backend:
- * - Clase: `obtenerClase` — hoy lee el catálogo mock porque **H3.1 no
- *   expone `GET /classes/:id`** (límite documentado en el plan; T5.6.4 lo
- *   resolverá con el API real).
- * - Actividades: `listarActividades`/`publicarActividad` (mock de H3.3,
- *   Backlog).
+ * Contrato con el backend (H3.1/H3.3, T5.6.4):
+ * - Clase: `obtenerClase` → `GET /classes/:id` (async; `404` → `null`).
+ * - Actividades: `listarActividades`/`publicarActividad` →
+ *   `GET /classes/:id/activities` y `POST /activities/:id/publicar`.
+ *   El listado real **no trae `preguntas`** (solo el detalle), así que la
+ *   fila muestra monedas y fecha de publicación, nunca el conteo.
  * - Errores → `ApiError.message` en `role="alert"`.
  */
 
@@ -31,9 +31,8 @@ import { BadgeEstado } from "@/features/teacher/componentes/badge-estado";
 import type { Actividad, Clase } from "@/features/teacher/tipos";
 import { ApiError } from "@/lib/api-client";
 
-/** Mensaje cuando la clase no existe en la sesión actual del mock. */
-const MENSAJE_CLASE_NO_ENCONTRADA =
-  "No encontramos esta clase en la sesión actual. Vuelve al listado y vuelve a entrar (el mock no persiste al recargar).";
+/** Mensaje cuando la clase no existe (o no pertenece al profesor). */
+const MENSAJE_CLASE_NO_ENCONTRADA = "No se encontró la clase solicitada.";
 
 /** Mensaje cuando falla una acción sobre una actividad. */
 const MENSAJE_ERROR_ACCION =
@@ -69,28 +68,30 @@ export default function DetalleClasePage() {
     let vigente = true;
 
     async function cargar(): Promise<void> {
-      const claseEncontrada = obtenerClase(claseId);
+      try {
+        const [claseEncontrada, lista] = await Promise.all([
+          obtenerClase(claseId),
+          listarActividades(claseId),
+        ]);
 
-      if (!claseEncontrada) {
-        if (vigente) {
+        if (!vigente) {
+          return;
+        }
+
+        if (claseEncontrada === null) {
           setClase(null);
           setActividades([]);
           setError(MENSAJE_CLASE_NO_ENCONTRADA);
-          setCargando(false);
+          return;
         }
-        return;
-      }
 
-      try {
-        const lista = await listarActividades(claseId);
-
-        if (vigente) {
-          setClase(claseEncontrada);
-          setActividades(lista);
-          setError(null);
-        }
+        setClase(claseEncontrada);
+        setActividades(lista);
+        setError(null);
       } catch (e) {
         if (vigente) {
+          setClase(null);
+          setActividades([]);
           setError(
             e instanceof ApiError ? e.message : MENSAJE_ERROR_GENERICO,
           );
@@ -242,8 +243,6 @@ export default function DetalleClasePage() {
               </div>
 
               <p className="mt-1 text-xs text-neutral-500">
-                {actividad.preguntas.length} pregunta
-                {actividad.preguntas.length === 1 ? "" : "s"} ·{" "}
                 {actividad.recompensaMonedas} monedas
                 {actividad.estado === "published" && actividad.publicadaEn
                   ? ` · Publicada el ${new Date(actividad.publicadaEn).toLocaleDateString("es-CO")}`

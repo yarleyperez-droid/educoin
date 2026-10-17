@@ -1,12 +1,11 @@
 /**
- * Fachada de datos de actividades del panel docente (T5.6.2, PRO-386).
+ * Fachada de datos de actividades del panel docente (T5.6.2 → T5.6.4, PRO-388).
  *
- * Punto único entre las vistas del editor y el transporte. **Hoy el
- * interior es un mock** porque H3.3 (PRO-275) está en Backlog y no existe
- * ningún endpoint de actividades; T5.6.4 (PRO-388) —tras la decisión de
- * alcance correspondiente— sustituirá **solo el cuerpo** de estas funciones
- * por `api.post/api.patch` sin cambiar las firmas (mismo criterio que
- * T5.4.3 con auth y T5.6.1 con clases).
+ * Punto único entre las vistas del editor y el transporte. Desde T5.6.4
+ * habla con la **API real de H3.3** (`src/modules/activities/`) mediante
+ * `apiPlano`/`api` de `@/lib/api-client`; los mocks de T5.6.2 ya no
+ * existen. Las firmas se conservan, salvo {@link obtenerActividad} que
+ * pasó a asíncrona (justificado en su docstring).
  *
  * ## Responsabilidades de la fachada
  *
@@ -19,21 +18,36 @@
  *    ({@link publicarActividad}); no existe reversión (CA 3 de H5.6) ni
  *    acciones sobre `deleted`.
  *
- * ## Contrato previsto con H3.3 (provisional)
+ * ## Contrato con H3.3 (verificado en `test/activities.e2e-spec.ts`)
  *
- * `POST /api/v1/activities` (crear), `GET /api/v1/activities?claseId=` y
- * `PATCH /api/v1/activities/:id { status }` — **especulativo**: H3.3 no ha
- * publicado DTOs. El envelope {@link Actividad} deriva de
- * `db/001_schema.sql`; si el Swagger real difiere, se ajusta solo el
- * mapeo interno de este archivo.
+ * Los endpoints **unitarios** devuelven su DTO **en plano** (sin la
+ * envoltura `{ data, meta }` de los listados); por eso van por
+ * `apiPlano`:
  *
- * Las vistas solo leen `error.message` de `ApiError` (nunca `detalles` ni
- * códigos HTTP).
+ * - `POST /api/v1/classes/:claseId/activities` → `{ mensaje, actividad }`
+ *   (la actividad nace en `draft`; `claseId` sale de la ruta, nunca del body).
+ * - `GET /api/v1/activities/:id` → `ActividadRespuestaDto` con el JSONB
+ *   `preguntas` completo.
+ * - `PATCH /api/v1/activities/:id` → `ActividadRespuestaDto` (en
+ *   `published` solo admite `cierraEn`; el resto → 409).
+ * - `POST /api/v1/activities/:id/publicar` (`200`) →
+ *   `ActividadRespuestaDto` (draft → published; repetir → 409).
+ *
+ * El listado usa la envoltura estándar `api.get` →
+ * `{ data: ActividadListadoDto[], meta }`: **las filas no traen
+ * `preguntas`** (solo el detalle), ni `descripcion` ni `actualizadoEn`;
+ * {@link listarActividades} completa esos campos con valores neutros.
+ *
+ * Los errores 404/409 (inexistente, publicada, eliminada) los produce el
+ * backend con su mensaje en español, que `ApiError.message` ya transporta:
+ * la fachada **no** pre-comprueba estados contra el servidor. La única
+ * excepción es {@link obtenerActividad}, que traduce el `404` a `null`
+ * para el estado "no encontrada" de la vista.
  */
 
-import { ApiError } from "@/lib/api-client";
+import { ApiError, api, apiPlano } from "@/lib/api-client";
 
-import type { Actividad } from "../tipos";
+import type { Actividad, EstadoActividad } from "../tipos";
 import {
   BorradorActividadSchema,
   mensajeDeErroresZod,
@@ -42,31 +56,78 @@ import {
   type Pregunta,
 } from "../contrato/actividades";
 
-import {
-  actualizarActividadMock,
-  crearActividadMock,
-  listarActividadesMock,
-  obtenerActividadMock,
-  publicarActividadMock,
-} from "./actividades-mock";
-
 export type { Actividad };
 
-/** Mensaje cuando la actividad no existe en el catálogo. */
-const MENSAJE_NO_ENCONTRADA =
-  "No se encontró la actividad solicitada.";
+/**
+ * `ActividadRespuestaDto` de H3.3 tal cual sale del backend (detalle).
+ *
+ * Shape de referencia para el mapper {@link aActividad}, el único punto de
+ * traducción al vocabulario del frontend (AGENTS.md §5). `eliminadaEn` se
+ * descarta allí: el frontend modela el borrado lógico solo con `estado`.
+ */
+interface ActividadBackend {
+  id: string;
+  claseId: string;
+  titulo: string;
+  descripcion: string | null;
+  recompensaMonedas: number;
+  estado: EstadoActividad;
+  preguntas: Pregunta[];
+  publicadaEn: string | null;
+  cierraEn: string | null;
+  creadoEn: string;
+  actualizadoEn: string;
+  eliminadaEn: string | null;
+}
 
-/** Mensaje cuando se intenta publicar algo ya publicado (sin reversión). */
-const MENSAJE_YA_PUBLICADA =
-  "La actividad ya está publicada; no puede volver a borrador.";
+/**
+ * `ActividadListadoDto` de H3.3: filas del listado de una clase, **sin
+ * `preguntas`** (el JSONB completo solo viaja en el detalle), sin
+ * `descripcion` y sin `actualizadoEn`.
+ */
+interface ActividadListadoBackend {
+  id: string;
+  titulo: string;
+  estado: EstadoActividad;
+  recompensaMonedas: number;
+  publicadaEn: string | null;
+  cierraEn: string | null;
+  creadoEn: string;
+}
 
-/** Mensaje cuando la actividad está eliminada lógicamente. */
-const MENSAJE_ELIMINADA =
-  "La actividad está eliminada y no se puede publicar.";
+/** `ActividadCreadaRespuestaDto` de H3.3: `{ mensaje, actividad }` en plano. */
+interface ActividadCreadaBackend {
+  mensaje: string;
+  actividad: ActividadBackend;
+}
 
-/** Mensaje cuando se intenta editar una actividad ya publicada. */
-const MENSAJE_PUBLICADA_NO_EDITABLE =
-  "La actividad ya está publicada y no se puede editar; crea una nueva versión si necesitas cambios.";
+/**
+ * Traduce `ActividadRespuestaDto` al tipo de dominio {@link Actividad}.
+ *
+ * El backend llama `creadoEn`/`actualizadoEn` a las fechas y el frontend
+ * conserva su vocabulario histórico `creadaEn`/`actualizadaEn` (el nombre
+ * que ya usan las vistas). `eliminadaEn` no se propaga: el borrado lógico
+ * se refleja en `estado === "deleted"`.
+ *
+ * @param backend DTO plano de H3.3 (IDs pueden llegar numéricos según el
+ *   serializador, así que se normalizan a `string`).
+ * @returns La actividad con el vocabulario del frontend.
+ */
+function aActividad(backend: ActividadBackend): Actividad {
+  return {
+    id: String(backend.id),
+    claseId: String(backend.claseId),
+    titulo: backend.titulo,
+    descripcion: backend.descripcion,
+    recompensaMonedas: backend.recompensaMonedas,
+    estado: backend.estado,
+    preguntas: backend.preguntas,
+    publicadaEn: backend.publicadaEn,
+    cierraEn: backend.cierraEn,
+    creadaEn: backend.creadoEn,
+    actualizadaEn: backend.actualizadoEn,
+  };
+}
 
 /**
  * Datos de entrada para crear una actividad.
@@ -79,7 +140,7 @@ export interface DatosCrearActividad {
   /** Clase dueña de la actividad. */
   claseId: string;
 
-  /** Título (1–150 tras `trim`). */
+  /** Título (1–200 tras `trim`). */
   titulo: string;
 
   /** Descripción opcional (vacío → `undefined`). */
@@ -102,9 +163,9 @@ export interface DatosCrearActividad {
  *    `questions` (`PreguntasSchema`). Cualquier problema → `ApiError` 422
  *    con el mensaje legible de {@link mensajeDeErroresZod} (la vista lo
  *    muestra en el resumen `role="alert"` **sin limpiar el formulario**).
- * 3. Persiste vía el mock (T5.6.4 cambiará este paso por `api.post`).
- *
- * **MOCK temporal:** ver cabecera del archivo.
+ * 3. Persiste en `POST /classes/:claseId/activities`; `descripcion` solo
+ *    viaja si quedó definida tras el `trim` (un borrado de la descripción
+ *    es cosa de {@link actualizarActividad}, que sí puede enviar `""`).
  *
  * @param datos Datos del formulario (título, recompensa y preguntas).
  * @returns La actividad creada, en estado `draft`.
@@ -134,94 +195,136 @@ export async function crearActividad(
     throw new ApiError(mensajeDeErroresZod(preguntas.error.issues), 422);
   }
 
-  return crearActividadMock({
-    claseId: datos.claseId,
+  const cuerpo: {
+    titulo: string;
+    descripcion?: string;
+    recompensaMonedas: number;
+    preguntas: Pregunta[];
+  } = {
     titulo: borrador.data.titulo,
-    descripcion: borrador.data.descripcion,
     recompensaMonedas: borrador.data.recompensaMonedas,
     preguntas: preguntas.data,
-  });
+  };
+
+  if (borrador.data.descripcion !== undefined) {
+    cuerpo.descripcion = borrador.data.descripcion;
+  }
+
+  const respuesta = await apiPlano.post<ActividadCreadaBackend>(
+    `classes/${datos.claseId}/activities`,
+    cuerpo,
+  );
+
+  return aActividad(respuesta.actividad);
 }
 
 /**
- * Publica una actividad (`draft → published`).
+ * Publica una actividad (`draft → published`) con `POST /activities/:id/publicar`.
  *
- * **No existe reversión** `published → draft` (CA 3 de H5.6): intentarlo
+ * **No existe reversión** `published → draft` (CA 3 de H5.6): el backend
  * responde `ApiError` 409 con mensaje claro. Las actividades `deleted`
- * tampoco se pueden publicar (borrado lógico de la BD).
- *
- * **MOCK temporal:** ver cabecera del archivo.
+ * tampoco se publican (borrado lógico de la BD → el mutador responde 404).
+ * El cuerpo va vacío: la fecha de cierre es opcional en
+ * `PublicarActividadDto` y la UI no la ofrece.
  *
  * @param id Identificador de la actividad en `draft`.
  * @returns La actividad publicada (con `publicadaEn`).
- * @throws {ApiError} 404 si no existe; 409 si no está en `draft`.
+ * @throws {ApiError} 404 si no existe; 409 si no está en `draft` (del backend).
  */
 export async function publicarActividad(id: string): Promise<Actividad> {
-  const existente = obtenerActividadMock(id);
-
-  if (!existente) {
-    throw new ApiError(MENSAJE_NO_ENCONTRADA, 404);
-  }
-
-  if (existente.estado === "published") {
-    throw new ApiError(MENSAJE_YA_PUBLICADA, 409);
-  }
-
-  if (existente.estado === "deleted") {
-    throw new ApiError(MENSAJE_ELIMINADA, 409);
-  }
-
-  return publicarActividadMock(id);
+  return aActividad(
+    await apiPlano.post<ActividadBackend>(`activities/${id}/publicar`, {}),
+  );
 }
 
 /**
- * Obtiene una actividad por su id (para la vista de edición, T5.6.3).
+ * Obtiene una actividad por su id (`GET /activities/:id`, detalle completo).
  *
- * **MOCK temporal:** H3.3 no expone `GET /activities/:id`; la fachada lee
- * el catálogo mock hasta que exista el endpoint real.
+ * Asíncrona desde T5.6.4 porque antes leía un catálogo local síncrono y
+ * ahora hace una petición real (H3.3 expone el detalle desde esta tarea,
+ * con el JSONB `preguntas` entero). El `404` (inexistente, eliminada o no
+ * visible) se traduce a `null` para que la vista maneje su estado "no
+ * encontrada" sin ramificar por código HTTP; el resto de errores se
+ * propagan como `ApiError`.
  *
  * @param id Identificador de la actividad.
- * @returns La actividad, o `null` si no existe en la sesión actual.
+ * @returns La actividad con sus preguntas, o `null` si no existe.
  */
-export function obtenerActividad(id: string): Actividad | null {
-  return obtenerActividadMock(id);
+export async function obtenerActividad(id: string): Promise<Actividad | null> {
+  try {
+    return aActividad(await apiPlano.get<ActividadBackend>(`activities/${id}`));
+  } catch (error) {
+    if (error instanceof ApiError && error.status === 404) {
+      return null;
+    }
+
+    throw error;
+  }
 }
 
 /**
  * Lista las actividades de una clase, **ocultando las eliminadas**.
  *
- * El borrado lógico (`status = 'deleted'` + `deleted_at`, AGENTS.md §6)
- * no es visible en el panel: solo `draft` y `published`.
+ * `GET /classes/:claseId/activities` devuelve `{ data, meta }` con
+ * `ActividadListadoDto[]`: filas de resumen **sin `preguntas`** (el JSONB
+ * completo solo llega en `GET /activities/:id`), sin `descripcion` y sin
+ * `actualizadoEn`. Por eso cada fila se completa con `preguntas: []`,
+ * `descripcion: null` y `actualizadaEn = creadoEn`: el conteo de preguntas
+ * **no** puede mostrarse en la tabla de la vista (solo en el detalle).
  *
- * **MOCK temporal:** T5.6.4 lo sustituirá por `api.get(...)` cuando H3.3
- * publique su endpoint de listado.
+ * El borrado lógico (`status = 'deleted'` + `deleted_at`, AGENTS.md §6`)
+ * no es visible en el panel: solo `draft` y `published` — el listado del
+ * backend puede incluir filas `deleted`, así que se filtran aquí.
  *
  * @param claseId Clase dueña de las actividades.
- * @returns Actividades visibles de la clase (orden del catálogo).
+ * @returns Actividades visibles de la clase (orden del backend: más
+ *   recientes primero).
  */
 export async function listarActividades(claseId: string): Promise<Actividad[]> {
-  const actividades = await Promise.resolve(listarActividadesMock(claseId));
+  const respuesta = await api.get<ActividadListadoBackend[]>(
+    `classes/${claseId}/activities`,
+  );
 
-  return actividades.filter((actividad) => actividad.estado !== "deleted");
+  return respuesta.data
+    .map(
+      (fila): Actividad => ({
+        id: String(fila.id),
+        claseId,
+        titulo: fila.titulo,
+        descripcion: null,
+        recompensaMonedas: fila.recompensaMonedas,
+        estado: fila.estado,
+        preguntas: [],
+        publicadaEn: fila.publicadaEn,
+        cierraEn: fila.cierraEn,
+        creadaEn: fila.creadoEn,
+        actualizadaEn: fila.creadoEn,
+      }),
+    )
+    .filter((actividad) => actividad.estado !== "deleted");
 }
 
 /**
- * Edita una actividad **en `draft`** (simula `PATCH /activities/:id`).
+ * Edita una actividad (`PATCH /activities/:id`).
  *
  * Reglas:
- * - Solo se puede editar en `draft`; `published` → `ApiError` 409 (CA 3 de
- *   H5.6: la UI tampoco ofrece la acción) y `deleted` → 409.
- * - Los campos no indicados conservan su valor actual; el resultado
- *   completo se revalida con los esquemas zod (misma primera red que
- *   {@link crearActividad}).
- *
- * **MOCK temporal:** ver cabecera del archivo.
+ * - Solo los campos **definidos** del parche viajan en el body (el backend
+ *   conserva el resto). `descripcion` es la excepción deliberada: un string
+ *   vacío **sí** se envía (`""` limpia la descripción; `undefined` no toca
+ *   nada).
+ * - La primera red de validación (zod) revisa únicamente los campos
+ *   presentes — misma reglas y mensajes de {@link crearActividad}: un
+ *   `titulo` fuera de 1–200 o un JSONB de preguntas inválido rechazan con
+ *   `ApiError` 422 **sin invocar el transporte**.
+ * - Los estados los resuelve el backend: `published` solo acepta
+ *   `cierraEn` (409 en lo demás, CA 3 de H5.6) y `deleted` no admite
+ *   mutaciones (404).
  *
  * @param id Identificador de la actividad.
  * @param parche Campos a cambiar (título, descripción, recompensa, preguntas).
  * @returns La actividad actualizada.
- * @throws {ApiError} 404 inexistente; 409 publicada/eliminada; 422 si el
- *   resultado no valida contra el contrato zod.
+ * @throws {ApiError} 404 inexistente/eliminada; 409 publicada (del backend);
+ *   422 si algún campo presente no valida contra el contrato zod.
  */
 export async function actualizarActividad(
   id: string,
@@ -232,50 +335,54 @@ export async function actualizarActividad(
     preguntas?: Pregunta[];
   },
 ): Promise<Actividad> {
-  const actual = obtenerActividadMock(id);
-
-  if (!actual) {
-    throw new ApiError(MENSAJE_NO_ENCONTRADA, 404);
-  }
-
-  if (actual.estado === "published") {
-    throw new ApiError(MENSAJE_PUBLICADA_NO_EDITABLE, 409);
-  }
-
-  if (actual.estado === "deleted") {
-    throw new ApiError(MENSAJE_ELIMINADA, 409);
-  }
-
-  const preguntasNormalizadas = normalizarPosiciones(
-    parche.preguntas ?? actual.preguntas,
-  );
-
-  const borrador = BorradorActividadSchema.safeParse({
-    titulo: parche.titulo ?? actual.titulo,
-    descripcion:
-      parche.descripcion !== undefined
-        ? parche.descripcion.trim() === ""
-          ? undefined
-          : parche.descripcion
-        : (actual.descripcion ?? undefined),
-    recompensaMonedas:
-      parche.recompensaMonedas ?? actual.recompensaMonedas,
+  const borrador = BorradorActividadSchema.partial().safeParse({
+    ...(parche.titulo !== undefined ? { titulo: parche.titulo } : {}),
+    ...(parche.descripcion !== undefined
+      ? { descripcion: parche.descripcion }
+      : {}),
+    ...(parche.recompensaMonedas !== undefined
+      ? { recompensaMonedas: parche.recompensaMonedas }
+      : {}),
   });
 
   if (!borrador.success) {
     throw new ApiError(mensajeDeErroresZod(borrador.error.issues), 422);
   }
 
-  const preguntas = PreguntasSchema.safeParse(preguntasNormalizadas);
+  const cuerpo: {
+    titulo?: string;
+    descripcion?: string;
+    recompensaMonedas?: number;
+    preguntas?: Pregunta[];
+  } = {};
 
-  if (!preguntas.success) {
-    throw new ApiError(mensajeDeErroresZod(preguntas.error.issues), 422);
+  if (borrador.data.titulo !== undefined) {
+    cuerpo.titulo = borrador.data.titulo;
   }
 
-  return actualizarActividadMock(id, {
-    titulo: borrador.data.titulo,
-    descripcion: borrador.data.descripcion ?? null,
-    recompensaMonedas: borrador.data.recompensaMonedas,
-    preguntas: preguntas.data,
-  });
+  if (parche.descripcion !== undefined) {
+    // `""` es un valor legítimo: limpia la descripción (el backend lo
+    // acepta); el `trim` del esquema lo normaliza antes de enviar.
+    cuerpo.descripcion = borrador.data.descripcion ?? "";
+  }
+
+  if (borrador.data.recompensaMonedas !== undefined) {
+    cuerpo.recompensaMonedas = borrador.data.recompensaMonedas;
+  }
+
+  if (parche.preguntas !== undefined) {
+    const preguntas = PreguntasSchema.safeParse(
+      normalizarPosiciones(parche.preguntas),
+    );
+
+    if (!preguntas.success) {
+      throw new ApiError(mensajeDeErroresZod(preguntas.error.issues), 422);
+    }
+
+    cuerpo.preguntas = preguntas.data;
+  }
+
+  return aActividad(
+    await apiPlano.patch<ActividadBackend>(`activities/${id}`, cuerpo),
+  );
 }

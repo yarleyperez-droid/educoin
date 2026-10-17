@@ -4,9 +4,10 @@
  * - **Clases** (T5.6.1): espejo de los DTOs de salida de H3.1
  *   (`src/modules/classes/dto/`): `ClaseRespuestaDto` → {@link Clase},
  *   `ListadoMetaDto` → {@link Meta}.
- * - **Actividades** (T5.6.2): {@link Actividad} deriva de
- *   `db/001_schema.sql` porque H3.3 aún no publicó sus DTOs (envelope
- *   provisional, ver su docstring).
+ * - **Actividades** (T5.6.2): espejo de los DTOs de salida de H3.3
+ *   (`src/modules/activities/dto/`): `ActividadRespuestaDto` →
+ *   {@link Actividad}, `ActividadListadoDto` → su proyección sin preguntas
+ *   (el detalle completo solo llega por `GET /activities/:id`).
  *
  * Los IDs viajan como `string` porque la BD usa `bigint` y `BigInt` no se
  * serializa a JSON (AGENTS.md §7). Si el Swagger cambia un nombre, el
@@ -101,13 +102,14 @@ export interface ClaseListado {
 export type EstadoActividad = "draft" | "published" | "deleted";
 
 /**
- * Actividad tal y como se modela en la BD (`activities`) con el vocabulario
- * del frontend.
+ * Actividad tal y como la devuelve `ActividadRespuestaDto` (H3.3) con el
+ * vocabulario del frontend.
  *
- * **Envelope provisional (T5.6.2):** H3.3 no ha publicado sus DTOs, así que
- * este shape deriva de `db/001_schema.sql` (IDs como string por BigInt,
- * fechas ISO). Cuando H3.3 entregue su contrato, el mapeo se ajusta en
- * `api/actividades.ts` sin tocar ni esta definición ni las vistas.
+ * El mapeo real desde el backend (incluida la traducción
+ * `creadoEn → creadaEn`, que preserva el nombre histórico del frontend)
+ * vive en `api/actividades.ts`. El listado real (`ActividadListadoDto`)
+ * **no** trae `preguntas`, `descripcion` ni `actualizadoEn`: la fachada
+ * completa esos campos con valores neutros al mapear sus filas.
  */
 export interface Actividad {
   /** ID de la actividad (BigInt de la BD como string). */
@@ -133,6 +135,9 @@ export interface Actividad {
 
   /** Fecha de publicación (ISO) o `null` mientras sea `draft`. */
   publicadaEn: string | null;
+
+  /** Fecha de cierre (ISO) o `null` si la actividad no cierra. */
+  cierraEn: string | null;
 
   /** Fecha de creación (ISO). */
   creadaEn: string;
