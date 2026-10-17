@@ -5,6 +5,7 @@ import { AppService } from './app.service';
 import { PrismaModule } from './prisma/prisma.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { ClassesModule } from './modules/classes/classes.module';
+import { ActivitiesModule } from './modules/activities/activities.module';
 import { OrganizationsModule } from './modules/organizations/organizations.module';
 import { UsersModule } from './modules/users/users.module';
 import { validarEnv } from './config/env.validation';
@@ -15,6 +16,7 @@ import { validarEnv } from './config/env.validation';
     PrismaModule,
     AuthModule,
     ClassesModule,
+    ActivitiesModule,
     OrganizationsModule,
     UsersModule,
   ],
