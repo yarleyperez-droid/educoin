@@ -18,6 +18,7 @@ import {
 import type { BuscarClasesQueryDto } from './dto/buscar-clases.dto';
 
 type ConsultaProfesor = { where: object; select: object };
+type ConsultaClase = { where: object; select: object };
 type ConsultaCreate = { data: object; select: object };
 type ConsultaUpdate = { where: object; data: object; select: object };
 
@@ -26,6 +27,7 @@ interface PrismaMock {
     findFirst: jest.Mock<Promise<{ id: bigint } | null>, [ConsultaProfesor]>;
   };
   classes: {
+    findFirst: jest.Mock<Promise<unknown>, [ConsultaClase]>;
     create: jest.Mock<Promise<unknown>, [ConsultaCreate]>;
     update: jest.Mock<Promise<unknown>, [ConsultaUpdate]>;
   };
@@ -119,6 +121,7 @@ describe('ClassesService', () => {
         >(),
       },
       classes: {
+        findFirst: jest.fn<Promise<unknown>, [ConsultaClase]>(),
         create: jest.fn<Promise<unknown>, [ConsultaCreate]>(),
         update: jest.fn<Promise<unknown>, [ConsultaUpdate]>(),
       },
@@ -247,6 +250,75 @@ describe('ClassesService', () => {
         Prisma.PrismaClientKnownRequestError,
       );
       await expect(promesa).rejects.toMatchObject({ code: 'P2002' });
+    });
+  });
+
+  describe('obtener', () => {
+    it('mapea la clase OWN a ClaseRespuestaDto (con el código de unión)', async () => {
+      autorizacion.verificarPertenencia.mockResolvedValue();
+      prisma.classes.findFirst.mockResolvedValue(CLASE_CREADA);
+
+      const resultado = await classesService.obtener('5', PROFESOR);
+
+      expect(autorizacion.verificarPertenencia).toHaveBeenCalledWith(
+        'clase',
+        '5',
+        PROFESOR,
+      );
+      expect(prisma.classes.findFirst).toHaveBeenCalledWith({
+        where: { id: BigInt(5) },
+        select: {
+          id: true,
+          teacher_id: true,
+          name: true,
+          code: true,
+          status: true,
+          created_at: true,
+          updated_at: true,
+        },
+      });
+      expect(resultado).toEqual({
+        id: '5',
+        profesorId: '2',
+        nombre: 'Proyecto integrador Prueba',
+        codigo: 'AB12CD34',
+        estado: 'active',
+        creadoEn: '2026-10-12T10:00:00.000Z',
+        actualizadoEn: '2026-10-12T10:00:00.000Z',
+      });
+    });
+
+    it('re-verifica la pertenencia antes de leer (segunda capa)', async () => {
+      autorizacion.verificarPertenencia.mockResolvedValue();
+      prisma.classes.findFirst.mockResolvedValue(CLASE_CREADA);
+
+      await classesService.obtener('5', PROFESOR);
+
+      expect(autorizacion.verificarPertenencia).toHaveBeenCalledWith(
+        'clase',
+        '5',
+        PROFESOR,
+      );
+    });
+
+    it('clase ajena o inexistente: propaga el 404 de la pertenencia sin leer la fila', async () => {
+      autorizacion.verificarPertenencia.mockRejectedValue(
+        new NotFoundException(MENSAJE_RECURSO_NO_ENCONTRADO),
+      );
+
+      await expect(classesService.obtener('999', ESTUDIANTE)).rejects.toBeInstanceOf(
+        NotFoundException,
+      );
+      expect(prisma.classes.findFirst).not.toHaveBeenCalled();
+    });
+
+    it('fila ausente tras la pertenencia: 404 estándar (defensa en profundidad)', async () => {
+      autorizacion.verificarPertenencia.mockResolvedValue();
+      prisma.classes.findFirst.mockResolvedValue(null);
+
+      await expect(classesService.obtener('5', PROFESOR)).rejects.toThrow(
+        new NotFoundException(MENSAJE_RECURSO_NO_ENCONTRADO),
+      );
     });
   });
 

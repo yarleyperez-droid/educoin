@@ -9,10 +9,10 @@
  * - **`published`:** la ruta pasa a **solo lectura** (resumen + aviso); no
  *   se ofrece ningún control de edición ni la reversión a borrador.
  *
- * Contrato con la backend: los datos pasan por
- * `features/teacher/api/actividades.ts` (mock de H3.3 hoy; T5.6.4
- * reemplazará el interior). Errores → `ApiError.message` en
- * `role="alert"` **sin limpiar lo escrito**.
+ * Contrato con el backend (H3.3, T5.6.4): los datos pasan por
+ * `features/teacher/api/actividades.ts` (`GET /activities/:id` para la
+ * carga, `PATCH` y `POST …/publicar` para las acciones). Errores →
+ * `ApiError.message` en `role="alert"` **sin limpiar lo escrito**.
  */
 
 "use client";
@@ -32,9 +32,9 @@ import type { Actividad } from "@/features/teacher/tipos";
 import { normalizarPosiciones, type Pregunta } from "@/features/teacher/contrato/actividades";
 import { ApiError } from "@/lib/api-client";
 
-/** Mensaje cuando la actividad no existe en la sesión actual. */
+/** Mensaje cuando la actividad no existe (o no es visible para el docente). */
 const MENSAJE_NO_ENCONTRADA =
-  "No encontramos esta actividad en la sesión actual. Vuelve al detalle de la clase (el mock no persiste al recargar).";
+  "No se encontró la actividad solicitada.";
 
 /** Mensaje cuando la recompensa viene vacía (evita que "" valga como 0). */
 const MENSAJE_RECOMPENSA_VACIA =
@@ -77,29 +77,37 @@ export default function EditarActividadPage() {
     let vigente = true;
 
     async function cargar(): Promise<void> {
-      // El mock es síncrono; se envuelve para respetar el mismo patrón
-      // asíncrono de carga del resto de vistas del panel.
-      await Promise.resolve();
+      try {
+        const encontrada = await obtenerActividad(actividadId);
 
-      const encontrada = obtenerActividad(actividadId);
+        if (!vigente) {
+          return;
+        }
 
-      if (!vigente) {
-        return;
-      }
+        if (encontrada === null) {
+          setActividad(null);
+          setErrorCarga(MENSAJE_NO_ENCONTRADA);
+          return;
+        }
 
-      if (encontrada) {
         setActividad(encontrada);
         setTitulo(encontrada.titulo);
         setDescripcion(encontrada.descripcion ?? "");
         setRecompensa(String(encontrada.recompensaMonedas));
         setPreguntas(encontrada.preguntas);
         setErrorCarga(null);
-      } else {
-        setActividad(null);
-        setErrorCarga(MENSAJE_NO_ENCONTRADA);
+      } catch (e) {
+        if (vigente) {
+          setActividad(null);
+          setErrorCarga(
+            e instanceof ApiError ? e.message : MENSAJE_ERROR_GENERICO,
+          );
+        }
+      } finally {
+        if (vigente) {
+          setCargando(false);
+        }
       }
-
-      setCargando(false);
     }
 
     void cargar();

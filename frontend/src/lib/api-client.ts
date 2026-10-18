@@ -1,11 +1,13 @@
 /**
  * Cliente HTTP único del frontend EduCoins.
  *
- * Responsabilidades de esta versión (T5.1.1 + T5.1.2 + T5.1.3 + T5.4.3):
+ * Responsabilidades de esta versión (T5.1.1 + T5.1.2 + T5.1.3 + T5.4.3 +
+ * T5.6.4):
  * - Centralizar la base URL en `process.env.NEXT_PUBLIC_API_URL`.
- * - Tipar las respuestas con el contrato `{ data, meta }` (con la excepción
- *   documentada de `auth/*`, que H2.1 devuelve en plano, y del `204` sin
- *   cuerpo).
+ * - Tipar las respuestas con el contrato `{ data, meta }` (con las excepciones
+ *   documentadas de `auth/*`, que H2.1 devuelve en plano, del `204` sin
+ *   cuerpo, y de los endpoints unitarios de H3.1/H3.3, cuyo DTO sale en
+ *   plano — ver {@link apiRequestPlano}).
  * - Evitar que vistas usen `fetch` con URLs escritas a mano.
  * - Guardar el access token en memoria y adjuntarlo como `Authorization: Bearer`.
  * - Refrescar el token en `401` con cola de peticiones concurrentes, sin
@@ -287,31 +289,43 @@ async function refrescarToken(): Promise<boolean> {
 }
 
 /**
- * Realiza una petición HTTP contra la API EduCoins.
+ * Resultado crudo de una petición HTTP ya ejecutada (transporte resuelto).
  *
- * Es la única función del frontend que debe llamar a `fetch` con una URL
- * completa. Las vistas y hooks deben usar {@link api} o esta función directamente.
+ * `cuerpo` es el JSON parseado de la respuesta, o `null` si la respuesta
+ * venía vacía (p. ej. `204`). La interpretación del cuerpo (envelope
+ * `{ data, meta }` vs. DTO en plano) corresponde a {@link apiRequest} y
+ * {@link apiRequestPlano}, no a esta capa.
+ */
+interface RespuestaHttp {
+  /** Código HTTP de la respuesta. */
+  status: number;
+
+  /** Cuerpo JSON parseado, o `null` si no había cuerpo. */
+  cuerpo: unknown;
+}
+
+/**
+ * Ejecuta el transporte HTTP compartido por {@link apiRequest} y
+ * {@link apiRequestPlano}.
  *
- * Si la API responde `401` y hay sesión activa, dispara el refresh del token
- * (con cola para peticiones concurrentes) y reintenta la petición original
- * **una sola vez**. Si el refresh falla o el reintento vuelve a dar `401`,
- * lanza {@link ApiError} sin reintentar de nuevo.
+ * Concentra lo común a ambas formas de respuesta: construir headers,
+ * llamar a `fetch`, parsear el cuerpo, el `204` sin contenido, el
+ * refresh en `401` (con cola y un único reintento) y la traducción de
+ * errores HTTP a {@link ApiError}. Lo único que no hace es interpretar
+ * el cuerpo de éxito.
  *
- * @typeParam T Tipo del cuerpo principal (`data`) de la respuesta.
  * @param ruta Ruta relativa del recurso (p. ej. `"classes"`).
- * @param init Opciones adicionales de `fetch`. No debe contener `method` ni `body`
- *   cuando se usan los ayudantes {@link api}; úsalo para headers, signal, etc.
+ * @param init Opciones adicionales de `fetch`.
  * @param reintentado Marcador interno: `true` cuando la petición ya fue
- *   reintentada tras un refresh; evita bucles infinitos. No se expone en los
- *   ayudantes {@link api}.
- * @returns Promesa con la envoltura `{ data, meta }` tipada.
+ *   reintentada tras un refresh; evita bucles infinitos.
+ * @returns Status y cuerpo crudo de la respuesta.
  * @throws {ApiError} Si falla la red o la API responde con código no 2xx.
  */
-export async function apiRequest<T>(
+async function ejecutarPeticion(
   ruta: string,
   init?: RequestInit,
   reintentado = false,
-): Promise<ApiEnvelope<T>> {
+): Promise<RespuestaHttp> {
   const headersFinales = new Headers(init?.headers);
 
   if (accessToken && !headersFinales.has("Authorization")) {
@@ -353,9 +367,9 @@ export async function apiRequest<T>(
     cuerpo = null;
   }
 
-  // 204 No Content (p. ej. `POST auth/logout`): no hay envoltura que validar.
+  // 204 No Content (p. ej. `POST auth/logout`): no hay cuerpo que interpretar.
   if (respuesta.status === 204) {
-    return { data: null as T };
+    return { status: 204, cuerpo: null };
   }
 
   // 401 con sesión activa y sin refresh previo → refrescar y reintentar una vez.
@@ -371,7 +385,7 @@ export async function apiRequest<T>(
     const refrescado = await refrescarToken();
 
     if (refrescado) {
-      return apiRequest<T>(ruta, init, true);
+      return ejecutarPeticion(ruta, init, true);
     }
 
     throw new ApiError(
@@ -389,6 +403,46 @@ export async function apiRequest<T>(
     );
   }
 
+  return { status: respuesta.status, cuerpo };
+}
+
+/**
+ * Realiza una petición HTTP contra la API EduCoins y exige la envoltura
+ * `{ data, meta }` del contrato estándar.
+ *
+ * Es la función que deben usar las vistas y hooks para los listados y el
+ * resto de endpoints con envelope. Para los endpoints unitarios cuyo DTO
+ * sale **en plano** (H3.1/H3.3: crear/actualizar clases y actividades),
+ * usa {@link apiRequestPlano}.
+ *
+ * Si la API responde `401` y hay sesión activa, dispara el refresh del token
+ * (con cola para peticiones concurrentes) y reintenta la petición original
+ * **una sola vez**. Si el refresh falla o el reintento vuelve a dar `401`,
+ * lanza {@link ApiError} sin reintentar de nuevo.
+ *
+ * @typeParam T Tipo del cuerpo principal (`data`) de la respuesta.
+ * @param ruta Ruta relativa del recurso (p. ej. `"classes"`).
+ * @param init Opciones adicionales de `fetch`. No debe contener `method` ni `body`
+ *   cuando se usan los ayudantes {@link api}; úsalo para headers, signal, etc.
+ * @param reintentado Marcador interno: `true` cuando la petición ya fue
+ *   reintentada tras un refresh; evita bucles infinitos. No se expone en los
+ *   ayudantes {@link api}.
+ * @returns Promesa con la envoltura `{ data, meta }` tipada.
+ * @throws {ApiError} Si falla la red, la API responde con código no 2xx o el
+ *   cuerpo no trae la envoltura esperada.
+ */
+export async function apiRequest<T>(
+  ruta: string,
+  init?: RequestInit,
+  reintentado = false,
+): Promise<ApiEnvelope<T>> {
+  const { status, cuerpo } = await ejecutarPeticion(ruta, init, reintentado);
+
+  // 204 No Content (p. ej. `POST auth/logout`): no hay envoltura que validar.
+  if (status === 204) {
+    return { data: null as T };
+  }
+
   // Excepción de contrato (H2.1): los endpoints de `auth/*` devuelven el
   // cuerpo **en plano** (p. ej. `{ accessToken, usuario, … }`), sin la
   // envoltura `{ data, meta }` de los recursos. Se normaliza aquí para que
@@ -404,12 +458,40 @@ export async function apiRequest<T>(
 
     throw new ApiError(
       "La respuesta de la API no tiene el formato { data, meta } esperado",
-      respuesta.status,
+      status,
       cuerpo,
     );
   }
 
   return cuerpo as ApiEnvelope<T>;
+}
+
+/**
+ * Realiza una petición HTTP y devuelve el cuerpo **tal cual**, sin exigir
+ * la envoltura `{ data, meta }`.
+ *
+ * Es la puerta de los endpoints **unitarios** de H3.1/H3.3, cuyo DTO sale
+ * en plano (p. ej. `POST /classes` → `{ mensaje, clase }`,
+ * `PATCH /classes/:id` → `ClaseRespuestaDto`,
+ * `POST /classes/:claseId/activities` → `{ mensaje, actividad }`,
+ * `GET|PATCH /activities/:id` y `POST /activities/:id/publicar` →
+ * `ActividadRespuestaDto`): validarlo como envelope lanzaría el error
+ * "La respuesta de la API no tiene el formato { data, meta } esperado".
+ *
+ * Comparte con {@link apiRequest} todo el transporte (headers, token,
+ * refresh en `401`, errores y `204` → `null`); solo cambia la
+ * interpretación del cuerpo de éxito.
+ *
+ * @typeParam T Tipo del cuerpo de la respuesta.
+ * @param ruta Ruta relativa del recurso (p. ej. `"classes"`).
+ * @param init Opciones adicionales de `fetch`.
+ * @returns El cuerpo de la respuesta, sin envoltura.
+ * @throws {ApiError} Si falla la red o la API responde con código no 2xx.
+ */
+export async function apiRequestPlano<T>(ruta: string, init?: RequestInit): Promise<T> {
+  const { status, cuerpo } = await ejecutarPeticion(ruta, init);
+
+  return (status === 204 ? null : cuerpo) as T;
 }
 
 /**
@@ -468,4 +550,47 @@ export const api = {
    */
   delete: <T>(ruta: string, init?: Omit<RequestInit, "method" | "body">) =>
     apiRequest<T>(ruta, { ...init, method: "DELETE" }),
+};
+
+/**
+ * Ayudantes tipados para los endpoints unitarios que devuelven su DTO
+ * **en plano** (H3.1/H3.3): mismos verbos y serialización JSON que
+ * {@link api}, pero sobre {@link apiRequestPlano} (sin exigir envelope).
+ *
+ * Cobertura deliberada: `get`, `post` y `patch` — los verbos que usan las
+ * fachadas de clases y actividades. El borrado (`DELETE /activities/:id`)
+ * responde `204` y va por {@link api}.delete, que ya normaliza ese caso.
+ */
+export const apiPlano = {
+  /**
+   * Realiza una petición GET que devuelve el cuerpo en plano.
+   *
+   * @typeParam T Tipo del cuerpo de la respuesta.
+   */
+  get: <T>(ruta: string, init?: Omit<RequestInit, "method" | "body">) =>
+    apiRequestPlano<T>(ruta, { ...init, method: "GET" }),
+
+  /**
+   * Realiza una petición POST enviando el cuerpo como JSON y devolviendo
+   * la respuesta en plano.
+   *
+   * @typeParam T Tipo del cuerpo de la respuesta.
+   */
+  post: <T>(
+    ruta: string,
+    cuerpo: unknown,
+    init?: Omit<RequestInit, "method" | "body">,
+  ) => apiRequestPlano<T>(ruta, { ...init, method: "POST", body: JSON.stringify(cuerpo) }),
+
+  /**
+   * Realiza una petición PATCH enviando el cuerpo como JSON y devolviendo
+   * la respuesta en plano.
+   *
+   * @typeParam T Tipo del cuerpo de la respuesta.
+   */
+  patch: <T>(
+    ruta: string,
+    cuerpo: unknown,
+    init?: Omit<RequestInit, "method" | "body">,
+  ) => apiRequestPlano<T>(ruta, { ...init, method: "PATCH", body: JSON.stringify(cuerpo) }),
 };

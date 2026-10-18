@@ -1,18 +1,39 @@
 /**
- * Tests de la fachada de actividades (T5.6.2, PRO-386).
+ * Tests de la fachada de actividades (T5.6.2 → T5.6.4, PRO-388).
  *
- * Cubren el plan §4 (tests 8–11 y extras): creación en `draft` con JSONB
- * validado, rechazo del JSONB inválido sin persistir, transición
- * `draft → published` y la ausencia de reversión (CA 3 de H5.6).
+ * Desde T5.6.4 la fachada habla con la API real de H3.3, así que estos
+ * tests **mockean el transporte** (`@/lib/api-client`) con los shapes
+ * verificados en `test/activities.e2e-spec.ts` y cubren:
+ * - la validación zod de cliente (`ApiError` 422) **sin invocar** el
+ *   transporte (datos generales y JSONB `questions`);
+ * - el mapeo backend → tipo frontend (`creadoEn → creadaEn`,
+ *   `actualizadoEn → actualizadaEn`, `eliminadaEn` descartado);
+ * - la propagación de errores del backend (`ApiError` tal cual, sin
+ *   pre-cheques 404/409);
+ * - `obtenerActividad`: `404` → `null`, otros errores se propagan;
+ * - `listarActividades`: filas sin `preguntas` completadas con neutros y
+ *   filtrado de `deleted`.
  *
- * Entorno: Vitest en node (sin DOM); el mock no usa `fetch` todavía
- * (T5.6.4 lo stubbeará cuando existan los endpoints de H3.3).
+ * `ApiError` se conserva real (`importOriginal`) para que `instanceof`
+ * funcione igual en la fachada y en las aserciones. Entorno: Vitest en
+ * **node** (sin DOM, ver `vitest.config.mts`).
  */
 
-import { describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { ApiError } from "@/lib/api-client";
+vi.mock("@/lib/api-client", async (importOriginal) => {
+  const original = await importOriginal<typeof import("@/lib/api-client")>();
 
+  return {
+    ...original,
+    api: { get: vi.fn(), post: vi.fn(), put: vi.fn(), patch: vi.fn(), delete: vi.fn() },
+    apiPlano: { get: vi.fn(), post: vi.fn(), patch: vi.fn() },
+  };
+});
+
+import { api, apiPlano, ApiError } from "@/lib/api-client";
+
+import type { Actividad, EstadoActividad } from "../tipos";
 import type { Pregunta } from "../contrato/actividades";
 
 import {
@@ -22,7 +43,6 @@ import {
   obtenerActividad,
   publicarActividad,
 } from "./actividades";
-import { listarActividadesMock } from "./actividades-mock";
 
 /** Pregunta `test` válida de ejemplo. */
 const PREGUNTA_TEST: Pregunta = {
@@ -38,40 +58,68 @@ const PREGUNTA_TEST: Pregunta = {
 
 /** Datos válidos de ejemplo para crear una actividad. */
 const DATOS_VALIDOS = {
-  claseId: "mock-clase-seed",
+  claseId: "5",
   titulo: "Repaso de geografía",
   descripcion: "Cuestionario corto de la unidad 1",
   recompensaMonedas: 120,
   preguntas: [PREGUNTA_TEST],
 };
 
+/** `ActividadRespuestaDto` de H3.3 tal cual sale del backend (e2e). */
+const ACTIVIDAD_BACKEND = {
+  id: "10",
+  claseId: "5",
+  titulo: "Repaso de geografía",
+  descripcion: "Cuestionario corto de la unidad 1",
+  recompensaMonedas: 120,
+  estado: "draft" as EstadoActividad,
+  preguntas: [PREGUNTA_TEST],
+  publicadaEn: null,
+  cierraEn: null,
+  creadoEn: "2026-10-12T10:00:00.000Z",
+  actualizadoEn: "2026-10-12T10:00:00.000Z",
+  eliminadaEn: null,
+};
+
+/** `ActividadCreadaRespuestaDto` de H3.3: `{ mensaje, actividad }` en plano. */
+const ACTIVIDAD_CREADA_BACKEND = {
+  mensaje:
+    "Actividad creada como borrador. Publícala cuando esté lista: los estudiantes solo pueden resolver actividades publicadas.",
+  actividad: ACTIVIDAD_BACKEND,
+};
+
+/** Traducción esperada de {@link ACTIVIDAD_BACKEND} al tipo `Actividad`. */
+const ACTIVIDAD_ESPERADA: Actividad = {
+  id: "10",
+  claseId: "5",
+  titulo: "Repaso de geografía",
+  descripcion: "Cuestionario corto de la unidad 1",
+  recompensaMonedas: 120,
+  estado: "draft",
+  preguntas: [PREGUNTA_TEST],
+  publicadaEn: null,
+  cierraEn: null,
+  creadaEn: "2026-10-12T10:00:00.000Z",
+  actualizadaEn: "2026-10-12T10:00:00.000Z",
+};
+
+/** `ActividadListadoDto` de H3.3: filas sin `preguntas` ni `descripcion`. */
+const FILA_LISTADO_BACKEND = {
+  id: "10",
+  titulo: "Repaso de geografía",
+  estado: "draft" as EstadoActividad,
+  recompensaMonedas: 120,
+  publicadaEn: null,
+  cierraEn: null,
+  creadoEn: "2026-10-12T10:00:00.000Z",
+};
+
+beforeEach(() => {
+  vi.clearAllMocks();
+});
+
 describe("crearActividad", () => {
-  it("crea una actividad válida en estado draft con posiciones normalizadas", async () => {
-    const creada = await crearActividad({
-      ...DATOS_VALIDOS,
-      preguntas: [
-        { ...PREGUNTA_TEST, position: 9 },
-        {
-          type: "completion",
-          position: 42,
-          prompt: "El agua hierve a ___ °C.",
-          score: 5,
-          expected_answer: "100",
-        },
-      ],
-    });
-
-    expect(creada.estado).toBe("draft");
-    expect(creada.publicadaEn).toBeNull();
-    expect(creada.titulo).toBe(DATOS_VALIDOS.titulo);
-    expect(creada.recompensaMonedas).toBe(120);
-    expect(creada.preguntas.map((p) => p.position)).toEqual([1, 2]);
-    expect(creada.id).not.toBe("");
-  });
-
-  it("rechaza un JSONB inválido con ApiError 422 sin persistir nada", async () => {
-    const antes = listarActividadesMock().length;
-
+  it("rechaza un JSONB inválido con ApiError 422 sin invocar el transporte", async () => {
     const intento = crearActividad({
       ...DATOS_VALIDOS,
       preguntas: [
@@ -87,152 +135,221 @@ describe("crearActividad", () => {
 
     await expect(intento).rejects.toBeInstanceOf(ApiError);
     await expect(intento).rejects.toMatchObject({ status: 422 });
-
-    expect(listarActividadesMock().length).toBe(antes);
+    expect(apiPlano.post).not.toHaveBeenCalled();
   });
 
-  it("rechaza un título vacío con ApiError 422", async () => {
+  it("rechaza un título vacío con ApiError 422 sin invocar el transporte", async () => {
     await expect(
       crearActividad({ ...DATOS_VALIDOS, titulo: "   " }),
     ).rejects.toMatchObject({ status: 422 });
+    expect(apiPlano.post).not.toHaveBeenCalled();
   });
 
-  it("rechaza una recompensa negativa con ApiError 422", async () => {
+  it("rechaza una recompensa negativa con ApiError 422 sin invocar el transporte", async () => {
     await expect(
       crearActividad({ ...DATOS_VALIDOS, recompensaMonedas: -1 }),
     ).rejects.toMatchObject({ status: 422 });
+    expect(apiPlano.post).not.toHaveBeenCalled();
   });
 
-  it("rechaza un array de preguntas vacío con ApiError 422", async () => {
+  it("rechaza un array de preguntas vacío con ApiError 422 sin invocar el transporte", async () => {
     await expect(
       crearActividad({ ...DATOS_VALIDOS, preguntas: [] }),
     ).rejects.toMatchObject({ status: 422 });
+    expect(apiPlano.post).not.toHaveBeenCalled();
   });
 
-  it("descarta la descripción en blanco (queda null)", async () => {
+  it("crea una actividad: renumera posiciones, envía el body esperado y mapea la respuesta", async () => {
+    vi.mocked(apiPlano.post).mockResolvedValue(ACTIVIDAD_CREADA_BACKEND);
+
     const creada = await crearActividad({
+      ...DATOS_VALIDOS,
+      preguntas: [
+        { ...PREGUNTA_TEST, position: 9 },
+        {
+          type: "completion",
+          position: 42,
+          prompt: "El agua hierve a ___ °C.",
+          score: 5,
+          expected_answer: "100",
+        },
+      ],
+    });
+
+    expect(apiPlano.post).toHaveBeenCalledWith("classes/5/activities", {
+      titulo: DATOS_VALIDOS.titulo,
+      descripcion: DATOS_VALIDOS.descripcion,
+      recompensaMonedas: 120,
+      preguntas: [
+        { ...PREGUNTA_TEST, position: 1 },
+        {
+          type: "completion",
+          position: 2,
+          prompt: "El agua hierve a ___ °C.",
+          score: 5,
+          expected_answer: "100",
+        },
+      ],
+    });
+    expect(creada).toEqual(ACTIVIDAD_ESPERADA);
+    // El mapper traduce las fechas del backend y descarta `eliminadaEn`.
+    expect(creada.creadaEn).toBe(ACTIVIDAD_BACKEND.creadoEn);
+    expect(creada.actualizadaEn).toBe(ACTIVIDAD_BACKEND.actualizadoEn);
+    expect(creada).not.toHaveProperty("eliminadaEn");
+  });
+
+  it("descarta la descripción en blanco: no viaja en el body", async () => {
+    vi.mocked(apiPlano.post).mockResolvedValue({
+      ...ACTIVIDAD_CREADA_BACKEND,
+      actividad: { ...ACTIVIDAD_BACKEND, descripcion: null },
+    });
+
+    await crearActividad({
       ...DATOS_VALIDOS,
       titulo: "Actividad sin descripción",
       descripcion: "   ",
     });
 
-    expect(creada.descripcion).toBeNull();
+    const bodyEnviado = vi.mocked(apiPlano.post).mock.calls[0][1] as Record<
+      string,
+      unknown
+    >;
+    expect(bodyEnviado).not.toHaveProperty("descripcion");
+  });
+
+  it("propaga el ApiError del backend sin envolverlo", async () => {
+    const errorBackend = new ApiError("La clase no existe.", 404);
+    vi.mocked(apiPlano.post).mockRejectedValue(errorBackend);
+
+    await expect(crearActividad(DATOS_VALIDOS)).rejects.toBe(errorBackend);
   });
 });
 
 describe("publicarActividad", () => {
-  it("publica una actividad en draft y fija publicadaEn", async () => {
-    const creada = await crearActividad({
-      ...DATOS_VALIDOS,
-      titulo: "Actividad por publicar",
+  it("publica con POST /activities/:id/publicar y mapea la respuesta", async () => {
+    vi.mocked(apiPlano.post).mockResolvedValue({
+      ...ACTIVIDAD_BACKEND,
+      estado: "published",
+      publicadaEn: "2026-10-12T11:00:00.000Z",
+      actualizadoEn: "2026-10-12T11:00:00.000Z",
     });
 
-    expect(creada.estado).toBe("draft");
+    const publicada = await publicarActividad("10");
 
-    const publicada = await publicarActividad(creada.id);
-
+    expect(apiPlano.post).toHaveBeenCalledWith("activities/10/publicar", {});
     expect(publicada.estado).toBe("published");
-    expect(publicada.publicadaEn).not.toBeNull();
-    expect(publicada.id).toBe(creada.id);
-    expect(publicada.titulo).toBe(creada.titulo);
+    expect(publicada.publicadaEn).toBe("2026-10-12T11:00:00.000Z");
+    expect(publicada.id).toBe("10");
+    expect(publicada.creadaEn).toBe(ACTIVIDAD_BACKEND.creadoEn);
   });
 
-  it("no permite publicar dos veces (sin reversión ni doble publicación)", async () => {
-    const creada = await crearActividad({
-      ...DATOS_VALIDOS,
-      titulo: "Actividad ya publicada",
-    });
+  it("no pre-comprueba estados: el 409 del backend se propaga como ApiError", async () => {
+    const errorBackend = new ApiError(
+      "La actividad ya está publicada; no puede volver a borrador.",
+      409,
+    );
+    vi.mocked(apiPlano.post).mockRejectedValue(errorBackend);
 
-    await publicarActividad(creada.id);
-
-    const segundoIntento = publicarActividad(creada.id);
-
-    await expect(segundoIntento).rejects.toBeInstanceOf(ApiError);
-    await expect(segundoIntento).rejects.toMatchObject({ status: 409 });
+    await expect(publicarActividad("10")).rejects.toBe(errorBackend);
+    expect(apiPlano.post).toHaveBeenCalledWith("activities/10/publicar", {});
   });
 
-  it("responde ApiError 404 para una actividad inexistente", async () => {
-    await expect(publicarActividad("no-existe")).rejects.toMatchObject({
-      status: 404,
-    });
+  it("no pre-comprueba existencia: el 404 del backend se propaga como ApiError", async () => {
+    const errorBackend = new ApiError(
+      "No se encontró el recurso solicitado.",
+      404,
+    );
+    vi.mocked(apiPlano.post).mockRejectedValue(errorBackend);
+
+    await expect(publicarActividad("no-existe")).rejects.toBe(errorBackend);
   });
 });
 
-describe("listarActividades y obtenerActividad", () => {
-  it("lista solo las actividades de la clase indicada", async () => {
-    const propia = await crearActividad({
-      ...DATOS_VALIDOS,
-      claseId: "clase-A",
-      titulo: "Actividad de la clase A",
-    });
-    const ajena = await crearActividad({
-      ...DATOS_VALIDOS,
-      claseId: "clase-B",
-      titulo: "Actividad de la clase B",
-    });
+describe("obtenerActividad", () => {
+  it("mapea la respuesta del backend (ActividadRespuestaDto → Actividad)", async () => {
+    vi.mocked(apiPlano.get).mockResolvedValue(ACTIVIDAD_BACKEND);
 
-    const lista = await listarActividades("clase-A");
-    const ids = lista.map((actividad) => actividad.id);
+    const actividad = await obtenerActividad("10");
 
-    expect(ids).toContain(propia.id);
-    expect(ids).not.toContain(ajena.id);
+    expect(apiPlano.get).toHaveBeenCalledWith("activities/10");
+    expect(actividad).toEqual(ACTIVIDAD_ESPERADA);
   });
 
-  it("nunca devuelve actividades eliminadas (borrado lógico)", async () => {
-    await crearActividad({
-      ...DATOS_VALIDOS,
-      claseId: "clase-C",
-      titulo: "Actividad visible",
-    });
+  it("devuelve null cuando el backend responde 404", async () => {
+    vi.mocked(apiPlano.get).mockRejectedValue(
+      new ApiError("No se encontró el recurso solicitado.", 404),
+    );
 
-    const lista = await listarActividades("clase-C");
-
-    expect(lista.length).toBeGreaterThan(0);
-    expect(lista.every((a) => a.estado !== "deleted")).toBe(true);
+    await expect(obtenerActividad("no-existe")).resolves.toBeNull();
   });
 
-  it("obtenerActividad devuelve la creada o null si no existe", async () => {
-    const creada = await crearActividad({
-      ...DATOS_VALIDOS,
-      titulo: "Actividad para obtener",
+  it("propaga los errores que no son 404", async () => {
+    const errorBackend = new ApiError("Error interno del servidor.", 500);
+    vi.mocked(apiPlano.get).mockRejectedValue(errorBackend);
+
+    await expect(obtenerActividad("10")).rejects.toBe(errorBackend);
+  });
+});
+
+describe("listarActividades", () => {
+  it("mapea filas del listado sin preguntas y filtra las eliminadas", async () => {
+    vi.mocked(api.get).mockResolvedValue({
+      data: [
+        FILA_LISTADO_BACKEND,
+        {
+          ...FILA_LISTADO_BACKEND,
+          id: "11",
+          titulo: "Actividad borrada",
+          estado: "deleted" as EstadoActividad,
+        },
+      ],
+      meta: { total: 2, page: 1, limit: 20 },
     });
 
-    expect(obtenerActividad(creada.id)?.id).toBe(creada.id);
-    expect(obtenerActividad("no-existe")).toBeNull();
+    const lista = await listarActividades("5");
+
+    expect(api.get).toHaveBeenCalledWith("classes/5/activities");
+    expect(lista).toEqual([
+      {
+        id: "10",
+        claseId: "5",
+        titulo: "Repaso de geografía",
+        descripcion: null,
+        recompensaMonedas: 120,
+        estado: "draft",
+        preguntas: [],
+        publicadaEn: null,
+        cierraEn: null,
+        creadaEn: FILA_LISTADO_BACKEND.creadoEn,
+        actualizadaEn: FILA_LISTADO_BACKEND.creadoEn,
+      },
+    ]);
+  });
+
+  it("devuelve [] cuando todas las filas están eliminadas", async () => {
+    vi.mocked(api.get).mockResolvedValue({
+      data: [{ ...FILA_LISTADO_BACKEND, estado: "deleted" as EstadoActividad }],
+      meta: { total: 1, page: 1, limit: 20 },
+    });
+
+    await expect(listarActividades("5")).resolves.toEqual([]);
+  });
+
+  it("propaga el ApiError del backend sin envolverlo", async () => {
+    const errorBackend = new ApiError(
+      "No se encontró el recurso solicitado.",
+      404,
+    );
+    vi.mocked(api.get).mockRejectedValue(errorBackend);
+
+    await expect(listarActividades("no-existe")).rejects.toBe(errorBackend);
   });
 });
 
 describe("actualizarActividad", () => {
-  it("edita una actividad en draft (título, recompensa y preguntas)", async () => {
-    const creada = await crearActividad({ ...DATOS_VALIDOS });
-
-    const actualizada = await actualizarActividad(creada.id, {
-      titulo: "Título corregido",
-      recompensaMonedas: 50,
-      preguntas: [
-        {
-          type: "completion",
-          position: 5,
-          prompt: "2 + 2 = ___",
-          score: 3,
-          expected_answer: "4",
-        },
-      ],
-    });
-
-    expect(actualizada.titulo).toBe("Título corregido");
-    expect(actualizada.recompensaMonedas).toBe(50);
-    expect(actualizada.estado).toBe("draft");
-    // Las posiciones se renumeran 1..n en el guardado.
-    expect(actualizada.preguntas[0].position).toBe(1);
-    expect(actualizada.actualizadaEn).not.toBe(creada.actualizadaEn);
-  });
-
-  it("rechaza editar con un JSONB inválido (ApiError 422)", async () => {
-    const creada = await crearActividad({ ...DATOS_VALIDOS });
-
+  it("rechaza un JSONB inválido con ApiError 422 sin invocar el transporte", async () => {
     await expect(
-      actualizarActividad(creada.id, {
+      actualizarActividad("10", {
         preguntas: [
           {
             type: "test",
@@ -244,20 +361,112 @@ describe("actualizarActividad", () => {
         ],
       }),
     ).rejects.toMatchObject({ status: 422 });
+    expect(apiPlano.patch).not.toHaveBeenCalled();
   });
 
-  it("no permite editar una actividad publicada (ApiError 409)", async () => {
-    const creada = await crearActividad({ ...DATOS_VALIDOS });
-    await publicarActividad(creada.id);
+  it("rechaza un título inválido con ApiError 422 sin invocar el transporte", async () => {
+    await expect(
+      actualizarActividad("10", { titulo: "   " }),
+    ).rejects.toMatchObject({ status: 422 });
+    expect(apiPlano.patch).not.toHaveBeenCalled();
+  });
+
+  it("envía solo los campos definidos y mapea la respuesta", async () => {
+    vi.mocked(apiPlano.patch).mockResolvedValue({
+      ...ACTIVIDAD_BACKEND,
+      titulo: "Título corregido",
+      recompensaMonedas: 50,
+      actualizadoEn: "2026-10-12T12:00:00.000Z",
+    });
+
+    const actualizada = await actualizarActividad("10", {
+      titulo: "Título corregido",
+      recompensaMonedas: 50,
+    });
+
+    expect(apiPlano.patch).toHaveBeenCalledWith("activities/10", {
+      titulo: "Título corregido",
+      recompensaMonedas: 50,
+    });
+    expect(actualizada.titulo).toBe("Título corregido");
+    expect(actualizada.recompensaMonedas).toBe(50);
+    expect(actualizada.creadaEn).toBe(ACTIVIDAD_BACKEND.creadoEn);
+  });
+
+  it("las preguntas del parche se renumeran 1..n antes de enviarlas", async () => {
+    vi.mocked(apiPlano.patch).mockResolvedValue(ACTIVIDAD_BACKEND);
+
+    await actualizarActividad("10", {
+      preguntas: [
+        {
+          type: "completion",
+          position: 5,
+          prompt: "2 + 2 = ___",
+          score: 3,
+          expected_answer: "4",
+        },
+      ],
+    });
+
+    expect(apiPlano.patch).toHaveBeenCalledWith("activities/10", {
+      preguntas: [
+        {
+          type: "completion",
+          position: 1,
+          prompt: "2 + 2 = ___",
+          score: 3,
+          expected_answer: "4",
+        },
+      ],
+    });
+  });
+
+  it("una descripción vacía SÍ viaja como \"\" (limpia la descripción)", async () => {
+    vi.mocked(apiPlano.patch).mockResolvedValue({
+      ...ACTIVIDAD_BACKEND,
+      descripcion: null,
+    });
+
+    await actualizarActividad("10", { descripcion: "   " });
+
+    expect(apiPlano.patch).toHaveBeenCalledWith("activities/10", {
+      descripcion: "",
+    });
+  });
+
+  it("sin descripción en el parche, el body no toca ese campo", async () => {
+    vi.mocked(apiPlano.patch).mockResolvedValue(ACTIVIDAD_BACKEND);
+
+    await actualizarActividad("10", { titulo: "Solo el título" });
+
+    const bodyEnviado = vi.mocked(apiPlano.patch).mock.calls[0][1] as Record<
+      string,
+      unknown
+    >;
+    expect(bodyEnviado).not.toHaveProperty("descripcion");
+  });
+
+  it("no pre-comprueba estados: el 409 del backend se propaga como ApiError", async () => {
+    const errorBackend = new ApiError(
+      "La actividad ya está publicada y no se puede editar.",
+      409,
+    );
+    vi.mocked(apiPlano.patch).mockRejectedValue(errorBackend);
 
     await expect(
-      actualizarActividad(creada.id, { titulo: "Intento de edición" }),
-    ).rejects.toMatchObject({ status: 409 });
+      actualizarActividad("10", { titulo: "Intento de edición" }),
+    ).rejects.toBe(errorBackend);
   });
 
-  it("responde ApiError 404 para una actividad inexistente", async () => {
+  it("no pre-comprueba existencia: el 404 del backend se propaga como ApiError", async () => {
+    const errorBackend = new ApiError(
+      "No se encontró el recurso solicitado.",
+      404,
+    );
+    vi.mocked(apiPlano.patch).mockRejectedValue(errorBackend);
+
     await expect(
       actualizarActividad("no-existe", { titulo: "Nada" }),
-    ).rejects.toMatchObject({ status: 404 });
+    ).rejects.toBe(errorBackend);
   });
 });
