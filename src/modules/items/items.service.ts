@@ -39,6 +39,9 @@ export const MENSAJE_ITEMS_AJENOS = 'No puedes administrar ítems de esta clase.
  *   debe alcanzarse).
  * - DELETE = borrado lógico: `redemptions.item_id` es FK sin
  *   `ON DELETE`; el histórico de canjes no puede romperse.
+ * - Listado extendido al **estudiante** en T5.7.2 / PRO-391: ve los
+ *   ítems `active` de sus clases con inscripción `active` (ver
+ *   {@link ItemsService.listar}).
  */
 @Injectable()
 export class ItemsService {
@@ -78,23 +81,77 @@ export class ItemsService {
   }
 
   /**
-   * Lista los ítems gestionables de una clase (activos e inactivos;
-   * los borrados lógicos quedan fuera).
+   * Lista los ítems de una clase (H4.1 / T4.1.1), con doble camino
+   * (T5.7.2 / PRO-391):
    *
-   * @param dto Query con `classId`.
-   * @param usuario Profesor dueño de la clase.
+   * - **Profesor:** `classId` obligatorio; pertenencia → 403 uniforme;
+   *   devuelve `active` e `inactive` (los que gestiona).
+   * - **Estudiante:** `classId` opcional; solo ítems `active` de sus
+   *   clases con inscripción `active`. Con `classId`, exige inscripción
+   *   en esa clase (mismo 403 uniforme si no); sin él, lista las de
+   *   todas sus inscripciones activas (vacío si no tiene).
+   *
+   * @param dto Query con `classId` (opcional solo para el estudiante).
+   * @param usuario Profesor dueño de la clase o estudiante inscrito.
    * @returns Ítems en orden de alta (`id ASC`).
    */
   async listar(
     dto: ListarItemsQueryDto,
     usuario: UsuarioAutenticado,
   ): Promise<ItemDto[]> {
+    if (usuario.role === 'student') {
+      return this.listarParaEstudiante(dto.classId, usuario);
+    }
+
     await this.asegurarPertenencia('clase', String(dto.classId), usuario);
 
     const items = await this.prisma.redeemable_items.findMany({
       where: {
-        class_id: BigInt(dto.classId),
+        class_id: BigInt(dto.classId as number),
         status: { not: 'deleted' },
+      },
+      orderBy: { id: 'asc' },
+    });
+    return items.map((fila) => aItemRespuesta(fila));
+  }
+
+  /**
+   * Camino estudiante del listado (T5.7.2): los `redeemable_items`
+   * `active` de las clases donde el estudiante tiene inscripción
+   * `active`. El desglose por inscripción lo decide la BD (tabla
+   * `enrollments`); aquí no se recalcula nada.
+   *
+   * @param classId Clase opcional a acotar (debe estar inscrita).
+   * @param usuario Estudiante autenticado.
+   * @returns Ítems activos de sus clases (posiblemente vacío).
+   */
+  private async listarParaEstudiante(
+    classId: number | undefined,
+    usuario: UsuarioAutenticado,
+  ): Promise<ItemDto[]> {
+    const inscripciones = await this.prisma.enrollments.findMany({
+      where: { student_id: BigInt(usuario.id), status: 'active' },
+      select: { class_id: true },
+    });
+    const idsClases = inscripciones.map((inscripcion) => inscripcion.class_id);
+
+    if (classId !== undefined) {
+      const idSolicitado = BigInt(classId);
+      if (!idsClases.some((id) => id === idSolicitado)) {
+        throw new ForbiddenException(MENSAJE_ITEMS_AJENOS);
+      }
+    }
+
+    if (idsClases.length === 0) {
+      return [];
+    }
+
+    const items = await this.prisma.redeemable_items.findMany({
+      where: {
+        status: 'active',
+        ...(classId !== undefined
+          ? { class_id: BigInt(classId) }
+          : { class_id: { in: idsClases } }),
       },
       orderBy: { id: 'asc' },
     });

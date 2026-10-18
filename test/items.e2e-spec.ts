@@ -21,6 +21,10 @@ import { PrismaService } from './../src/prisma/prisma.service';
  * Extras de CRUD: listado, edición, borrado lógico (sin tocar las
  * `redemptions`), duplicado → 409 y campo desconocido → 400.
  *
+ * T5.7.2 / PRO-391: el listado acepta al estudiante inscrito — ítems
+ * `active` de sus clases (con y sin `classId`), 403 en clase sin
+ * inscripción y vacío sin inscripciones.
+ *
  * Fixtures: profesor con clase propia (hash argon2 del seed + clase vía
  * prisma) porque el seed solo trae `prof.lopez`.
  */
@@ -275,6 +279,100 @@ describe('Catálogo de ítems canjeables (e2e)', () => {
     const nombres = propia.body.map((i: { name: string }) => i.name);
     expect(nombres).toEqual(expect.arrayContaining([NOMBRE_FUN, NOMBRE_BONUS]));
     expect(propia.body.every((i: { status: string }) => i.status !== 'deleted')).toBe(true);
+  });
+
+  it('T5.7.2: el estudiante inscrito lista los ítems active de sus clases (sin classId)', async () => {
+    const respuesta = await httpServer
+      .get('/api/v1/items')
+      .set('Authorization', `Bearer ${tokenEstudiante}`);
+
+    expect(respuesta.status).toBe(200);
+    const nombres = respuesta.body.map((i: { name: string }) => i.name);
+    // Ítems del seed + los creados por este suite en la clase de est.perez.
+    expect(nombres).toEqual(
+      expect.arrayContaining([
+        NOMBRE_FUN,
+        NOMBRE_BONUS,
+        '+0.5 on the midterm',
+        'Trivia game in class',
+      ]),
+    );
+    expect(
+      respuesta.body.every((i: { status: string }) => i.status === 'active'),
+    ).toBe(true);
+    expect(
+      respuesta.body.every(
+        (i: { classId: string }) => i.classId === String(idClasePropia),
+      ),
+    ).toBe(true);
+  });
+
+  it('T5.7.2: el estudiante acota con classId de su clase y recibe 403 en una clase sin inscripción', async () => {
+    const propia = await httpServer
+      .get('/api/v1/items')
+      .query({ classId: Number(idClasePropia) })
+      .set('Authorization', `Bearer ${tokenEstudiante}`);
+    expect(propia.status).toBe(200);
+    expect(propia.body.length).toBeGreaterThan(0);
+
+    const ajena = await httpServer
+      .get('/api/v1/items')
+      .query({ classId: Number(idClaseAjena) })
+      .set('Authorization', `Bearer ${tokenEstudiante}`);
+    expect(ajena.status).toBe(403);
+    expect(ajena.body.message).toBe(MENSAJE_AJENO);
+  });
+
+  it('T5.7.2: un estudiante sin inscripciones activas lista vacío y no puede crear ítems', async () => {
+    const unicidad = Date.now();
+    const org = await prisma.organizations.findFirst({
+      where: { name: 'Colegio Demo' },
+    });
+    if (!org) {
+      throw new Error('Falta la organización Colegio Demo en el seed');
+    }
+    const estudianteSinInscripcion = await prisma.users.create({
+      data: {
+        organization_id: org.id,
+        role: 'student',
+        username: `est.sinclase.${unicidad}`,
+        email: `est.sinclase.${unicidad}@educoins.test`,
+        password_hash: HASH_PROFESOR_SEED,
+        first_name: 'Sin',
+        last_name: 'Clase',
+        must_change_password: false,
+      },
+    });
+
+    try {
+      const login = await httpServer.post('/api/v1/auth/login').send({
+        usuarioOEmail: estudianteSinInscripcion.username,
+        contrasena: 'Prof123!',
+      });
+      const token = login.body.accessToken;
+
+      const listado = await httpServer
+        .get('/api/v1/items')
+        .set('Authorization', `Bearer ${token}`);
+      expect(listado.status).toBe(200);
+      expect(listado.body).toEqual([]);
+
+      const creacion = await httpServer
+        .post('/api/v1/items')
+        .set('Authorization', `Bearer ${token}`)
+        .send({
+          classId: Number(idClasePropia),
+          name: 'No debería crearse',
+          type: 'fun_activity',
+          costCoins: 10,
+          stock: 1,
+        });
+      expect(creacion.status).toBe(403);
+    } finally {
+      await prisma.users.delete({
+        where: { id: estudianteSinInscripcion.id },
+      });
+    }
   });
 
   it('CRUD + CA 3: el PATCH edita lo propio y responde 403 en lo ajeno', async () => {
