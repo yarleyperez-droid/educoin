@@ -12,6 +12,10 @@ import { ClassesModule } from './modules/classes/classes.module';
 import { ItemsModule } from './modules/items/items.module';
 import { RedemptionsModule } from './modules/redemptions/redemptions.module';
 import { WalletModule } from './modules/wallet/wallet.module';
+import { ActivitiesModule } from './modules/activities/activities.module';
+import { SubmissionsModule } from './modules/submissions/submissions.module';
+import { OrganizationsModule } from './modules/organizations/organizations.module';
+import { UsersModule } from './modules/users/users.module';
 import { validarEnv } from './config/env.validation';
 
 @Module({
@@ -24,6 +28,10 @@ import { validarEnv } from './config/env.validation';
     RedemptionsModule,
     WalletModule,
     ItemsModule,
+    ActivitiesModule,
+    SubmissionsModule,
+    OrganizationsModule,
+    UsersModule,
   ],
   controllers: [AppController],
   providers: [AppService],

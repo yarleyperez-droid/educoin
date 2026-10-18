@@ -17,15 +17,18 @@
  *
  * @param children Páginas hijas del panel (`/student/page.tsx`, etc.).
  */
+import { BotonCerrarSesion } from "@/features/auth/components/boton-cerrar-sesion";
+
 export default function StudentLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
   return (
     <main className="flex min-h-screen flex-col bg-neutral-50">
-      <header className="border-b border-neutral-200 bg-white px-6 py-4">
+      <header className="flex items-center justify-between border-b border-neutral-200 bg-white px-6 py-4">
         <h1 className="text-lg font-semibold text-neutral-900">
           EduCoins — Panel Estudiante
         </h1>
+        <BotonCerrarSesion />
       </header>
       <section className="flex flex-1 flex-col items-center justify-center p-8">
         {children}
