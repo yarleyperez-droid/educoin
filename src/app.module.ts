@@ -6,6 +6,7 @@ import { PrismaModule } from './prisma/prisma.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { ClassesModule } from './modules/classes/classes.module';
 import { ActivitiesModule } from './modules/activities/activities.module';
+import { SubmissionsModule } from './modules/submissions/submissions.module';
 import { OrganizationsModule } from './modules/organizations/organizations.module';
 import { UsersModule } from './modules/users/users.module';
 import { validarEnv } from './config/env.validation';
@@ -17,6 +18,7 @@ import { validarEnv } from './config/env.validation';
     AuthModule,
     ClassesModule,
     ActivitiesModule,
+    SubmissionsModule,
     OrganizationsModule,
     UsersModule,
   ],
