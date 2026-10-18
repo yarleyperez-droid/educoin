@@ -49,6 +49,10 @@ describe('Users — admin desactivado con token vigente (e2e, BD real)', () => {
 
     // Admin fixture directo en la BD (el endpoint no crea admins, y
     // mutar el admin del seed rompería las specs paralelas).
+    // must_change_password: false explícito: el DEFAULT es TRUE y desde
+    // H2.2 el guard bloquea toda ruta protegida mientras el flag esté en
+    // TRUE; aquí se prueba el ciclo "token vigente tras desactivar", no el
+    // cambio obligatorio (ese flujo vive en guards-globales.e2e-spec.ts).
     const admin = await prisma.users.create({
       data: {
         organization_id: null,
@@ -58,6 +62,7 @@ describe('Users — admin desactivado con token vigente (e2e, BD real)', () => {
         password_hash: await hash(CONTRASENA_FIXTURE),
         first_name: 'Admin',
         last_name: 'Fixture',
+        must_change_password: false,
       },
       select: { id: true },
     });
