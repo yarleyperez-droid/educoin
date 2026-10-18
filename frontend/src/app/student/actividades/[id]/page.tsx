@@ -1,6 +1,7 @@
 /**
  * Cuestionario del estudiante (`/student/actividades/[id]`)
- * — T5.8.1 (PRO-394), T5.8.2 (PRO-395) y T5.8.3 (PRO-396).
+ * — T5.8.1 (PRO-394), T5.8.2 (PRO-395), T5.8.3 (PRO-396) y T5.8.4
+ * (PRO-397).
  *
  * Abre una actividad **publicada**, renderiza sus preguntas con KaTeX
  * saneado y permite **enviar las respuestas una sola vez** (CA 1–3 de
@@ -13,14 +14,13 @@
  *   y si el servidor aún así devuelve `409`, el mensaje se muestra en un
  *   `role="alert"` sin romper la vista.
  * - **Estados y resultado (T5.8.3):** badge de estado en todo momento;
- *   tras enviar, la vista espera ~1.5 s y consulta la auto-calificación
- *   (simulación de H3.4) para mostrar puntaje por pregunta, monedas y el
- *   **feedback del profesor** — siempre desde `entrega.resultado`, nunca
- *   desde los secretos del JSONB.
+ *   tras enviar, la auto-calificación de H3.4 es **inmediata** y la vista
+ *   muestra puntaje por pregunta, monedas y el **feedback del profesor** —
+ *   siempre desde `entrega.resultado`, nunca desde los secretos del JSONB.
  *
- * Contrato con el backend: datos por `features/estudiante/api/*` (mock de
- * H3.3/H3.4 hoy; T5.8.4 reemplaza los interiores). La vista solo lee
- * `error.message` de `ApiError`.
+ * Contrato con el backend: datos por `features/estudiante/api/*` (API real
+ * de H3.3/H3.4 desde T5.8.4). La vista solo lee `error.message` de
+ * `ApiError`.
  */
 
 "use client";
@@ -156,9 +156,11 @@ export default function CuestionarioPage() {
     };
   }, [actividadId]);
 
-  // Espera asíncrona del resultado (simula el job de H3.4): solo mientras
-  // la entrega esté "submitted"; al volver como "graded" el efecto no hace
-  // nada (idempotencia de consultarAutoCalificacion).
+  // Relectura del resultado (T5.8.4): la auto-calificación de H3.4 es
+  // inmediata en el POST, pero una entrega puede llegar "submitted"
+  // (pendiente del profesor). La consulta es idempotente; si el estado
+  // sigue igual, adoptar el objeto re-dispararía este efecto sin fin, así
+  // que solo se actualiza cuando de verdad cambió.
   useEffect(() => {
     if (!entrega || entrega.estado !== "submitted") {
       return;
@@ -169,12 +171,12 @@ export default function CuestionarioPage() {
     const temporizador = setTimeout(() => {
       consultarAutoCalificacion(actividadId)
         .then((actualizada) => {
-          if (vigente) {
+          if (vigente && actualizada.estado !== "submitted") {
             setEntrega(actualizada);
           }
         })
         .catch(() => {
-          // Sin conexión al "servidor": se mantiene el estado enviado; la
+          // Sin conexión al servidor: se mantiene el estado enviado; la
           // vista vuelve a consultar al montar.
         });
     }, 1500);

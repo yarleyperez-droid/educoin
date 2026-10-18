@@ -1,31 +1,42 @@
 /**
- * Fachada de actividades para el estudiante (T5.8.1, PRO-394).
+ * Fachada de actividades para el estudiante (T5.8.1 → T5.8.4, PRO-397).
  *
- * ## Responsabilidad: sanitizar antes de pintar
+ * Punto único entre la vista del cuestionario y el transporte. Desde
+ * T5.8.4 habla con la **API real de H3.3** (`src/modules/activities/`)
+ * mediante `apiPlano` de `@/lib/api-client`; el mock del profesor ya no
+ * existe.
  *
- * Lee el catálogo del mock del **profesor**
- * (`features/teacher/api/actividades-mock.ts`), filtra las **publicadas**
- * y **proyecta campo a campo** cada pregunta a la forma segura de
- * `contrato/cuestionario.ts` (sin `is_correct`, sin `expected_answer`).
+ * ## Contrato con H3.3 (verificado en `test/activities.e2e-spec.ts`)
  *
- * **Andamio documentado:** compartir el catálogo permite la demo "el
- * profesor publica → el estudiante resuelve" en una misma sesión y hace
- * visible la sanitización. Con API real (T5.8.4) esta fachada pasará a
- * `api.get(...)` de **H3.3**, quien será el responsable del filtro por rol
- * y de no filtrar secretos (AGENTS.md §6: la lógica crítica vive en el
- * backend).
+ * - `GET /api/v1/activities/:id` (`@Roles('teacher','student')` +
+ *   `@PerteneceA('actividadVisible','id')`) → `ActividadEstudianteRespuestaDto`
+ *   **en plano**, con el JSONB `preguntas` ya sanitizado por rol: sin
+ *   `options[].is_correct` ni `expected_answer` (AGENTS.md §9.5). La
+ *   responsabilidad de no filtrar secretos es del backend; el mapper de
+ *   esta fachada solo traduce vocabulario y —defensa en profundidad—
+ *   construye objetos nuevos con las claves permitidas, sin hacer spread
+ *   del original, de modo que un secreto no puede colarse por accidente.
+ * - Si la actividad no existe, no está publicada o el estudiante no tiene
+ *   inscripción activa en la clase, `@PerteneceA` responde **404**
+ *   (anti-enumeración) antes de llegar al handler.
  *
- * Regla de implementación: la proyección **nunca hace spread del objeto
- * original** ni `delete` — construye uno nuevo con las claves permitidas,
- * de modo que un secreto no puede colarse por accidente.
+ * ## Limitación del listado (T5.8.4)
+ *
+ * El único listado del estudiante es
+ * `GET /api/v1/enrollments/:inscripcionId/activities` y exige un
+ * `inscripcionId` que el frontend **no tiene a mano** (no hay endpoint
+ * que lo devuelva ni viaja en la sesión; ver decisión en el ticket
+ * PRO-397). Sin endpoints nuevos (fuera de alcance),
+ * {@link listarPublicadas} devuelve `[]` y la vista muestra su estado
+ * vacío; el detalle por URL ({@link obtenerParaEstudiante}) sí funciona.
+ *
+ * Los errores siempre salen como `ApiError` con `message` en español: la
+ * vista solo muestra `error.message`. La única excepción es
+ * {@link obtenerParaEstudiante}, que traduce el `404` a `null` para el
+ * estado "no encontrada" de la vista.
  */
 
-import type { Pregunta } from "@/features/teacher/contrato/actividades";
-import {
-  listarActividadesMock,
-  obtenerActividadMock,
-} from "@/features/teacher/api/actividades-mock";
-import type { Actividad } from "@/features/teacher/tipos";
+import { ApiError, apiPlano } from "@/lib/api-client";
 
 import type {
   ActividadEstudiante,
@@ -33,75 +44,111 @@ import type {
 } from "../contrato/cuestionario";
 
 /**
- * Proyecta una pregunta con secretos a su forma segura para el estudiante.
- *
- * Solo copia las claves permitidas (`position`, `type`, `prompt`, `score` y
- * `options` reducida a `{ text }`); `is_correct` y `expected_answer` **no
- * se leen siquiera**.
- *
- * @param pregunta Pregunta del contrato del profesor (con secretos).
- * @returns La misma pregunta sin secretos.
+ * `PreguntaSinRespuestas` de H3.3 tal cual sale del backend (ya
+ * sanitizada). Existe como tipo aparte para que el mapper
+ * {@link aPreguntaEstudiante} sea el único punto de traducción y un
+ * cambio del Swagger se absorba aquí.
  */
-export function proyectarPregunta(pregunta: Pregunta): PreguntaEstudiante {
+interface PreguntaEstudianteBackend {
+  position: number;
+  type: "test" | "completion" | "file" | "minigame";
+  prompt: string;
+  score: number;
+  /** Solo los tipos que la usan la traen; nunca con `is_correct`. */
+  options?: { text: string }[];
+}
+
+/**
+ * `ActividadEstudianteRespuestaDto` de H3.3 tal cual sale del backend.
+ * Trae además `estado`, `cierraEn` y `creadoEn`, que el contrato del
+ * estudiante no necesita (solo llegan actividades `published`).
+ */
+interface ActividadEstudianteBackend {
+  id: string;
+  claseId: string;
+  titulo: string;
+  descripcion: string | null;
+  recompensaMonedas: number;
+  preguntas: PreguntaEstudianteBackend[];
+  publicadaEn: string | null;
+}
+
+/**
+ * Traduce una pregunta del DTO del estudiante a la forma del contrato.
+ *
+ * Copia **solo** las claves permitidas (`position`, `type`, `prompt`,
+ * `score` y `options` reducida a `{ text }`): nunca hace spread del
+ * objeto original, así que aunque el backend llegara a filtrar un secreto
+ * no pasaría a la vista.
+ *
+ * @param backend Pregunta del DTO de H3.3 (ya sanitizada por rol).
+ * @returns La pregunta en la forma segura del contrato.
+ */
+function aPreguntaEstudiante(
+  backend: PreguntaEstudianteBackend,
+): PreguntaEstudiante {
   const opciones =
-    pregunta.options === undefined
+    backend.options === undefined
       ? undefined
-      : pregunta.options.map((opcion) => ({ text: opcion.text }));
+      : backend.options.map((opcion) => ({ text: opcion.text }));
 
   return {
-    position: pregunta.position,
-    type: pregunta.type,
-    prompt: pregunta.prompt,
-    score: pregunta.score,
+    position: backend.position,
+    type: backend.type,
+    prompt: backend.prompt,
+    score: backend.score,
     ...(opciones === undefined ? {} : { options: opciones }),
   };
 }
 
 /**
- * Proyecta una actividad completa a la forma del estudiante.
+ * Traduce `ActividadEstudianteRespuestaDto` al tipo de dominio
+ * {@link ActividadEstudiante}.
  *
- * @param actividad Actividad del mock del profesor.
- * @returns Actividad con sus preguntas ya sanitizadas.
+ * @param backend DTO plano de H3.3 (los IDs se normalizan a `string`).
+ * @returns La actividad con el vocabulario del frontend y preguntas seguras.
  */
-export function proyectarActividad(actividad: Actividad): ActividadEstudiante {
+function aActividadEstudiante(
+  backend: ActividadEstudianteBackend,
+): ActividadEstudiante {
   return {
-    id: actividad.id,
-    claseId: actividad.claseId,
-    titulo: actividad.titulo,
-    descripcion: actividad.descripcion,
-    recompensaMonedas: actividad.recompensaMonedas,
-    preguntas: actividad.preguntas.map(proyectarPregunta),
-    publicadaEn: actividad.publicadaEn,
+    id: String(backend.id),
+    claseId: String(backend.claseId),
+    titulo: backend.titulo,
+    descripcion: backend.descripcion,
+    recompensaMonedas: backend.recompensaMonedas,
+    preguntas: backend.preguntas.map(aPreguntaEstudiante),
+    publicadaEn: backend.publicadaEn,
   };
 }
 
 /**
  * Lista las actividades **publicadas** para el estudiante.
  *
- * Solo `estado === "published"`: `draft` y `deleted` jamás llegan a la
- * vista (spec §Contrato 4).
+ * **Limitación documentada (T5.8.4):** el listado real de H3.3 es
+ * `GET /enrollments/:inscripcionId/activities` y el frontend no dispone
+ * del `inscripcionId` (ver cabecera del archivo). Hasta que exista una
+ * vía para obtenerlo sin endpoints nuevos, esta función devuelve siempre
+ * `[]` — sin invocar el transporte — y la vista muestra su estado vacío.
+ * El detalle por id ({@link obtenerParaEstudiante}) no tiene esta
+ * limitación.
  *
- * **Andamio (mock del profesor):** T5.8.4 la reemplazará por el endpoint
- * de H3.3 sin tocar esta firma.
- *
- * @returns Actividades publicadas con sus preguntas sanitizadas.
+ * @returns Siempre `[]` mientras el listado requiera `inscripcionId`.
  */
 export async function listarPublicadas(): Promise<ActividadEstudiante[]> {
-  const publicadas = listarActividadesMock().filter(
-    (actividad) => actividad.estado === "published",
-  );
+  await Promise.resolve();
 
-  return publicadas.map(proyectarActividad);
+  return [];
 }
 
 /**
- * Obtiene una actividad publicada por id, ya sanitizada.
+ * Obtiene una actividad publicada por id, ya sanitizada
+ * (`GET /activities/:id` de H3.3).
  *
- * Devuelve `null` si no existe o si **no está publicada** (un borrador no
- * es accesible por URL: spec §Gherkin "no publicadas no son visibles").
- *
- * **Andamio (mock del profesor):** T5.8.4 la reemplazará por el endpoint
- * de H3.3.
+ * Devuelve `null` si no existe, **no está publicada** o el estudiante no
+ * está inscrito en su clase: los tres casos los resuelve el backend con
+ * el mismo `404` anti-enumeración (spec §Gherkin "no publicadas no son
+ * visibles"), que aquí se traduce al estado "no encontrada" de la vista.
  *
  * @param id Identificador de la actividad.
  * @returns La actividad segura, o `null` si no corresponde al estudiante.
@@ -109,11 +156,15 @@ export async function listarPublicadas(): Promise<ActividadEstudiante[]> {
 export async function obtenerParaEstudiante(
   id: string,
 ): Promise<ActividadEstudiante | null> {
-  const actividad = obtenerActividadMock(id);
+  try {
+    return aActividadEstudiante(
+      await apiPlano.get<ActividadEstudianteBackend>(`activities/${id}`),
+    );
+  } catch (error) {
+    if (error instanceof ApiError && error.status === 404) {
+      return null;
+    }
 
-  if (!actividad || actividad.estado !== "published") {
-    return null;
+    throw error;
   }
-
-  return proyectarActividad(actividad);
 }

@@ -7,7 +7,11 @@
 
 import { describe, expect, it } from "vitest";
 
-import { RespuestaSchema, RespuestasSchema } from "./entregas";
+import {
+  RespuestaSchema,
+  RespuestasParcialesSchema,
+  RespuestasSchema,
+} from "./entregas";
 
 describe("RespuestaSchema", () => {
   it("acepta una respuesta de completion con text", () => {
@@ -71,5 +75,29 @@ describe("RespuestasSchema", () => {
     if (!resultado.success) {
       expect(resultado.error.issues[0].message).toContain("al menos una");
     }
+  });
+});
+
+describe("RespuestasParcialesSchema", () => {
+  it("acepta el array vacío (el borrador recién se abre)", () => {
+    const resultado = RespuestasParcialesSchema.safeParse([]);
+
+    expect(resultado.success).toBe(true);
+  });
+
+  it("acepta respuestas parciales válidas", () => {
+    const resultado = RespuestasParcialesSchema.safeParse([
+      { question_position: 1, option: "Bogotá" },
+    ]);
+
+    expect(resultado.success).toBe(true);
+  });
+
+  it("rechaza un elemento individual inválido", () => {
+    const resultado = RespuestasParcialesSchema.safeParse([
+      { question_position: 1 },
+    ]);
+
+    expect(resultado.success).toBe(false);
   });
 });

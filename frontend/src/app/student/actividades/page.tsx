@@ -1,13 +1,21 @@
 /**
  * Listado de actividades para el estudiante (`/student/actividades`)
- * — T5.8.1 (PRO-394).
+ * — T5.8.1 (PRO-394) → T5.8.4 (PRO-397).
  *
  * Punto de acceso al cuestionario: muestra las actividades **publicadas**
  * (sin este listado la vista de T5.8.1 no sería alcanzable, spec §Alcance).
  *
  * Contrato con el backend: los datos pasan por
- * `features/estudiante/api/actividades-estudiante.ts` (mock del profesor
- * sanitizado hoy; H3.3/T5.8.4 después). Los borradores jamás aparecen.
+ * `features/estudiante/api/actividades-estudiante.ts` (API real de H3.3
+ * desde T5.8.4). Los borradores jamás aparecen.
+ *
+ * **Limitación (T5.8.4):** el único listado del estudiante en H3.3 es
+ * `GET /enrollments/:inscripcionId/activities` y el frontend no tiene el
+ * `inscripcionId` (no hay endpoint que lo devuelva). Hasta que exista esa
+ * vía, `listarPublicadas` devuelve `[]` y esta vista pinta su estado
+ * vacío con un mensaje que explica cómo llegar a una actividad (por el
+ * enlace del profesor o clase). El detalle por URL
+ * (`/student/actividades/[id]`) sí funciona.
  *
  * Estados cubiertos (AGENTS.md §8): carga, vacío y error
  * (`role="alert"`).
@@ -22,9 +30,9 @@ import { listarPublicadas } from "@/features/estudiante/api/actividades-estudian
 import type { ActividadEstudiante } from "@/features/estudiante/contrato/cuestionario";
 import { ApiError } from "@/lib/api-client";
 
-/** Mensaje cuando no hay actividades publicadas. */
+/** Mensaje cuando el listado no tiene actividades (ver limitación de T5.8.4). */
 const MENSAJE_VACIO =
-  "Aún no hay actividades publicadas para ti. Cuando tu profesor publique una, aparecerá aquí.";
+  "Aún no hay actividades que mostrar en este listado. Mientras tanto, abre la actividad que te comparta tu profesor con su enlace directo.";
 
 /** Mensaje genérico para errores inesperados que no son `ApiError`. */
 const MENSAJE_ERROR_GENERICO = "Ocurrió un error inesperado. Intenta de nuevo.";

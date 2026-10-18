@@ -1,230 +1,370 @@
 /**
- * Tests de la fachada de entregas (T5.8.2, PRO-395).
+ * Tests de la fachada de entregas (T5.8.2 → T5.8.4, PRO-397).
  *
- * Cubren el plan §3: primer envío → `submitted`, **segundo envío → 409**
- * (regla UNIQUE del mock), actividad no disponible → 404, respuestas
- * incoherentes → 422 sin persistir y lectura de la entrega para el bloqueo
- * de la vista.
+ * Desde T5.8.4 la fachada habla con la API real de H3.4, así que estos
+ * tests **mockean el transporte** (`@/lib/api-client`) con los shapes
+ * verificados en `test/submissions.e2e-spec.ts` y cubren:
+ * - la validación de cliente (zod + coherencia, `ApiError` 422/404)
+ *   **sin invocar** el transporte de escritura;
+ * - el mapeo backend → tipo `Entrega` (respuestas saneadas sin veredicto
+ *   y `resultado` derivado de `is_correct`/`score`);
+ * - la propagación de los errores del backend (`ApiError` tal cual — el
+ *   409 del doble envío llega con su mensaje, sin pre-comprobación);
+ * - `obtenerEntrega`: `404` → `null`;
+ * - `consultarAutoCalificacion`: lectura idempotente del estado (ya no
+ *   simula un job asíncrono);
+ * - `guardarBorrador`: autosave parcial o vacío por `PUT`.
  *
- * El escenario crea actividades reales con el mock del profesor
- * (`crearActividad` + `publicarActividad`) para ejercitar la coherencia
- * contra las preguntas de verdad.
+ * `ApiError` se conserva real (`importOriginal`) para que `instanceof`
+ * funcione igual en la fachada y en las aserciones. Entorno: Vitest en
+ * **node** (sin DOM, ver `vitest.config.mts`).
  */
 
-import { describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import {
-  crearActividad,
-  publicarActividad,
-} from "@/features/teacher/api/actividades";
-import type { Pregunta } from "@/features/teacher/contrato/actividades";
-import { ApiError } from "@/lib/api-client";
+vi.mock("@/lib/api-client", async (importOriginal) => {
+  const original = await importOriginal<typeof import("@/lib/api-client")>();
+
+  return {
+    ...original,
+    api: { get: vi.fn(), post: vi.fn(), put: vi.fn(), patch: vi.fn(), delete: vi.fn() },
+    apiPlano: { get: vi.fn(), post: vi.fn(), put: vi.fn(), patch: vi.fn() },
+  };
+});
+
+import { apiPlano, ApiError } from "@/lib/api-client";
 
 import {
   consultarAutoCalificacion,
   enviarRespuestas,
+  guardarBorrador,
   obtenerEntrega,
 } from "./entregas";
 
-/** Pregunta `test` con opciones reales. */
-const PREGUNTA_TEST: Pregunta = {
-  type: "test",
-  position: 1,
-  prompt: "¿Cuál es la capital de Colombia?",
-  score: 10,
-  options: [
-    { text: "Bogotá", is_correct: true },
-    { text: "Cali", is_correct: false },
-  ],
-};
-
-/** Pregunta `completion`. */
-const PREGUNTA_COMPLETION: Pregunta = {
-  type: "completion",
-  position: 2,
-  prompt: "El agua hierve a ___ °C.",
-  score: 5,
-  expected_answer: "100",
-};
-
-let contador = 0;
-
 /**
- * Crea una actividad publicada de prueba.
- *
- * @param titulo Título único de la actividad.
- * @returns El id de la actividad publicada.
+ * `ActividadEstudianteRespuestaDto` de H3.3 (sanitizada): dos preguntas,
+ * una `test` y una `completion`. La fachada la usa para la coherencia.
  */
-async function crearPublicada(titulo: string): Promise<string> {
-  contador += 1;
-  const creada = await crearActividad({
-    claseId: "clase-entregas-test",
-    titulo: `${titulo} ${contador}`,
-    recompensaMonedas: 120,
-    preguntas: [PREGUNTA_TEST, PREGUNTA_COMPLETION],
-  });
+const ACTIVIDAD_BACKEND = {
+  id: "7",
+  claseId: "3",
+  titulo: "Cuestionario de fracciones",
+  descripcion: null,
+  recompensaMonedas: 120,
+  estado: "published",
+  preguntas: [
+    {
+      position: 1,
+      type: "test",
+      prompt: "¿Cuál es la capital de Colombia?",
+      score: 10,
+      options: [{ text: "Bogotá" }, { text: "Cali" }],
+    },
+    {
+      position: 2,
+      type: "completion",
+      prompt: "El agua hierve a ___ °C.",
+      score: 5,
+    },
+  ],
+  publicadaEn: "2026-10-12T10:00:00.000Z",
+};
 
-  const publicada = await publicarActividad(creada.id);
-
-  return publicada.id;
-}
-
-/** Respuestas completas de ejemplo (todas correctas). */
+/** Respuestas completas válidas (ambas correctas según los veredictos). */
 const RESPUESTAS_COMPLETAS = [
   { question_position: 1, option: "Bogotá" },
   { question_position: 2, text: "100" },
 ];
 
+/** `EntregaBorradorRespuestaDto` de H3.4: sin veredictos. */
+const BORRADOR_BACKEND = {
+  id: "40",
+  actividadId: "7",
+  estado: "in_progress",
+  entregadoEn: null,
+  puntaje: null,
+  monedasOtorgadas: 0,
+  respuestas: [{ question_position: 1, option: "Bogotá" }],
+};
+
+/** `EntregaRespuestaDto` de H3.4 calificada: con veredicto por respuesta. */
+const ENTREGA_CALIFICADA_BACKEND = {
+  id: "41",
+  actividadId: "7",
+  estado: "graded",
+  entregadoEn: "2026-10-12T10:05:00.000Z",
+  puntaje: 15,
+  monedasOtorgadas: 120,
+  respuestas: [
+    { question_position: 1, option: "Bogotá", is_correct: true, score: 10 },
+    { question_position: 2, text: "100", is_correct: true, score: 5 },
+  ],
+};
+
+/** Misma entrega bajo el umbral: veredictos sí, calificación no. */
+const ENTREGA_PENDIENTE_BACKEND = {
+  ...ENTREGA_CALIFICADA_BACKEND,
+  id: "42",
+  estado: "submitted",
+  puntaje: null,
+  monedasOtorgadas: 0,
+  respuestas: [
+    { question_position: 1, option: "Cali", is_correct: false, score: 0 },
+    { question_position: 2, text: "100", is_correct: true, score: 5 },
+  ],
+};
+
+/** `EntregaCreadaRespuestaDto` de H3.4: `{ mensaje, entrega }` en plano. */
+const ENTREGA_CREADA_BACKEND = {
+  mensaje: "Entrega calificada.",
+  entrega: ENTREGA_CALIFICADA_BACKEND,
+};
+
+/** `BorradorGuardadoRespuestaDto` de H3.4: `{ mensaje, entrega }` plano. */
+const BORRADOR_GUARDADO_BACKEND = {
+  mensaje: "Borrador guardado.",
+  entrega: BORRADOR_BACKEND,
+};
+
+/** `404` estándar anti-enumeración del backend. */
+const error404 = new ApiError("Recurso no encontrado", 404);
+
+beforeEach(() => {
+  vi.clearAllMocks();
+  vi.mocked(apiPlano.get).mockResolvedValue(ACTIVIDAD_BACKEND);
+});
+
 describe("enviarRespuestas", () => {
-  it("el primer envío crea la entrega en submitted", async () => {
-    const actividadId = await crearPublicada("Envío válido");
+  it("envía el JSONB y mapea la entrega calificada (resultado desde los veredictos)", async () => {
+    vi.mocked(apiPlano.post).mockResolvedValue(ENTREGA_CREADA_BACKEND);
 
-    const entrega = await enviarRespuestas(actividadId, RESPUESTAS_COMPLETAS);
+    const entrega = await enviarRespuestas("7", RESPUESTAS_COMPLETAS);
 
-    expect(entrega.estado).toBe("submitted");
-    expect(entrega.enviadaEn).not.toBeNull();
-    expect(entrega.actividadId).toBe(actividadId);
-    expect(entrega.respuestas).toHaveLength(2);
-    expect(entrega.puntaje).toBeNull(); // aún sin calificar (T5.8.3)
-  });
-
-  it("el segundo envío devuelve ApiError 409 (UNIQUE de la BD)", async () => {
-    const actividadId = await crearPublicada("Doble envío");
-
-    await enviarRespuestas(actividadId, RESPUESTAS_COMPLETAS);
-
-    const segundoIntento = enviarRespuestas(actividadId, RESPUESTAS_COMPLETAS);
-
-    await expect(segundoIntento).rejects.toBeInstanceOf(ApiError);
-    await expect(segundoIntento).rejects.toMatchObject({ status: 409 });
-
-    // Sigue habiendo exactamente una entrega (no se duplicó).
-    const entrega = await obtenerEntrega(actividadId);
-    expect(entrega?.estado).toBe("submitted");
-  });
-
-  it("responde 404 para una actividad inexistente", async () => {
-    await expect(
-      enviarRespuestas("no-existe", RESPUESTAS_COMPLETAS),
-    ).rejects.toMatchObject({ status: 404 });
-  });
-
-  it("responde 404 para una actividad en draft", async () => {
-    const borrador = await crearActividad({
-      claseId: "clase-entregas-test",
-      titulo: "Borrador no resoluble",
-      recompensaMonedas: 10,
-      preguntas: [PREGUNTA_TEST],
+    expect(apiPlano.post).toHaveBeenCalledWith("activities/7/submissions", {
+      respuestas: RESPUESTAS_COMPLETAS,
     });
-
-    await expect(
-      enviarRespuestas(borrador.id, [{ question_position: 1, option: "Bogotá" }]),
-    ).rejects.toMatchObject({ status: 404 });
-  });
-
-  it("responde 422 si falta una respuesta y no persiste nada", async () => {
-    const actividadId = await crearPublicada("Respuesta incompleta");
-
-    const intento = enviarRespuestas(actividadId, [
-      { question_position: 1, option: "Bogotá" }, // falta la 2
-    ]);
-
-    await expect(intento).rejects.toMatchObject({ status: 422 });
-    expect(await obtenerEntrega(actividadId)).toBeNull();
-  });
-
-  it("responde 422 si la opción no pertenece a la pregunta", async () => {
-    const actividadId = await crearPublicada("Opción ajena");
-
-    await expect(
-      enviarRespuestas(actividadId, [
-        { question_position: 1, option: "Medellín" }, // no existe
-        { question_position: 2, text: "100" },
-      ]),
-    ).rejects.toMatchObject({ status: 422 });
-
-    expect(await obtenerEntrega(actividadId)).toBeNull();
-  });
-
-  it("responde 422 si una posición no corresponde a ninguna pregunta", async () => {
-    const actividadId = await crearPublicada("Posición desconocida");
-
-    await expect(
-      enviarRespuestas(actividadId, [
-        ...RESPUESTAS_COMPLETAS,
-        { question_position: 99, text: "extra" },
-      ]),
-    ).rejects.toMatchObject({ status: 422 });
-  });
-
-  it("responde 422 si el array de respuestas está vacío", async () => {
-    const actividadId = await crearPublicada("Sin respuestas");
-
-    await expect(enviarRespuestas(actividadId, [])).rejects.toMatchObject({
-      status: 422,
+    expect(entrega).toEqual({
+      id: "41",
+      actividadId: "7",
+      estado: "graded",
+      respuestas: RESPUESTAS_COMPLETAS,
+      enviadaEn: "2026-10-12T10:05:00.000Z",
+      puntaje: 15,
+      monedasOtorgadas: 120,
+      retroalimentacion: null,
+      resultado: [
+        { question_position: 1, correcta: true, puntos: 10 },
+        { question_position: 2, correcta: true, puntos: 5 },
+      ],
     });
-    expect(await obtenerEntrega(actividadId)).toBeNull();
-  });
-});
-
-describe("obtenerEntrega", () => {
-  it("devuelve null antes del envío y la entrega después", async () => {
-    const actividadId = await crearPublicada("Lectura de entrega");
-
-    expect(await obtenerEntrega(actividadId)).toBeNull();
-
-    const creada = await enviarRespuestas(actividadId, RESPUESTAS_COMPLETAS);
-    const leida = await obtenerEntrega(actividadId);
-
-    expect(leida?.id).toBe(creada.id);
-    expect(leida?.estado).toBe("submitted");
-  });
-});
-
-describe("consultarAutoCalificacion", () => {
-  it("califica una entrega submitted y devuelve graded con resultado", async () => {
-    const actividadId = await crearPublicada("Auto-calificación");
-
-    await enviarRespuestas(actividadId, RESPUESTAS_COMPLETAS);
-    const calificada = await consultarAutoCalificacion(actividadId);
-
-    expect(calificada.estado).toBe("graded");
-    expect(calificada.calificadaEn).not.toBeNull();
-    expect(calificada.puntaje).toBe(15); // 10 (test) + 5 (completion)
-    expect(calificada.monedasOtorgadas).toBe(120); // recompensa de la actividad
-    expect(calificada.retroalimentacion).not.toBeNull(); // placeholder H3.5
-    expect(calificada.resultado).toHaveLength(2);
-    expect(calificada.resultado?.every((item) => item.correcta)).toBe(true);
   });
 
-  it("es idempotente sobre una entrega ya calificada", async () => {
-    const actividadId = await crearPublicada("Idempotencia");
+  it("la entrega mapeada no expone los veredictos del JSONB", async () => {
+    vi.mocked(apiPlano.post).mockResolvedValue(ENTREGA_CREADA_BACKEND);
 
-    await enviarRespuestas(actividadId, RESPUESTAS_COMPLETAS);
-    const primera = await consultarAutoCalificacion(actividadId);
-    const segunda = await consultarAutoCalificacion(actividadId);
-
-    expect(segunda.estado).toBe("graded");
-    expect(segunda.puntaje).toBe(primera.puntaje);
-    expect(segunda.calificadaEn).toBe(primera.calificadaEn);
-    expect(segunda.resultado).toEqual(primera.resultado);
-  });
-
-  it("responde 404 si no hay entrega", async () => {
-    await expect(consultarAutoCalificacion("sin-entrega")).rejects.toMatchObject(
-      { status: 404 },
-    );
-  });
-
-  it("la entrega calificada no expone secretos del JSONB", async () => {
-    const actividadId = await crearPublicada("Entrega sin secretos");
-
-    await enviarRespuestas(actividadId, RESPUESTAS_COMPLETAS);
-    const calificada = await consultarAutoCalificacion(actividadId);
-    const serializado = JSON.stringify(calificada);
+    const entrega = await enviarRespuestas("7", RESPUESTAS_COMPLETAS);
+    const serializado = JSON.stringify(entrega);
 
     expect(serializado).toContain("correcta"); // el resultado sí se ve
     expect(serializado).not.toContain("is_correct");
     expect(serializado).not.toContain("expected_answer");
+  });
+
+  it("propaga el 409 del backend en el doble envío (sin pre-comprobar)", async () => {
+    vi.mocked(apiPlano.post).mockRejectedValue(
+      new ApiError("Ya enviaste esta actividad.", 409),
+    );
+
+    const intento = enviarRespuestas("7", RESPUESTAS_COMPLETAS);
+
+    await expect(intento).rejects.toBeInstanceOf(ApiError);
+    await expect(intento).rejects.toMatchObject({ status: 409 });
+  });
+
+  it("responde 404 para una actividad inexistente o no publicada", async () => {
+    vi.mocked(apiPlano.get).mockRejectedValue(error404);
+
+    await expect(
+      enviarRespuestas("no-existe", RESPUESTAS_COMPLETAS),
+    ).rejects.toMatchObject({ status: 404 });
+    expect(apiPlano.post).not.toHaveBeenCalled();
+  });
+
+  it("responde 422 si el array de respuestas está vacío sin invocar el POST", async () => {
+    await expect(enviarRespuestas("7", [])).rejects.toMatchObject({
+      status: 422,
+    });
+    expect(apiPlano.post).not.toHaveBeenCalled();
+  });
+
+  it("responde 422 si una respuesta no tiene text ni option", async () => {
+    await expect(
+      enviarRespuestas("7", [
+        { question_position: 1 },
+        { question_position: 2, text: "100" },
+      ]),
+    ).rejects.toMatchObject({ status: 422 });
+    expect(apiPlano.post).not.toHaveBeenCalled();
+  });
+
+  it("responde 422 si falta una respuesta y no persiste nada", async () => {
+    const intento = enviarRespuestas("7", [
+      { question_position: 1, option: "Bogotá" }, // falta la 2
+    ]);
+
+    await expect(intento).rejects.toMatchObject({ status: 422 });
+    expect(apiPlano.post).not.toHaveBeenCalled();
+  });
+
+  it("responde 422 si la opción no pertenece a la pregunta", async () => {
+    await expect(
+      enviarRespuestas("7", [
+        { question_position: 1, option: "Medellín" }, // no existe
+        { question_position: 2, text: "100" },
+      ]),
+    ).rejects.toMatchObject({ status: 422 });
+    expect(apiPlano.post).not.toHaveBeenCalled();
+  });
+
+  it("responde 422 si una posición no corresponde a ninguna pregunta", async () => {
+    await expect(
+      enviarRespuestas("7", [
+        ...RESPUESTAS_COMPLETAS,
+        { question_position: 99, text: "extra" },
+      ]),
+    ).rejects.toMatchObject({ status: 422 });
+    expect(apiPlano.post).not.toHaveBeenCalled();
+  });
+});
+
+describe("guardarBorrador", () => {
+  it("guarda respuestas parciales por PUT y devuelve el borrador mapeado", async () => {
+    vi.mocked(apiPlano.put).mockResolvedValue(BORRADOR_GUARDADO_BACKEND);
+
+    const borrador = await guardarBorrador("7", [
+      { question_position: 1, option: "Bogotá" },
+    ]);
+
+    expect(apiPlano.put).toHaveBeenCalledWith("activities/7/submissions", {
+      respuestas: [{ question_position: 1, option: "Bogotá" }],
+    });
+    expect(borrador).toEqual({
+      id: "40",
+      actividadId: "7",
+      estado: "in_progress",
+      respuestas: [{ question_position: 1, option: "Bogotá" }],
+      enviadaEn: null,
+      puntaje: null,
+      monedasOtorgadas: 0,
+      retroalimentacion: null,
+      resultado: null,
+    });
+  });
+
+  it("admite el arreglo vacío (el estudiante recién abre la actividad)", async () => {
+    vi.mocked(apiPlano.put).mockResolvedValue({
+      mensaje: "Borrador guardado.",
+      entrega: { ...BORRADOR_BACKEND, respuestas: [] },
+    });
+
+    const borrador = await guardarBorrador("7", []);
+
+    expect(apiPlano.put).toHaveBeenCalledWith("activities/7/submissions", {
+      respuestas: [],
+    });
+    expect(borrador.respuestas).toEqual([]);
+  });
+
+  it("responde 422 si una respuesta individual no cumple el contrato", async () => {
+    await expect(
+      guardarBorrador("7", [{ question_position: 1 }]),
+    ).rejects.toMatchObject({ status: 422 });
+    expect(apiPlano.put).not.toHaveBeenCalled();
+  });
+});
+
+describe("obtenerEntrega", () => {
+  it("devuelve el borrador tal cual (sin veredictos ni fecha de envío)", async () => {
+    vi.mocked(apiPlano.get).mockResolvedValue(BORRADOR_BACKEND);
+
+    const entrega = await obtenerEntrega("7");
+
+    expect(apiPlano.get).toHaveBeenCalledWith("activities/7/submissions");
+    expect(entrega).toEqual({
+      id: "40",
+      actividadId: "7",
+      estado: "in_progress",
+      respuestas: [{ question_position: 1, option: "Bogotá" }],
+      enviadaEn: null,
+      puntaje: null,
+      monedasOtorgadas: 0,
+      retroalimentacion: null,
+      resultado: null,
+    });
+  });
+
+  it("mapea la entrega enviada con resultado derivado y respuestas saneadas", async () => {
+    vi.mocked(apiPlano.get).mockResolvedValue(ENTREGA_CALIFICADA_BACKEND);
+
+    const entrega = await obtenerEntrega("7");
+
+    expect(entrega?.estado).toBe("graded");
+    expect(entrega?.enviadaEn).toBe("2026-10-12T10:05:00.000Z");
+    expect(entrega?.puntaje).toBe(15);
+    expect(entrega?.monedasOtorgadas).toBe(120);
+    expect(entrega?.respuestas).toEqual(RESPUESTAS_COMPLETAS);
+    expect(entrega?.resultado).toEqual([
+      { question_position: 1, correcta: true, puntos: 10 },
+      { question_position: 2, correcta: true, puntos: 5 },
+    ]);
+    expect(entrega?.retroalimentacion).toBeNull(); // H3.5 aún sin feedback
+  });
+
+  it("devuelve null cuando todavía no hay entrega (404)", async () => {
+    vi.mocked(apiPlano.get).mockRejectedValue(error404);
+
+    expect(await obtenerEntrega("7")).toBeNull();
+  });
+});
+
+describe("consultarAutoCalificacion", () => {
+  it("lee el estado actual sin mutar nada (idempotente)", async () => {
+    vi.mocked(apiPlano.get).mockResolvedValue(ENTREGA_CALIFICADA_BACKEND);
+
+    const primera = await consultarAutoCalificacion("7");
+    const segunda = await consultarAutoCalificacion("7");
+
+    expect(segunda).toEqual(primera);
+    expect(apiPlano.get).toHaveBeenCalledTimes(2);
+    expect(apiPlano.get).toHaveBeenCalledWith("activities/7/submissions");
+    expect(apiPlano.put).not.toHaveBeenCalled();
+    expect(apiPlano.post).not.toHaveBeenCalled();
+  });
+
+  it("devuelve submitted tal cual cuando espera al profesor (bajo el umbral)", async () => {
+    vi.mocked(apiPlano.get).mockResolvedValue(ENTREGA_PENDIENTE_BACKEND);
+
+    const entrega = await consultarAutoCalificacion("7");
+
+    expect(entrega.estado).toBe("submitted");
+    expect(entrega.puntaje).toBeNull();
+    expect(entrega.monedasOtorgadas).toBe(0);
+    // Los veredictos de la auto-evaluación sí se derivan; la vista solo
+    // los pinta cuando el estado es "graded".
+    expect(entrega.resultado).toEqual([
+      { question_position: 1, correcta: false, puntos: 0 },
+      { question_position: 2, correcta: true, puntos: 5 },
+    ]);
+  });
+
+  it("responde 404 si no hay entrega", async () => {
+    vi.mocked(apiPlano.get).mockRejectedValue(error404);
+
+    await expect(consultarAutoCalificacion("7")).rejects.toBeInstanceOf(
+      ApiError,
+    );
+    await expect(consultarAutoCalificacion("7")).rejects.toMatchObject({
+      status: 404,
+    });
   });
 });

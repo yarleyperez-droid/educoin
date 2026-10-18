@@ -557,8 +557,9 @@ export const api = {
  * **en plano** (H3.1/H3.3): mismos verbos y serialización JSON que
  * {@link api}, pero sobre {@link apiRequestPlano} (sin exigir envelope).
  *
- * Cobertura deliberada: `get`, `post` y `patch` — los verbos que usan las
- * fachadas de clases y actividades. El borrado (`DELETE /activities/:id`)
+ * Cobertura deliberada: `get`, `post`, `put` y `patch` — los verbos que
+ * usan las fachadas de clases, actividades y entregas (el `PUT` es el
+ * autosave del borrador de H3.4). El borrado (`DELETE /activities/:id`)
  * responde `204` y va por {@link api}.delete, que ya normaliza ese caso.
  */
 export const apiPlano = {
@@ -581,6 +582,18 @@ export const apiPlano = {
     cuerpo: unknown,
     init?: Omit<RequestInit, "method" | "body">,
   ) => apiRequestPlano<T>(ruta, { ...init, method: "POST", body: JSON.stringify(cuerpo) }),
+
+  /**
+   * Realiza una petición PUT enviando el cuerpo como JSON y devolviendo
+   * la respuesta en plano.
+   *
+   * @typeParam T Tipo del cuerpo de la respuesta.
+   */
+  put: <T>(
+    ruta: string,
+    cuerpo: unknown,
+    init?: Omit<RequestInit, "method" | "body">,
+  ) => apiRequestPlano<T>(ruta, { ...init, method: "PUT", body: JSON.stringify(cuerpo) }),
 
   /**
    * Realiza una petición PATCH enviando el cuerpo como JSON y devolviendo
