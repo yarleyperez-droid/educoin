@@ -1,3 +1,5 @@
+import { ApiProperty } from '@nestjs/swagger';
+
 import type { submission_status } from '../../../generated/prisma/client';
 import type { RespuestaCalificada } from '../auto-calificacion';
 import type { RespuestaEntrega } from './respuestas.schema';
@@ -26,13 +28,30 @@ export class EntregaBorradorRespuestaDto {
   actividadId!: string;
   /** Siempre 'in_progress' en esta respuesta: el borrador aún no se envía. */
   estado!: 'in_progress';
-  /** null mientras es borrador: la entrega se registra al enviarla. */
+  /**
+   * null mientras es borrador: la entrega se registra al enviarla.
+   *
+   * El `@ApiProperty` explícito es necesario porque el tipo literal
+   * `null` hace que el plugin de Swagger infiera un esquema circular al
+   * generar el documento (`nest start`/`build`, fix T5.7.4): el contrato
+   * sigue siendo "siempre null en este estado".
+   */
+  @ApiProperty({ type: String, nullable: true, description: 'null mientras es borrador.' })
   entregadoEn!: null;
-  /** null mientras es borrador: todavía no hay calificación. */
+  /**
+   * null mientras es borrador: todavía no hay calificación (mismo motivo
+   * de `@ApiProperty` que `entregadoEn`).
+   */
+  @ApiProperty({ type: Number, nullable: true, description: 'null mientras es borrador.' })
   puntaje!: null;
   /** 0 mientras es borrador: las monedas llegan solo al calificarse. */
   monedasOtorgadas!: number;
   /** answers JSONB saneado tal como quedó guardado, SIN veredicto. */
+  @ApiProperty({
+    type: () => [Object],
+    description:
+      'Respuestas del estudiante (question_position + option/text) SIN veredicto: el tipo es explícito porque `RespuestaEntrega` es un type de zod y el plugin de Swagger generaba un esquema circular al infirirlo (fix T5.7.4).',
+  })
   respuestas!: RespuestaEntrega[];
 }
 
