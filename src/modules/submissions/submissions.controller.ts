@@ -1,4 +1,14 @@
-import { Body, Controller, Get, Param, Post, Put } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  HttpCode,
+  HttpStatus,
+  Param,
+  Post,
+  Put,
+  Query,
+} from '@nestjs/common';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { PerteneceA } from '../../common/decorators/pertenece-a.decorator';
 import { UsuarioActual } from '../../common/decorators/usuario-actual.decorator';
@@ -6,11 +16,16 @@ import type { UsuarioAutenticado } from '../../common/interfaces/usuario-autenti
 import { SubmissionsService } from './submissions.service';
 import { CrearEntregaDto } from './dto/crear-entrega.dto';
 import { GuardarBorradorDto } from './dto/guardar-borrador.dto';
+import { ListarEntregasQueryDto } from './dto/listar-entregas.dto';
+import { CalificarEntregaDto } from './dto/calificar-entrega.dto';
 import type {
   BorradorGuardadoRespuestaDto,
+  CalificacionRespuestaDto,
   EntregaBorradorRespuestaDto,
   EntregaCreadaRespuestaDto,
+  EntregaDetalleProfesorDto,
   EntregaRespuestaDto,
+  ListadoEntregasDto,
 } from './dto/entrega-respuesta.dto';
 
 /**
@@ -30,6 +45,20 @@ import type {
  *   la auto-calificación decide si llega a 'graded' con las monedas
  *   (umbral del 80%, trigger fn_award_coins).
  *
+ * Y la COLA DE CALIFICACIÓN del PROFESOR (rol teacher):
+ * - GET  /activities/:id/submissions/queue → TODAS las entregas de su
+ *   actividad (paginación estándar, filtro ?estado opcional — el caso
+ *   principal es ?estado=submitted para calificar). Filas de resumen
+ *   con los datos del estudiante; sin answers.
+ * - GET  /activities/:id/submissions/:entregaId → VISTA DE REVISIÓN:
+ *   la entrega con sus respuestas (veredicto por respuesta), el
+ *   estudiante dueño y el feedback si ya fue calificada.
+ * - POST /activities/:id/submissions/:entregaId/calificar → transición
+ *   definitiva: submitted → graded (puntaje + feedback) o rejected
+ *   (feedback). Las monedas y graded_at las escribe el trigger
+ *   fn_award_coins; el UPDATE filtra por status='submitted', así una
+ *   'graded' jamás se recalifica y el trigger no paga dos veces.
+ *
  * @Roles('student'): teacher/admin reciben 403 (RolesGuard corre antes
  * que PertenenciaGuard). @PerteneceA('actividadVisible', 'id') es la
  * puerta del estudiante — actividad published + inscripción ACTIVA en
@@ -41,6 +70,10 @@ import type {
  * agrega las validaciones amigables; el INSERT queda protegido por
  * fn_validate_submission (422) y uq_submission (P2002 → 409) como red
  * de seguridad final.
+ *
+ * La cola invierte los roles (@Roles('teacher') +
+ * @PerteneceA('actividad', 'id')): la clase de la actividad es suya —
+ * un profesor ajeno recibe el mismo 404 estándar anti-enumeración.
  */
 @Controller()
 export class SubmissionsController {
@@ -76,5 +109,91 @@ export class SubmissionsController {
     @UsuarioActual() usuario: UsuarioAutenticado,
   ): Promise<EntregaCreadaRespuestaDto> {
     return this.submissionsService.entregar(id, dto, usuario);
+  }
+
+  /**
+   * COLA DE CALIFICACIÓN del profesor: TODAS las entregas de SU
+   * actividad, paginadas ({ data, meta }) y con filtro ?estado
+   * opcional del enum submission_status — el caso principal es
+   * ?estado=submitted: las que esperan su calificación. Filas de
+   * resumen con los datos del estudiante (join enrollments → users),
+   * SIN answers: el listado es un resumen (mismo criterio que el de
+   * actividades) y el detalle de cada entrega llegará con el endpoint
+   * de calificación (docs/flujo_entregas.md §10).
+   *
+   * @Roles('teacher'): student/admin reciben 403 (RolesGuard corre
+   * antes de PertenenciaGuard). @PerteneceA('actividad', 'id') es la
+   * puerta: la clase de la actividad es suya — un profesor ajeno (o un
+   * id inexistente) recibe el 404 estándar anti-enumeración antes de
+   * llegar al handler. El Service re-verifica la misma regla (segunda
+   * capa, AGENTS.md §8).
+   */
+  @Roles('teacher')
+  @PerteneceA('actividad', 'id')
+  @Get('activities/:id/submissions/queue')
+  cola(
+    @Param('id') id: string,
+    @Query() query: ListarEntregasQueryDto,
+    @UsuarioActual() usuario: UsuarioAutenticado,
+  ): Promise<ListadoEntregasDto> {
+    return this.submissionsService.cola(id, query, usuario);
+  }
+
+  /**
+   * VISTA DE REVISIÓN de UNA entrega de su actividad: lo que la cola
+   * no trae — el answers JSONB con veredicto por respuesta, el
+   * estudiante dueño, y el resultado/feedback si ya fue calificada. Es
+   * lo que el profesor mira ANTES de decidir la calificación (las
+   * preguntas de la actividad, con las correctas, ya las tiene en
+   * GET /activities/:id).
+   *
+   * @Roles('teacher'): student/admin reciben 403.
+   * @PerteneceA('actividad', 'id'): la clase de la actividad es suya —
+   * un profesor ajeno recibe el 404 estándar anti-enumeración; el
+   * Service re-verifica (segunda capa) y exige además que la entrega
+   * pertenezca a ESA actividad (si no: el mismo 404).
+   */
+  @Roles('teacher')
+  @PerteneceA('actividad', 'id')
+  @Get('activities/:id/submissions/:entregaId')
+  detalle(
+    @Param('id') id: string,
+    @Param('entregaId') entregaId: string,
+    @UsuarioActual() usuario: UsuarioAutenticado,
+  ): Promise<EntregaDetalleProfesorDto> {
+    return this.submissionsService.detalle(id, entregaId, usuario);
+  }
+
+  /**
+   * CALIFICA la entrega pendiente: submitted → graded (puntaje dentro
+   * de 0..total de la actividad + feedback opcional) o rejected
+   * (feedback opcional, sin puntaje). Solo el dueño de la actividad.
+   *
+   * La transición es ATÓMICA y unilateral (patrón del autosave): el
+   * UPDATE filtra por status='submitted' — recalificar una entrega ya
+   * 'graded' (o tocar un borrador) queda sin efecto y responde 409,
+   * así el trigger fn_award_coins no puede otorgar dos veces las
+   * monedas de la misma entrega. El backend JAMÁS escribe monedas ni
+   * graded_at: los acredita el trigger en → graded (AGENTS.md §6) y la
+   * respuesta devuelve la fila re-leída tal como quedó.
+   *
+   * Rechazos (precedencia): 400 DTO/condicional → 404 actividad ajena
+   * /entrega inexistente o de otra actividad → 409 ya no está
+   * 'submitted' → 422 puntaje fuera de 0..total.
+   */
+  @Roles('teacher')
+  @PerteneceA('actividad', 'id')
+  // 200 y no el 201 por defecto de POST: no crea un recurso nuevo,
+  // transiciona uno existente y lo devuelve (mismo criterio que
+  // POST /activities/:id/publicar).
+  @HttpCode(HttpStatus.OK)
+  @Post('activities/:id/submissions/:entregaId/calificar')
+  calificar(
+    @Param('id') id: string,
+    @Param('entregaId') entregaId: string,
+    @Body() dto: CalificarEntregaDto,
+    @UsuarioActual() usuario: UsuarioAutenticado,
+  ): Promise<CalificacionRespuestaDto> {
+    return this.submissionsService.calificar(id, entregaId, dto, usuario);
   }
 }

@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   ConflictException,
   Injectable,
   NotFoundException,
@@ -15,6 +16,8 @@ import {
 import type { Pregunta } from '../activities/dto/preguntas.schema';
 import type { CrearEntregaDto } from './dto/crear-entrega.dto';
 import type { GuardarBorradorDto } from './dto/guardar-borrador.dto';
+import type { ListarEntregasQueryDto } from './dto/listar-entregas.dto';
+import type { CalificarEntregaDto } from './dto/calificar-entrega.dto';
 import { exigirCompletitud, validarRespuestas } from './dto/respuestas.schema';
 import {
   evaluarRespuestas,
@@ -22,9 +25,13 @@ import {
 } from './auto-calificacion';
 import type {
   BorradorGuardadoRespuestaDto,
+  CalificacionRespuestaDto,
   EntregaBorradorRespuestaDto,
   EntregaCreadaRespuestaDto,
+  EntregaColaDto,
+  EntregaDetalleProfesorDto,
   EntregaRespuestaDto,
+  ListadoEntregasDto,
 } from './dto/entrega-respuesta.dto';
 import type { RespuestaEntrega } from './dto/respuestas.schema';
 
@@ -63,6 +70,35 @@ export const MENSAJE_BORRADOR_GUARDADO =
 export const MENSAJE_ACTIVIDAD_CERRADA =
   'La actividad ya no acepta entregas: su fecha de cierre ya pasó.';
 
+/** Éxito del profesor al calificar (decision='graded'). */
+export const MENSAJE_ENTREGA_CALIFICADA_PROFESOR =
+  'Entrega calificada: el estudiante ya puede ver el puntaje y tu retroalimentación.';
+
+/** Éxito del profesor al rechazar (decision='rejected'). */
+export const MENSAJE_ENTREGA_RECHAZADA =
+  'Entrega rechazada: el estudiante verá tu retroalimentación y deberá reenviarla cuando ese flujo esté disponible.';
+
+/** 400 al calificar como graded sin puntaje. */
+export const MENSAJE_PUNTAJE_REQUERIDO =
+  'Para calificar la entrega (decision=graded) debes enviar el puntaje total de la actividad.';
+
+/** 400 al rechazar con puntaje: el rechazo no lleva nota. */
+export const MENSAJE_PUNTAJE_NO_EN_RECHAZO =
+  'No se envía puntaje al rechazar una entrega: la nota queda en null y el estudiante deberá reenviarla.';
+
+/** 422 cuando el puntaje queda fuera del total de la actividad. */
+export const MENSAJE_PUNTAJE_FUERA_DE_RANGO =
+  'El puntaje debe estar entre 0 y el total de la actividad.';
+
+/**
+ * 409 al calificar una entrega que ya no está 'submitted' — incluye la
+ * RE-calificación de una 'graded': el UPDATE atómico filtra por
+ * status='submitted', así el trigger fn_award_coins no puede otorgar
+ * dos veces las monedas de la misma entrega.
+ */
+export const MENSAJE_ENTREGA_NO_PENDIENTE =
+  'La entrega ya no está pendiente de calificación: solo las enviadas (submitted) pueden calificarse y el estado no se recalifica.';
+
 /**
  * Fila de activities tal como la necesitan los flujos de entrega
  * (AGENTS.md §5: nombres reales de la BD): la clase (para ubicar la
@@ -83,7 +119,53 @@ interface EntregaEnBD {
   submitted_at: Date | null;
   score: Prisma.Decimal | null;
   coins_awarded: number;
+  feedback: string | null;
   answers: Prisma.JsonValue;
+}
+
+/**
+ * Fila de la cola del profesor: el resumen de la entrega MÁS los datos
+ * del estudiante (join enrollments → users) — para calificar hace falta
+ * saber quién entregó. Sin answers: el listado es un resumen.
+ */
+interface EntregaColaEnBD {
+  id: bigint;
+  status: submission_status;
+  submitted_at: Date | null;
+  score: Prisma.Decimal | null;
+  coins_awarded: number;
+  enrollments: {
+    users: {
+      id: bigint;
+      username: string;
+      first_name: string;
+      last_name: string;
+    };
+  };
+}
+
+/**
+ * Fila de la VISTA DE REVISIÓN: todo lo de la fila de la cola MÁS el
+ * answers JSONB (con veredicto por respuesta), el feedback y graded_at
+ * — lo que el profesor necesita para decidir la calificación.
+ */
+interface EntregaDetalleEnBD {
+  id: bigint;
+  status: submission_status;
+  submitted_at: Date | null;
+  graded_at: Date | null;
+  score: Prisma.Decimal | null;
+  coins_awarded: number;
+  feedback: string | null;
+  answers: Prisma.JsonValue;
+  enrollments: {
+    users: {
+      id: bigint;
+      username: string;
+      first_name: string;
+      last_name: string;
+    };
+  };
 }
 
 /** Contexto compartido por los tres endpoints de entrega. */
@@ -101,6 +183,11 @@ const CAMPOS_ACTIVIDAD_ENTREGA = {
   questions: true,
 } as const;
 
+/** Solo las preguntas: la calificación valida el puntaje contra su total. */
+const CAMPOS_ACTIVIDAD_PREGUNTAS = {
+  questions: true,
+} as const;
+
 const CAMPOS_ENTREGA = {
   id: true,
   activity_id: true,
@@ -108,7 +195,51 @@ const CAMPOS_ENTREGA = {
   submitted_at: true,
   score: true,
   coins_awarded: true,
+  feedback: true,
   answers: true,
+} as const;
+
+/**
+ * Select de la fila de la cola del profesor: resumen de la entrega +
+ * estudiante dueño (enrollments → users). Sin answers ni activity_id:
+ * ambos son conocidos por el contexto de la propia cola.
+ */
+const CAMPOS_ENTREGA_COLA = {
+  id: true,
+  status: true,
+  submitted_at: true,
+  score: true,
+  coins_awarded: true,
+  enrollments: {
+    select: {
+      users: {
+        select: { id: true, username: true, first_name: true, last_name: true },
+      },
+    },
+  },
+} as const;
+
+/**
+ * Select de la VISTA DE REVISIÓN: la fila de la cola MÁS answers (con
+ * veredicto por respuesta), feedback y graded_at. El activity_id no
+ * viaja: ya viene en la ruta (y el where lo exige).
+ */
+const CAMPOS_ENTREGA_DETALLE = {
+  id: true,
+  status: true,
+  submitted_at: true,
+  graded_at: true,
+  score: true,
+  coins_awarded: true,
+  feedback: true,
+  answers: true,
+  enrollments: {
+    select: {
+      users: {
+        select: { id: true, username: true, first_name: true, last_name: true },
+      },
+    },
+  },
 } as const;
 
 /**
@@ -403,6 +534,204 @@ export class SubmissionsService {
   }
 
   /**
+   * GET /activities/:id/submissions/queue — cola de calificación del
+   * profesor: TODAS las entregas de SU actividad con la paginación
+   * estándar { data, meta } y filtro opcional por estado (?estado del
+   * enum submission_status). El caso principal es ?estado=submitted:
+   * las que esperan su revisión (docs/flujo_entregas.md §10 — la
+   * calificación misma viene después).
+   *
+   * Orden FIFO por submitted_at ASCENDENTE (PostgreSQL manda los NULL
+   * al final: los borradores in_progress quedan últimos): una cola de
+   * calificación atiende primero lo más antiguo.
+   *
+   * Pertenencia: regla 'actividad' — la clase de la actividad es suya.
+   * El estudiante no pasa RolesGuard (403) y un profesor ajeno recibe
+   * el 404 estándar anti-enumeración antes de llegar aquí.
+   */
+  async cola(
+    actividadId: string,
+    query: ListarEntregasQueryDto,
+    usuario: UsuarioAutenticado,
+  ): Promise<ListadoEntregasDto> {
+    // Segunda capa de pertenencia (AGENTS.md §8): el guard HTTP ya
+    // verificó :id de ruta; el service también es seguro en flujos
+    // internos.
+    await this.autorizacion.verificarPertenencia(
+      'actividad',
+      actividadId,
+      usuario,
+    );
+
+    const page = query.page ?? 1;
+    const limit = query.limit ?? 20;
+    const where = {
+      activity_id: this.aBigInt(actividadId),
+      ...(query.estado !== undefined ? { status: query.estado } : {}),
+    };
+
+    const filas = await this.prisma.submissions.findMany({
+      where,
+      select: CAMPOS_ENTREGA_COLA,
+      orderBy: { submitted_at: 'asc' },
+      skip: (page - 1) * limit,
+      take: limit,
+    });
+
+    const total = await this.prisma.submissions.count({ where });
+
+    return {
+      data: filas.map((fila) => this.aEntregaCola(fila)),
+      meta: { total, page, limit },
+    };
+  }
+
+  /**
+   * GET /activities/:id/submissions/:entregaId — VISTA DE REVISIÓN del
+   * profesor: la entrega con sus respuestas (veredicto por respuesta),
+   * el estudiante dueño y, si ya fue calificada, el resultado y el
+   * feedback. Es el paso entre la cola (que lista las 'submitted') y
+   * calificar: sin answers no hay nada que revisar. Es también la
+   * única vista que expone answers a alguien distinto del estudiante
+   * dueño (AGENTS.md §9.5) — el dueño de la actividad es quien califica.
+   */
+  async detalle(
+    actividadId: string,
+    entregaId: string,
+    usuario: UsuarioAutenticado,
+  ): Promise<EntregaDetalleProfesorDto> {
+    // Segunda capa de pertenencia (AGENTS.md §8): el guard ya verificó
+    // :id de ruta con la regla 'actividad'.
+    await this.autorizacion.verificarPertenencia(
+      'actividad',
+      actividadId,
+      usuario,
+    );
+
+    // El where exige la relación entrega↔actividad en la MISMA
+    // consulta: una entrega de otra actividad es 404, igual que una
+    // inexistente (anti-enumeración).
+    const entrega = await this.prisma.submissions.findFirst({
+      where: {
+        id: this.aBigInt(entregaId),
+        activity_id: this.aBigInt(actividadId),
+      },
+      select: CAMPOS_ENTREGA_DETALLE,
+    });
+    if (entrega === null) {
+      throw new NotFoundException(MENSAJE_RECURSO_NO_ENCONTRADO);
+    }
+
+    return this.aEntregaDetalleProfesor(entrega);
+  }
+
+  /**
+   * POST /activities/:id/submissions/:entregaId/calificar — transición
+   * definitiva del profesor: 'submitted' → graded (con puntaje) o
+   * rejected (sin puntaje; el estudiante reenviará cuando exista ese
+   * flujo, docs/flujo_entregas.md §10).
+   *
+   * Monedas y graded_at los escribe el TRIGGER fn_award_coins en la
+   * transición a 'graded' (AGENTS.md §6: el backend jamás los toca):
+   * el UPDATE de este método solo lleva status/score/feedback/graded_by
+   * y se re-lee la fila para devolver lo que la BD acreditó.
+   *
+   * Anti-recalificación (regla del equipo): el UPDATE es atómico y
+   * filtra por status='submitted' — una entrega 'graded' (o 'rejected',
+   * o un borrador) NUNCA se vuelve a tocar, así el trigger no puede
+   * otorgar dos veces las monedas de la misma entrega ni pisar un
+   * veredicto ya dado.
+   */
+  async calificar(
+    actividadId: string,
+    entregaId: string,
+    dto: CalificarEntregaDto,
+    usuario: UsuarioAutenticado,
+  ): Promise<CalificacionRespuestaDto> {
+    // Segunda capa de pertenencia (AGENTS.md §8): SOLO el dueño de la
+    // clase de la actividad califica; un profesor ajeno ya recibió el
+    // 404 estándar en el guard.
+    await this.autorizacion.verificarPertenencia(
+      'actividad',
+      actividadId,
+      usuario,
+    );
+
+    const idActividad = this.aBigInt(actividadId);
+    const idEntrega = this.aBigInt(entregaId);
+
+    // Preguntas reales: el puntaje se valida contra el TOTAL de la
+    // actividad (validación doble, AGENTS.md §6 — el DTO valida forma).
+    const actividad = await this.prisma.activities.findFirst({
+      where: { id: idActividad },
+      select: CAMPOS_ACTIVIDAD_PREGUNTAS,
+    });
+    if (actividad === null) {
+      throw new NotFoundException(MENSAJE_RECURSO_NO_ENCONTRADO);
+    }
+
+    const preguntas = actividad.questions as Pregunta[];
+    if (dto.decision === 'graded') {
+      if (dto.puntaje === undefined) {
+        throw new BadRequestException(MENSAJE_PUNTAJE_REQUERIDO);
+      }
+      this.rechazarSiPuntajeFueraDeRango(dto.puntaje, preguntas);
+    } else if (dto.puntaje !== undefined) {
+      // 'rejected' no lleva nota: el score queda null y el estudiante
+      // deberá reenviar cuando ese flujo exista (§10).
+      throw new BadRequestException(MENSAJE_PUNTAJE_NO_EN_RECHAZO);
+    }
+
+    // UPDATE atómico SOLO sobre 'submitted': recalificar una 'graded'
+    // queda sin efecto aquí (count 0 → 409 en el paso siguiente) — el
+    // status no se reescribe y el trigger no vuelve a disparar.
+    const actualizada = await this.prisma.submissions.updateMany({
+      where: {
+        id: idEntrega,
+        activity_id: idActividad,
+        status: 'submitted',
+      },
+      data: {
+        status: dto.decision,
+        ...(dto.decision === 'graded' ? { score: dto.puntaje } : {}),
+        ...(dto.feedback !== undefined ? { feedback: dto.feedback } : {}),
+        graded_by: BigInt(usuario.id),
+      },
+    });
+    if (actualizada.count === 0) {
+      // No actualizó: o no existe (o es de otra actividad) → 404, o ya
+      // no está 'submitted' → 409. Distinguir con una lectura.
+      const existente = await this.prisma.submissions.findFirst({
+        where: { id: idEntrega, activity_id: idActividad },
+        select: { status: true },
+      });
+      if (existente === null) {
+        throw new NotFoundException(MENSAJE_RECURSO_NO_ENCONTRADO);
+      }
+      throw new ConflictException(MENSAJE_ENTREGA_NO_PENDIENTE);
+    }
+
+    // Re-lectura: el trigger escribió graded_at/coins_awarded al pasar
+    // a 'graded' — la respuesta devuelve la fila tal como quedó.
+    const entrega = await this.prisma.submissions.findFirst({
+      where: { id: idEntrega, activity_id: idActividad },
+      select: CAMPOS_ENTREGA_DETALLE,
+    });
+    if (entrega === null) {
+      // Defensivo: la fila acaba de existir en el updateMany.
+      throw new Error('La entrega calificada desapareció de la BD.');
+    }
+
+    return {
+      mensaje:
+        dto.decision === 'graded'
+          ? MENSAJE_ENTREGA_CALIFICADA_PROFESOR
+          : MENSAJE_ENTREGA_RECHAZADA,
+      entrega: this.aEntregaDetalleProfesor(entrega),
+    };
+  }
+
+  /**
    * Contexto común de los tres endpoints: pertenencia 'actividadVisible'
    * (segunda capa, AGENTS.md §8), id de ruta a BigInt, actividad
    * publicada con inscripción ACTIVA del estudiante (la misma regla
@@ -474,6 +803,24 @@ export class SubmissionsService {
   }
 
   /**
+   * El puntaje del profesor no puede salirse de la actividad: 0..
+   * total (la suma de los score de sus preguntas). Misma forma que
+   * rechazarSiCerrada: validación semántica contra el recurso → 422.
+   */
+  private rechazarSiPuntajeFueraDeRango(
+    puntaje: number,
+    preguntas: Pregunta[],
+  ): void {
+    const total = preguntas.reduce(
+      (suma, pregunta) => suma + pregunta.score,
+      0,
+    );
+    if (puntaje < 0 || puntaje > total) {
+      throw new UnprocessableEntityException(MENSAJE_PUNTAJE_FUERA_DE_RANGO);
+    }
+  }
+
+  /**
    * Convierte el id de ruta a BigInt con el 404 estándar si no es
    * numérico: mismo tratamiento que AutorizacionService.aBigInt, para
    * que ni siquiera el admin (que pasa la pertenencia sin consultar la
@@ -525,9 +872,70 @@ export class SubmissionsService {
       entregadoEn: entregadoEn.toISOString(),
       puntaje: entrega.score === null ? null : Number(entrega.score.toString()),
       monedasOtorgadas: entrega.coins_awarded,
+      // La retroalimentación del profesor viaja al estudiante: null
+      // hasta que la entrega sea calificada/rechazada.
+      feedback: entrega.feedback,
       // Evaluadas por el backend antes de guardar (evaluarRespuestas):
       // question_position + option/text + is_correct/score.
       respuestas: entrega.answers as RespuestaCalificada[],
+    };
+  }
+
+  /**
+   * Mapper de la VISTA DE REVISIÓN del profesor: la fila de la cola
+   * (estudiante incluido) MÁS answers con veredicto, feedback y
+   * graded_at (calificadoEn). Mismas conversiones que siempre:
+   * BigInt→string y Decimal→number (AGENTS.md §7).
+   */
+  private aEntregaDetalleProfesor(
+    entrega: EntregaDetalleEnBD,
+  ): EntregaDetalleProfesorDto {
+    return {
+      id: entrega.id.toString(),
+      estudiante: {
+        id: entrega.enrollments.users.id.toString(),
+        usuario: entrega.enrollments.users.username,
+        nombre: entrega.enrollments.users.first_name,
+        apellido: entrega.enrollments.users.last_name,
+      },
+      estado: entrega.status,
+      entregadoEn:
+        entrega.submitted_at === null
+          ? null
+          : entrega.submitted_at.toISOString(),
+      // graded_at lo setea el trigger SOLO en → graded: en 'rejected'
+      // queda null (la BD no lo marca como calificada).
+      calificadoEn:
+        entrega.graded_at === null ? null : entrega.graded_at.toISOString(),
+      puntaje: entrega.score === null ? null : Number(entrega.score.toString()),
+      monedasOtorgadas: entrega.coins_awarded,
+      feedback: entrega.feedback,
+      respuestas: entrega.answers as RespuestaCalificada[],
+    };
+  }
+
+  /**
+   * Mapper de la fila de la cola del profesor: BigInt → string y el
+   * puntaje NUMERIC(6,2) → number (Prisma.Decimal) — mismo tratamiento
+   * que aEntregaRespuesta (AGENTS.md §7). El estudiante sale del join
+   * enrollments → users: la fila ES la entrega de ese estudiante.
+   */
+  private aEntregaCola(entrega: EntregaColaEnBD): EntregaColaDto {
+    return {
+      id: entrega.id.toString(),
+      estudiante: {
+        id: entrega.enrollments.users.id.toString(),
+        usuario: entrega.enrollments.users.username,
+        nombre: entrega.enrollments.users.first_name,
+        apellido: entrega.enrollments.users.last_name,
+      },
+      estado: entrega.status,
+      entregadoEn:
+        entrega.submitted_at === null
+          ? null
+          : entrega.submitted_at.toISOString(),
+      puntaje: entrega.score === null ? null : Number(entrega.score.toString()),
+      monedasOtorgadas: entrega.coins_awarded,
     };
   }
 }
