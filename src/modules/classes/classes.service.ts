@@ -1,7 +1,9 @@
 import {
   BadRequestException,
+  ConflictException,
   Injectable,
   NotFoundException,
+  UnprocessableEntityException,
   UnauthorizedException,
 } from '@nestjs/common';
 import { Prisma } from '../../generated/prisma/client';
@@ -23,6 +25,7 @@ import type {
   ClaseListadoDto,
   ClaseRespuestaDto,
   ListadoClasesDto,
+  UnirseClaseRespuestaDto,
 } from './dto/clase-respuesta.dto';
 import type {
   EstudianteInscritoDto,
@@ -41,6 +44,17 @@ export const mensajeClaseCreada = (codigo: string): string =>
 /** 400 cuando el PATCH no lleva ningún campo para actualizar. */
 export const MENSAJE_ACTUALIZACION_VACIA =
   'Debes enviar al menos un campo para actualizar: nombre o estado.';
+
+/** Mensaje de éxito de POST /classes/join (H3.2): la unión del estudiante. */
+export const mensajeUnidoAClase = (nombreClase: string): string =>
+  `Te has unido a la clase ${nombreClase}. Ya puedes resolver sus actividades.`;
+
+/** 409 al unirse con una inscripción previa status='active' (CA 3). */
+export const MENSAJE_YA_INSCRIPTO = 'Ya estás inscrito en esta clase.';
+
+/** 422 al unirse con una inscripción previa withdrawn/blocked (CA 4). */
+export const MENSAJE_INSCRIPCION_NO_ACTIVA =
+  'No puedes unirte de nuevo: tu inscripción en esta clase no está activa. Consulta a tu profesor.';
 
 /** Campos leídos de la tabla classes (AGENTS.md §5: nombres reales de la BD). */
 interface ClaseCreada {
@@ -137,6 +151,88 @@ export class ClassesService {
     return {
       mensaje: mensajeClaseCreada(clase.code),
       clase: this.aClaseRespuesta(clase),
+    };
+  }
+
+  /**
+   * Une al estudiante autenticado a la clase cuyo código comparte (H3.2).
+   *
+   * Las reglas de inscripción VIVEN EN LA BD y aquí jamás se
+   * reimplementan (AGENTS.md §lógica crítica en la BD):
+   * - `uq_enrollment` (UNIQUE class_id, student_id) → cualquier carrera
+   *   entre dos joins concurrentes termina en P2002 → filtro global → 409.
+   * - `fn_validate_enrollment` → REJECT si el estudiante y el profesor de
+   *   la clase no comparten organización: P0001 → filtro global → 422.
+   *
+   * Las pre-validaciones previas al INSERT existen SOLO para traducir a
+   * mensajes amables lo que la BD rechazaría de forma cruda (patrón
+   * "valida antes → error amable"): código inexistente o clase no activa
+   * → 404 anti-enumeración; inscripción previa `active` → 409; inscripción
+   * previa `withdrawn`/`blocked` → 422 (la BD no puede producir ese 422:
+   * el UNIQUE chocaría primero con 409, por eso el estado se pre-valida
+   * en el backend y NO se reactiva la fila).
+   */
+  async unirse(
+    codigo: string,
+    usuario: UsuarioAutenticado,
+  ): Promise<UnirseClaseRespuestaDto> {
+    let idEstudiante: bigint;
+    try {
+      idEstudiante = BigInt(usuario.id);
+    } catch {
+      throw new UnauthorizedException('No autenticado o sesión expirada.');
+    }
+
+    // Defensa en profundidad (espejo de crear): el token pudo firmarse
+    // antes de que el estudiante fuera desactivado o cambiara de rol.
+    const estudiante = await this.prisma.users.findFirst({
+      where: { id: idEstudiante, role: 'student', is_active: true },
+      select: { id: true },
+    });
+    if (estudiante === null) {
+      throw new NotFoundException(MENSAJE_RECURSO_NO_ENCONTRADO);
+    }
+
+    // El código se busca sin scope de organización a propósito: si la
+    // clase pertenece a otra org, el INSERT dispara el trigger
+    // fn_validate_enrollment → 422 (regla de la BD, no se duplica aquí).
+    // Solo clases activas: archivada e inexistente responden igual
+    // (anti-enumeración, coherente con el listado estudiante).
+    const clase = await this.prisma.classes.findFirst({
+      where: { code: codigo, status: 'active' },
+      select: { id: true, name: true },
+    });
+    if (clase === null) {
+      throw new NotFoundException(MENSAJE_RECURSO_NO_ENCONTRADO);
+    }
+
+    // Pre-validación de la inscripción previa (CA 3 / CA 4).
+    const previa = await this.prisma.enrollments.findFirst({
+      where: { class_id: clase.id, student_id: idEstudiante },
+      select: { status: true },
+    });
+    if (previa !== null) {
+      if (previa.status === 'active') {
+        throw new ConflictException(MENSAJE_YA_INSCRIPTO);
+      }
+      // withdrawn | blocked: no se reactiva; el estudiante debe hablar
+      // con su profesor. (El enum real no tiene 'paused'.)
+      throw new UnprocessableEntityException(MENSAJE_INSCRIPCION_NO_ACTIVA);
+    }
+
+    // status nace en 'active' por DEFAULT de la BD (nunca se envía).
+    const inscripcion = await this.prisma.enrollments.create({
+      data: { class_id: clase.id, student_id: idEstudiante },
+      select: { status: true, enrolled_at: true },
+    });
+
+    return {
+      mensaje: mensajeUnidoAClase(clase.name),
+      clase: { id: clase.id.toString(), nombre: clase.name },
+      inscripcion: {
+        estado: inscripcion.status,
+        inscritoEn: inscripcion.enrolled_at.toISOString(),
+      },
     };
   }
 

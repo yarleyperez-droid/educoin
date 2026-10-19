@@ -1,6 +1,8 @@
 import {
   BadRequestException,
+  ConflictException,
   NotFoundException,
+  UnprocessableEntityException,
   UnauthorizedException,
 } from '@nestjs/common';
 import { Prisma } from '../../generated/prisma/client';
@@ -13,7 +15,10 @@ import {
 import {
   ClassesService,
   MENSAJE_ACTUALIZACION_VACIA,
+  MENSAJE_INSCRIPCION_NO_ACTIVA,
+  MENSAJE_YA_INSCRIPTO,
   mensajeClaseCreada,
+  mensajeUnidoAClase,
 } from './classes.service';
 import type { BuscarClasesQueryDto } from './dto/buscar-clases.dto';
 
@@ -32,6 +37,14 @@ interface PrismaMock {
     update: jest.Mock<Promise<unknown>, [ConsultaUpdate]>;
   };
   enrollments: {
+    findFirst: jest.Mock<
+      Promise<unknown>,
+      [{ where: object; select: object }]
+    >;
+    create: jest.Mock<
+      Promise<unknown>,
+      [{ data: object; select: object }]
+    >;
     findMany: jest.Mock<Promise<unknown[]>, [object]>;
     count: jest.Mock<Promise<number>, [object]>;
   };
@@ -126,6 +139,14 @@ describe('ClassesService', () => {
         update: jest.fn<Promise<unknown>, [ConsultaUpdate]>(),
       },
       enrollments: {
+        findFirst: jest.fn<
+          Promise<unknown>,
+          [{ where: object; select: object }]
+        >(),
+        create: jest.fn<
+          Promise<unknown>,
+          [{ data: object; select: object }]
+        >(),
         findMany: jest.fn<Promise<unknown[]>, [object]>(),
         count: jest.fn<Promise<number>, [object]>(),
       },
@@ -784,6 +805,124 @@ describe('ClassesService', () => {
         classesService.actualizar('999', { estado: 'archived' }, PROFESOR),
       ).rejects.toThrow(new NotFoundException(MENSAJE_RECURSO_NO_ENCONTRADO));
       expect(prisma.classes.update).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('unirse', () => {
+    const CLASE_PARA_UNIRSE = { id: BigInt(7), name: 'Clase Unión Unit' };
+
+    it('rechaza con 401 si el id del token no es numérico', async () => {
+      await expect(
+        classesService.unirse('AB12CD34', { ...ESTUDIANTE, id: 'abc' }),
+      ).rejects.toThrow(UnauthorizedException);
+      expect(prisma.users.findFirst).not.toHaveBeenCalled();
+    });
+
+    it('verifica en la BD que el estudiante exista y esté activo (404 estándar si no)', async () => {
+      prisma.users.findFirst.mockResolvedValue(null);
+
+      await expect(
+        classesService.unirse('AB12CD34', ESTUDIANTE),
+      ).rejects.toThrow(new NotFoundException(MENSAJE_RECURSO_NO_ENCONTRADO));
+      expect(prisma.users.findFirst).toHaveBeenCalledWith({
+        where: { id: BigInt(3), role: 'student', is_active: true },
+        select: { id: true },
+      });
+      expect(prisma.classes.findFirst).not.toHaveBeenCalled();
+    });
+
+    it('código inexistente o clase no activa → 404 sin consultar inscripciones', async () => {
+      prisma.users.findFirst.mockResolvedValue({ id: BigInt(3) });
+      prisma.classes.findFirst.mockResolvedValue(null);
+
+      await expect(
+        classesService.unirse('NOEXISTE9', ESTUDIANTE),
+      ).rejects.toThrow(new NotFoundException(MENSAJE_RECURSO_NO_ENCONTRADO));
+      // Solo se aceptan clases activas: archivada e inexistente son iguales.
+      expect(prisma.classes.findFirst).toHaveBeenCalledWith({
+        where: { code: 'NOEXISTE9', status: 'active' },
+        select: { id: true, name: true },
+      });
+      expect(prisma.enrollments.findFirst).not.toHaveBeenCalled();
+      expect(prisma.enrollments.create).not.toHaveBeenCalled();
+    });
+
+    it('CA 3: inscripción previa active → 409 sin llegar al INSERT', async () => {
+      prisma.users.findFirst.mockResolvedValue({ id: BigInt(3) });
+      prisma.classes.findFirst.mockResolvedValue(CLASE_PARA_UNIRSE);
+      prisma.enrollments.findFirst.mockResolvedValue({ status: 'active' });
+
+      await expect(
+        classesService.unirse('AB12CD34', ESTUDIANTE),
+      ).rejects.toThrow(new ConflictException(MENSAJE_YA_INSCRIPTO));
+      expect(prisma.enrollments.create).not.toHaveBeenCalled();
+    });
+
+    it('CA 4: inscripción previa withdrawn → 422 sin reactivar (sin INSERT)', async () => {
+      prisma.users.findFirst.mockResolvedValue({ id: BigInt(3) });
+      prisma.classes.findFirst.mockResolvedValue(CLASE_PARA_UNIRSE);
+      prisma.enrollments.findFirst.mockResolvedValue({ status: 'withdrawn' });
+
+      await expect(
+        classesService.unirse('AB12CD34', ESTUDIANTE),
+      ).rejects.toThrow(
+        new UnprocessableEntityException(MENSAJE_INSCRIPCION_NO_ACTIVA),
+      );
+      expect(prisma.enrollments.create).not.toHaveBeenCalled();
+    });
+
+    it('CA 4: inscripción previa blocked → 422 sin reactivar (sin INSERT)', async () => {
+      prisma.users.findFirst.mockResolvedValue({ id: BigInt(3) });
+      prisma.classes.findFirst.mockResolvedValue(CLASE_PARA_UNIRSE);
+      prisma.enrollments.findFirst.mockResolvedValue({ status: 'blocked' });
+
+      await expect(
+        classesService.unirse('AB12CD34', ESTUDIANTE),
+      ).rejects.toThrow(
+        new UnprocessableEntityException(MENSAJE_INSCRIPCION_NO_ACTIVA),
+      );
+      expect(prisma.enrollments.create).not.toHaveBeenCalled();
+    });
+
+    it('éxito: INSERT sin status (default de la BD) y DTO con inscripción active', async () => {
+      prisma.users.findFirst.mockResolvedValue({ id: BigInt(3) });
+      prisma.classes.findFirst.mockResolvedValue(CLASE_PARA_UNIRSE);
+      prisma.enrollments.findFirst.mockResolvedValue(null);
+      prisma.enrollments.create.mockResolvedValue({
+        status: 'active' as const,
+        enrolled_at: new Date('2026-10-19T10:00:00.000Z'),
+      });
+
+      // La normalización a mayúsculas vive en el DTO (@Transform); el
+      // service recibe el código ya normalizado desde el controller.
+      const resultado = await classesService.unirse('AB12CD34', ESTUDIANTE);
+
+      const llamada = prisma.enrollments.create.mock.calls[0][0];
+      expect(llamada.data).toEqual({
+        class_id: BigInt(7),
+        student_id: BigInt(3),
+      });
+      // status nace en 'active' por DEFAULT de la BD, jamás se envía (AGENTS.md §7).
+      expect(llamada.data).not.toHaveProperty('status');
+      expect(resultado).toEqual({
+        mensaje: mensajeUnidoAClase('Clase Unión Unit'),
+        clase: { id: '7', nombre: 'Clase Unión Unit' },
+        inscripcion: {
+          estado: 'active',
+          inscritoEn: '2026-10-19T10:00:00.000Z',
+        },
+      });
+    });
+
+    it('carrera concurrente: el P2002 del INSERT se propaga sin traducir (filtro global → 409)', async () => {
+      prisma.users.findFirst.mockResolvedValue({ id: BigInt(3) });
+      prisma.classes.findFirst.mockResolvedValue(CLASE_PARA_UNIRSE);
+      prisma.enrollments.findFirst.mockResolvedValue(null);
+      prisma.enrollments.create.mockRejectedValue(errorDuplicado());
+
+      await expect(
+        classesService.unirse('AB12CD34', ESTUDIANTE),
+      ).rejects.toThrow(Prisma.PrismaClientKnownRequestError);
     });
   });
 });

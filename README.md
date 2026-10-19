@@ -151,8 +151,11 @@ ranking global           → ordena por monedas GANADAS (vista)
   saldo sin negativo, organización compartida, recalificación sin duplicar,
   reversión de canje, bloqueo a actividad `draft` y auditoría en `coin_movements`.
   La regresión continua la cubre `test:e2e` en CI.
-- **Backend**: `pnpm test` (16 suites / 139 tests) y `pnpm test:e2e` (10 suites /
-  95 tests, requieren la BD Docker corriendo).
+- **Backend**: `pnpm test` (27 suites / 424 tests) y `pnpm test:e2e` (19 suites /
+  295 tests, requieren la BD Docker corriendo). Local: `activities.e2e-spec`
+  tiene un fallo **preexistente** (espera el id `1` en la página 1 y la BD
+  local acumula datos entre corridas) e inestabilidad intermitente entre
+  suites en paralelo; ambos reproducidos en `develop` sin cambios recientes.
 - **Frontend**: `pnpm --dir frontend test` (Vitest), `pnpm --dir frontend test:e2e`
   (Playwright contra backend real + Next; requiere BD Docker), más
   `typecheck`/`lint`/`build`.
@@ -217,6 +220,15 @@ ranking global           → ordena por monedas GANADAS (vista)
   (`test/helpers/auditoria-respuestas.ts`, reutilizable en H6.3). Suite
   `test/seguridad-transversal.e2e-spec.ts` (8 tests) + 11 unit; el rate limit
   de auth (5/min) quedó intacto.
+- **Unión a clase por código (H3.2 / PRO-274)**: `POST /api/v1/classes/join`
+  (solo estudiante) — el DTO normaliza el código (trim + mayúsculas);
+  código inexistente o clase archivada → **404** anti-enumeración;
+  pre-validación de inscripción previa (**409** si `active`,
+  **422** si `withdrawn`/`blocked`, sin reactivar) con la `UNIQUE
+  (class_id, student_id)` de la BD como segunda barrera ante la carrera;
+  organización ajena cae en el trigger `fn_validate_enrollment` → **422**
+  sin reimplementar reglas. Suite `test/unirse-clase.e2e-spec.ts`
+  (10 tests) + 8 unit.
 
 ## Stack
 

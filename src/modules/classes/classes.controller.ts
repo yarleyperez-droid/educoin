@@ -31,8 +31,10 @@ import {
   ClaseCreadaRespuestaDto,
   ClaseRespuestaDto,
   ListadoClasesDto,
+  UnirseClaseRespuestaDto,
 } from './dto/clase-respuesta.dto';
 import { ListadoEstudiantesDto } from './dto/estudiante-inscrito-respuesta.dto';
+import { UnirseClaseDto } from './dto/unirse-clase.dto';
 
 /**
  * Endpoints de clases bajo /api/v1/classes (AGENTS.md §8):
@@ -41,6 +43,7 @@ import { ListadoEstudiantesDto } from './dto/estudiante-inscrito-respuesta.dto';
  * - GET   /:id/estudiantes → lista los estudiantes inscritos en la clase
  *                            OWN :id del profesor autenticado.
  * - POST  /                → crea una clase con código de unión generado por la BD.
+ * - POST  /join            → el estudiante se une a una clase con su código (H3.2).
  * - PATCH /:id             → edita nombre y/o estado (archivar/reactivar).
  *
  * La creación NO declara @PerteneceA: ese guard verifica recursos
@@ -143,6 +146,52 @@ export class ClassesController {
     @UsuarioActual() usuario: UsuarioAutenticado,
   ): Promise<ClaseCreadaRespuestaDto> {
     return this.classesService.crear(dto.nombre, usuario);
+  }
+
+  /**
+   * POST /join (H3.2): el estudiante se une con el código que le
+   * compartió su profesor. NO declara @PerteneceA: la ruta no tiene :id
+   * y el guard global solo actúa sobre handlers con el decorator
+   * (pertenencia.guard.ts §"rutas sin @PerteneceA", costo cero si no
+   * hay regla). La autorización es @Roles('student'); la verificación
+   * completa (estudiante activo, clase por código, estados de la
+   * inscripción) vive en el service.
+   *
+   * [Punto de inserción documentado para T2.3.3: si se decidiera pasar
+   * a verificación por :id de la clase en el futuro, sería aquí.]
+   *
+   * Las reglas de inscripción siguen siendo de la BD: el UNIQUE
+   * uq_enrollment (409) y el trigger fn_validate_enrollment (422 por
+   * organización) actúan aunque el service pre-valide; traducir esos
+   * errores a mensajes amables es exactamente lo que hace el service.
+   */
+  @Roles('student')
+  @ApiCreatedResponse({
+    type: UnirseClaseRespuestaDto,
+    description:
+      'Inscripción creada con status active; incluye clase e inscripción.',
+  })
+  @ApiBadRequestResponse({
+    description:
+      'Body inválido: codigo ausente, vacío, no string o de más de 12 caracteres (400).',
+  })
+  @ApiNotFoundResponse({
+    description:
+      'Código inexistente o clase no activa (404, respuesta anti-enumeración).',
+  })
+  @ApiConflictResponse({
+    description: 'Ya inscripto con status active (409).',
+  })
+  @ApiUnprocessableEntityResponse({
+    description:
+      'Inscripción withdrawn/blocked (422) u organización distinta (422, regla de la BD).',
+  })
+  @Post('join')
+  unirse(
+    @Body() dto: UnirseClaseDto,
+    @UsuarioActual() usuario: UsuarioAutenticado,
+  ): Promise<UnirseClaseRespuestaDto> {
+    return this.classesService.unirse(dto.codigo, usuario);
   }
 
   @Roles('teacher')
