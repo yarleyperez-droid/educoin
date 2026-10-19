@@ -75,6 +75,12 @@ export class EntregaRespuestaDto {
   puntaje!: number | null;
   /** Monedas otorgadas por fn_award_coins al pasar a 'graded' (0 antes). */
   monedasOtorgadas!: number;
+  /**
+   * Retroalimentación del profesor (submissions.feedback): null hasta
+   * que la califique; con él ve el motivo de un 'rejected' o los
+   * comentarios de un 'graded'.
+   */
+  feedback!: string | null;
   /** answers JSONB: lo enviado + veredicto (is_correct/score por respuesta). */
   respuestas!: RespuestaCalificada[];
 }
@@ -97,4 +103,92 @@ export class BorradorGuardadoRespuestaDto {
 export class EntregaCreadaRespuestaDto {
   mensaje!: string;
   entrega!: EntregaRespuestaDto;
+}
+
+/**
+ * El ESTUDIANTE dueño de la entrega, tal como lo ve el profesor en la
+ * cola de calificación: para calificar hace falta saber QUIÉN entregó
+ * (join enrollments → users). Sale solo en la fila del listado del
+ * profesor; al estudiante nunca se le exponen entregas ajenas.
+ */
+export class EstudianteColaDto {
+  id!: string;
+  usuario!: string;
+  nombre!: string;
+  apellido!: string;
+}
+
+/**
+ * Fila de la COLA DE CALIFICACIÓN del profesor
+ * (GET /api/v1/activities/:id/submissions/queue): resumen de UNA
+ * entrega de la actividad, SIN `answers` — el listado es un resumen
+ * (mismo criterio que el de actividades: el JSONB completo puede ser
+ * grande) y el detalle de cada entrega llegará con el endpoint de
+ * calificación (docs/flujo_entregas.md §10).
+ *
+ * `entregadoEn` es null en los borradores (in_progress aún no se envía)
+ * y `puntaje` viaja null mientras la entrega espera al profesor.
+ */
+export class EntregaColaDto {
+  id!: string;
+  estudiante!: EstudianteColaDto;
+  estado!: submission_status;
+  /** Momento del envío (submissions.submitted_at, ISO 8601); null en borrador. */
+  entregadoEn!: string | null;
+  /** Puntaje total al calificarse; null mientras espera al profesor. */
+  puntaje!: number | null;
+  /** Monedas otorgadas por fn_award_coins al pasar a 'graded' (0 antes). */
+  monedasOtorgadas!: number;
+}
+
+/** Meta de la paginación estándar de listados (AGENTS.md §8). */
+export class ListadoEntregasMetaDto {
+  total!: number;
+  page!: number;
+  limit!: number;
+}
+
+/** Sobre estándar de listados: { data, meta } (AGENTS.md §8). */
+export class ListadoEntregasDto {
+  data!: EntregaColaDto[];
+  meta!: ListadoEntregasMetaDto;
+}
+
+/**
+ * VISTA DE REVISIÓN del profesor
+ * (GET /api/v1/activities/:id/submissions/:entregaId): la fila de la
+ * cola MÁS lo que hace falta para calificar — las respuestas del
+ * estudiante con su veredicto (answers JSONB con is_correct/score por
+ * respuesta) y la retroalimentación si ya fue calificada. Es la única
+ * vista que expone answers a alguien distinto del estudiante dueño
+ * (AGENTS.md §9.5): el dueño de la actividad es quien califica.
+ *
+ * `calificadoEn` es graded_at — lo setea fn_award_coins SOLO en la
+ * transición a 'graded': en 'rejected' queda null (la BD no lo marca).
+ * Las preguntas de la actividad no viajan aquí: el profesor ya las
+ * tiene completas (con las correctas) en GET /activities/:id.
+ */
+export class EntregaDetalleProfesorDto {
+  id!: string;
+  estudiante!: EstudianteColaDto;
+  estado!: submission_status;
+  entregadoEn!: string | null;
+  /** Momento de la calificación (graded_at, ISO 8601); null sin calificar. */
+  calificadoEn!: string | null;
+  puntaje!: number | null;
+  monedasOtorgadas!: number;
+  /** Retroalimentación escrita al calificar; null si no hay. */
+  feedback!: string | null;
+  /** answers JSONB: lo enviado + veredicto por respuesta (is_correct/score). */
+  respuestas!: RespuestaCalificada[];
+}
+
+/**
+ * Respuesta de POST /api/v1/activities/:id/submissions/:entregaId/calificar:
+ * confirma la transición (graded/rejected) y devuelve la entrega tal
+ * como queda — con lo que el trigger escribió (monedas, graded_at).
+ */
+export class CalificacionRespuestaDto {
+  mensaje!: string;
+  entrega!: EntregaDetalleProfesorDto;
 }

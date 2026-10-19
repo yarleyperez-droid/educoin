@@ -133,14 +133,33 @@ describe('evaluarRespuestas', () => {
       expect(evaluacion.puntaje).toBe(0);
     });
 
-    it('respuesta a una pregunta file: invariante rota (validarRespuestas debe correr antes)', () => {
+    it('file: queda pendiente del profesor (is_correct y score en null, como minigame)', () => {
       const preguntas: Pregunta[] = [
         { position: 1, type: 'file', prompt: 'Sube tu PDF', score: 5 },
       ];
+      const archivo = {
+        path: '7/1/11111111-1111-4111-8111-111111111111.pdf',
+        mime: 'application/pdf',
+        bytes: 100,
+      } as const;
 
-      expect(() =>
-        evaluarRespuestas([{ question_position: 1, text: 'a.pdf' }], preguntas),
-      ).toThrow(/file/);
+      const evaluacion = evaluarRespuestas(
+        [{ question_position: 1, files: [archivo] }],
+        preguntas,
+      );
+
+      expect(evaluacion.respuestas[0]).toEqual({
+        question_position: 1,
+        files: [archivo],
+        is_correct: null,
+        score: null,
+      });
+      expect(evaluacion.correctas).toBe(0);
+      expect(evaluacion.puntaje).toBe(0);
+      // El contenido del archivo lo califica el profesor: la entrega
+      // con preguntas file jamás es auto-calificable.
+      expect(evaluacion.autoCalificable).toBe(false);
+      expect(evaluacion.alcanzaUmbral).toBe(false);
     });
   });
 
