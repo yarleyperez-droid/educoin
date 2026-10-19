@@ -151,8 +151,8 @@ ranking global           → ordena por monedas GANADAS (vista)
   saldo sin negativo, organización compartida, recalificación sin duplicar,
   reversión de canje, bloqueo a actividad `draft` y auditoría en `coin_movements`.
   La regresión continua la cubre `test:e2e` en CI.
-- **Backend**: `pnpm test` (27 suites / 424 tests) y `pnpm test:e2e` (19 suites /
-  295 tests, requieren la BD Docker corriendo). Local: `activities.e2e-spec`
+- **Backend**: `pnpm test` (29 suites / 437 tests) y `pnpm test:e2e` (20 suites /
+  306 tests, requieren la BD Docker corriendo). Local: `activities.e2e-spec`
   tiene un fallo **preexistente** (espera el id `1` en la página 1 y la BD
   local acumula datos entre corridas) e inestabilidad intermitente entre
   suites en paralelo; ambos reproducidos en `develop` sin cambios recientes.
@@ -229,6 +229,18 @@ ranking global           → ordena por monedas GANADAS (vista)
   organización ajena cae en el trigger `fn_validate_enrollment` → **422**
   sin reimplementar reglas. Suite `test/unirse-clase.e2e-spec.ts`
   (10 tests) + 8 unit.
+- **Rankings global y por clase (H4.3 / PRO-281)**: módulo
+  `src/modules/rankings/` con `GET /api/v1/rankings` y
+  `GET /api/v1/rankings/classes/:id`, **solo lectura** sobre las vistas
+  `global_ranking`/`class_ranking` (`$queryRaw` con `Prisma.sql`; orden por
+  `coins_earned` → canjear no baja de puesto, con orden secundario
+  determinista). Filtro multi-tenant por la org del token (admin ve todas,
+  espejo de `condicionPorRol`); acceso por clase **sin `@PerteneceA`** (la
+  regla `'clase'` es teacher-only y rechazaría estudiantes): admin pasa,
+  teacher dueño, estudiante inscripto `active`, resto → 404
+  anti-enumeración. Suite `test/rankings.e2e-spec.ts` (11 tests; org
+  sintética por corrida para ser inmune a la BD acumulativa y respetando el
+  límite de 5 logins/min de auth) + 13 unit.
 
 ## Stack
 

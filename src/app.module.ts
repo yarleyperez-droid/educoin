@@ -12,6 +12,7 @@ import { ClassesModule } from './modules/classes/classes.module';
 import { ItemsModule } from './modules/items/items.module';
 import { RedemptionsModule } from './modules/redemptions/redemptions.module';
 import { WalletModule } from './modules/wallet/wallet.module';
+import { RankingsModule } from './modules/rankings/rankings.module';
 import { ActivitiesModule } from './modules/activities/activities.module';
 import { SubmissionsModule } from './modules/submissions/submissions.module';
 import { OrganizationsModule } from './modules/organizations/organizations.module';
@@ -27,6 +28,7 @@ import { validarEnv } from './config/env.validation';
     ClassesModule,
     RedemptionsModule,
     WalletModule,
+    RankingsModule,
     ItemsModule,
     ActivitiesModule,
     SubmissionsModule,
