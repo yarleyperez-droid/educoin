@@ -3,7 +3,9 @@ import {
   ConflictException,
   Injectable,
   NotFoundException,
+  PayloadTooLargeException,
   UnprocessableEntityException,
+  UnsupportedMediaTypeException,
 } from '@nestjs/common';
 import { Prisma } from '../../generated/prisma/client';
 import type { submission_status } from '../../generated/prisma/client';
@@ -14,11 +16,27 @@ import {
   MENSAJE_RECURSO_NO_ENCONTRADO,
 } from '../autorizacion/autorizacion.service';
 import type { Pregunta } from '../activities/dto/preguntas.schema';
+import { ArchivosService } from './archivos.service';
 import type { CrearEntregaDto } from './dto/crear-entrega.dto';
 import type { GuardarBorradorDto } from './dto/guardar-borrador.dto';
 import type { ListarEntregasQueryDto } from './dto/listar-entregas.dto';
 import type { CalificarEntregaDto } from './dto/calificar-entrega.dto';
+import type { AdjuntarArchivoDto } from './dto/adjuntar-archivo.dto';
 import { exigirCompletitud, validarRespuestas } from './dto/respuestas.schema';
+import type {
+  ArchivoRespuesta,
+  RespuestaEntrega,
+} from './dto/respuestas.schema';
+import {
+  MENSAJE_ARCHIVO_DEMASIADO_GRANDE,
+  MENSAJE_ARCHIVOS_ADJUNTADOS,
+  MENSAJE_MIME_INVALIDO,
+  MENSAJE_PREGUNTA_NO_ES_FILE,
+  MENSAJE_SIN_ARCHIVOS,
+  detectarMimeReal,
+  type ArchivoSubido,
+  type MimePermitido,
+} from './validar-archivo';
 import {
   evaluarRespuestas,
   type RespuestaCalificada,
@@ -33,7 +51,6 @@ import type {
   EntregaRespuestaDto,
   ListadoEntregasDto,
 } from './dto/entrega-respuesta.dto';
-import type { RespuestaEntrega } from './dto/respuestas.schema';
 
 /**
  * Mensajes de resultado (exportados para que las pruebas compartan
@@ -177,6 +194,17 @@ interface ContextoEntrega {
   cierraEn: Date | null;
 }
 
+/**
+ * Archivo listo para DESCARGAR: el contenido leído del almacén, su MIME
+ * real y el nombre INTERNO (uuid.ext) para el Content-Disposition — el
+ * nombre original del estudiante jamás se guardó (AGENTS.md §9.6).
+ */
+export interface ArchivoDescargable {
+  contenido: Buffer;
+  mime: MimePermitido;
+  nombre: string;
+}
+
 const CAMPOS_ACTIVIDAD_ENTREGA = {
   class_id: true,
   closes_at: true,
@@ -261,8 +289,9 @@ const CAMPOS_ENTREGA_DETALLE = {
  *   de lo correcto (AGENTS.md §9.5). GET reexpone el borrador tal cual
  *   para retomarlo; tras el envío devuelve el resultado.
  * - Al ENVIAR, zod valida la estructura y exigirCompletitud garantiza
- *   que no falte ninguna respuesta (excepto preguntas file, que hoy
- *   no se pueden responder). Después corre la auto-calificación:
+ *   que no falte ninguna respuesta (excepto preguntas file: sus
+ *   archivos adjuntos los revisa y califica el profesor). Después
+ *   corre la auto-calificación:
  *   veredicto por respuesta en el propio JSONB answers y, con el
  *   umbral del 80% de correctas, la transacción pasa la entrega a
  *   'graded' — fn_award_coins (BEFORE UPDATE OF status) acredita las
@@ -279,6 +308,7 @@ export class SubmissionsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly autorizacion: AutorizacionService,
+    private readonly archivos: ArchivosService,
   ) {}
 
   /**
@@ -299,90 +329,127 @@ export class SubmissionsService {
     // Estructura contra las preguntas reales, SIN veredicto: el
     // borrador jamás se evalúa (is_correct/score no existen aún).
     const respuestas = validarRespuestas(dto.respuestas, contexto.preguntas);
+    // Los archivos referenciados deben ser del propio estudiante y
+    // existir en el almacén (la subida los guardó con esa ruta).
+    await this.verificarArchivosReferenciados(respuestas, contexto);
 
-    // Actualizar SOLO si la entrega sigue en borrador: el filtro por
-    // status hace el UPDATE atómico — un envío concurrente la deja sin
-    // efecto y el paso siguiente lo detecta (imposible pisar una
-    // entrega enviada).
-    const actualizada = await this.prisma.submissions.updateMany({
-      where: {
-        activity_id: contexto.idActividad,
-        enrollment_id: contexto.inscripcionId,
-        status: 'in_progress',
-      },
-      data: { answers: respuestas },
-    });
+    const borrador = await this.persistirBorrador(contexto, respuestas);
 
-    if (actualizada.count === 0) {
-      // No actualizó nada: o no existe la entrega, o ya no es borrador.
-      const existente = await this.prisma.submissions.findUnique({
-        where: {
-          activity_id_enrollment_id: {
-            activity_id: contexto.idActividad,
-            enrollment_id: contexto.inscripcionId,
-          },
-        },
-        select: { status: true },
-      });
-      if (existente !== null) {
-        // Existe pero ya fue enviada/calificada: nunca baja de estado.
-        throw new ConflictException(MENSAJE_ENTREGA_YA_ENVIADA);
-      }
+    return {
+      mensaje: MENSAJE_BORRADOR_GUARDADO,
+      entrega: this.aBorradorRespuesta(borrador),
+    };
+  }
 
-      // No existe: crear el borrador (started_at por default de la BD,
-      // submitted_at NULL: aún no se envía). Carrera con otra autosave
-      // (P2002 de uq_submission): el borrador ya quedó creado por la
-      // otra petición — reintentar la actualización condicional.
-      try {
-        await this.prisma.submissions.create({
-          data: {
-            activity_id: contexto.idActividad,
-            enrollment_id: contexto.inscripcionId,
-            status: 'in_progress',
-            answers: respuestas,
-          },
-          select: { id: true },
-        });
-      } catch (error) {
-        if (!(
-          error instanceof Prisma.PrismaClientKnownRequestError &&
-          error.code === 'P2002'
-        )) {
-          throw error;
-        }
-        const reintentada = await this.prisma.submissions.updateMany({
-          where: {
-            activity_id: contexto.idActividad,
-            enrollment_id: contexto.inscripcionId,
-            status: 'in_progress',
-          },
-          data: { answers: respuestas },
-        });
-        if (reintentada.count === 0) {
-          // La fila que apareció ya no es borrador: fue enviada al
-          // instante entre ambas consultas.
-          throw new ConflictException(MENSAJE_ENTREGA_YA_ENVIADA);
-        }
-      }
+  /**
+   * POST /activities/:id/submissions/archivos — SUBIDA de archivos
+   * (multipart) para una pregunta `file` de la entrega en borrador.
+   * Orden de rechazos: 404 no visible → 422 cerrada → 400 pregunta
+   * (inexistente, no es file, sin archivos) → 415 tipo no permitido →
+   * 413 tamaño → 409 ya enviada.
+   *
+   * Por cada archivo se valida el MIME REAL (magic bytes, no la
+   * extensión ni el Content-Type del cliente — AGENTS.md §9.6) y el
+   * tamaño (UPLOAD_MAX_BYTES); el contenido se guarda en disco con
+   * nombre INTERNO generado por el servidor (UUID: el nombre original
+   * del estudiante jamás se persiste) y en la BD solo queda la
+   * metadata { path, mime, bytes } dentro de answers[].files[] de la
+   * pregunta (docs/plataforma_educativa_bd.md §6).
+   *
+   * La subida REEMPLAZA los archivos de esa pregunta (idempotente): el
+   * frontend manda todos los que deben quedar adjuntos, hasta
+   * MAX_ARCHIVOS_POR_PREGUNTA. Las demás respuestas del borrador se
+   * conservan tal cual.
+   */
+  async adjuntarArchivos(
+    actividadId: string,
+    dto: AdjuntarArchivoDto,
+    archivosSubidos: ArchivoSubido[],
+    usuario: UsuarioAutenticado,
+  ): Promise<BorradorGuardadoRespuestaDto> {
+    const contexto = await this.cargarContexto(actividadId, usuario);
+    this.rechazarSiCerrada(contexto.cierraEn);
+
+    const pregunta = contexto.preguntas.find(
+      (candidata) => candidata.position === dto.question_position,
+    );
+    if (pregunta === undefined) {
+      throw new BadRequestException(
+        `La pregunta ${dto.question_position} no corresponde a ninguna pregunta de la actividad.`,
+      );
+    }
+    if (pregunta.type !== 'file') {
+      throw new BadRequestException(MENSAJE_PREGUNTA_NO_ES_FILE);
+    }
+    if (archivosSubidos.length === 0) {
+      throw new BadRequestException(MENSAJE_SIN_ARCHIVOS);
     }
 
-    const borrador = await this.prisma.submissions.findUniqueOrThrow({
+    // Borrador actual (si existe) ANTES de tocar el disco: si la entrega
+    // ya fue enviada no se adjunta nada (misma regla del autosave) y no
+    // queda ningún archivo huérfano en el almacén.
+    const existente = await this.prisma.submissions.findUnique({
       where: {
         activity_id_enrollment_id: {
           activity_id: contexto.idActividad,
           enrollment_id: contexto.inscripcionId,
         },
       },
-      select: CAMPOS_ENTREGA,
+      select: { status: true, answers: true },
     });
-    if (borrador.status !== 'in_progress') {
-      // Un envío concurrente cerró el borrador entre el guardado y la
-      // lectura: no devolver un borrador que ya no lo es.
+    if (existente !== null && existente.status !== 'in_progress') {
       throw new ConflictException(MENSAJE_ENTREGA_YA_ENVIADA);
     }
 
+    // Validar TODO antes de escribir el primero: un archivo con tipo o
+    // tamaño inválidos no deja nada a medias en el almacén (el MIME se
+    // decide por CONTENIDO — magic bytes — nunca por la extensión).
+    const limite = this.archivos.limiteBytes();
+    const validados: { contenido: Buffer; mime: MimePermitido }[] = [];
+    for (const subido of archivosSubidos) {
+      const mime = detectarMimeReal(subido.buffer);
+      if (mime === null) {
+        throw new UnsupportedMediaTypeException(MENSAJE_MIME_INVALIDO);
+      }
+      if (subido.buffer.length > limite) {
+        throw new PayloadTooLargeException(MENSAJE_ARCHIVO_DEMASIADO_GRANDE);
+      }
+      validados.push({ contenido: subido.buffer, mime });
+    }
+
+    const guardados: ArchivoRespuesta[] = [];
+    for (const validado of validados) {
+      guardados.push(
+        await this.archivos.guardar(
+          contexto.idActividad,
+          contexto.inscripcionId,
+          validado.contenido,
+          validado.mime,
+        ),
+      );
+    }
+
+    // Conservar las demás respuestas del borrador y REEMPLAZAR solo los
+    // archivos de esta pregunta (subida idempotente por pregunta).
+    const actuales =
+      existente === null
+        ? []
+        : validarRespuestas(existente.answers, contexto.preguntas);
+    const conservadas = actuales.filter(
+      (respuesta) => respuesta.question_position !== dto.question_position,
+    );
+    const respuestas: RespuestaEntrega[] = [
+      ...conservadas,
+      { question_position: dto.question_position, files: guardados },
+    ];
+    respuestas.sort(
+      (una, otra) => una.question_position - otra.question_position,
+    );
+
+    const borrador = await this.persistirBorrador(contexto, respuestas);
+
     return {
-      mensaje: MENSAJE_BORRADOR_GUARDADO,
+      mensaje: MENSAJE_ARCHIVOS_ADJUNTADOS,
       entrega: this.aBorradorRespuesta(borrador),
     };
   }
@@ -450,8 +517,10 @@ export class SubmissionsService {
     this.rechazarSiCerrada(contexto.cierraEn);
 
     // Estructura (zod) + COMPLETITUD: al enviar no puede faltar ninguna
-    // respuesta de la actividad (excepto preguntas file).
+    // respuesta de la actividad (excepto preguntas file). Los archivos
+    // referenciados se verifican como en el autosave: propios y reales.
     const respuestas = validarRespuestas(dto.respuestas, contexto.preguntas);
+    await this.verificarArchivosReferenciados(respuestas, contexto);
     exigirCompletitud(respuestas, contexto.preguntas);
 
     // Auto-calificación (AGENTS.md §11.2): veredicto por respuesta en
@@ -626,6 +695,67 @@ export class SubmissionsService {
   }
 
   /**
+   * GET /activities/:id/submissions/:entregaId/archivos/:posicion/:indice
+   * — DESCARGA autorizada de un archivo adjunto (AGENTS.md §9.6: solo
+   * el estudiante dueño de la entrega y el profesor de la clase).
+   *
+   * La ruta del archivo NUNCA viaja en la URL: se deriva de la propia
+   * fila de submissions (answers de esa entrega, esa pregunta y ese
+   * índice), así no hay ruta que adivinar ni suplantar. La pertenencia
+   * la garantiza la regla 'entrega' (guard + segunda capa aquí) y el
+   * where exige además que la entrega pertenezca a ESA actividad.
+   *
+   * posición = question_position de la pregunta file (desde 1) e
+   * índice = posición del archivo dentro de files (desde 0); cualquier
+   * combinación sin archivo (actividad, entrega, pregunta o índice
+   * equivocados) responde el 404 estándar anti-enumeración.
+   */
+  async descargarArchivo(
+    actividadId: string,
+    entregaId: string,
+    posicion: string,
+    indice: string,
+    usuario: UsuarioAutenticado,
+  ): Promise<ArchivoDescargable> {
+    // Segunda capa de pertenencia (AGENTS.md §8): SOLO el dueño de la
+    // entrega (student) o el profesor de su clase (teacher).
+    await this.autorizacion.verificarPertenencia('entrega', entregaId, usuario);
+
+    const idActividad = this.aBigInt(actividadId);
+    const idEntrega = this.aBigInt(entregaId);
+
+    const entrega = await this.prisma.submissions.findFirst({
+      where: { id: idEntrega, activity_id: idActividad },
+      select: { answers: true },
+    });
+    if (entrega === null) {
+      throw new NotFoundException(MENSAJE_RECURSO_NO_ENCONTRADO);
+    }
+
+    const numeroPosicion = this.aNumero(posicion, 1);
+    const numeroIndice = this.aNumero(indice, 0);
+
+    const respuestas = entrega.answers as RespuestaEntrega[];
+    const respuesta = respuestas.find(
+      (candidata) => candidata.question_position === numeroPosicion,
+    );
+    const archivo = respuesta?.files?.[numeroIndice];
+    if (archivo === undefined) {
+      throw new NotFoundException(MENSAJE_RECURSO_NO_ENCONTRADO);
+    }
+
+    const contenido = await this.archivos.leer(idActividad, archivo.path);
+    if (contenido === null) {
+      // El registro existía pero el archivo ya no está en el almacén.
+      throw new NotFoundException(MENSAJE_RECURSO_NO_ENCONTRADO);
+    }
+
+    // Nombre para el Content-Disposition: el INTERNO (uuid.ext).
+    const nombre = archivo.path.split('/').pop() ?? archivo.path;
+    return { contenido, mime: archivo.mime, nombre };
+  }
+
+  /**
    * POST /activities/:id/submissions/:entregaId/calificar — transición
    * definitiva del profesor: 'submitted' → graded (con puntaje) o
    * rejected (sin puntaje; el estudiante reenviará cuando exista ese
@@ -792,6 +922,125 @@ export class SubmissionsService {
   }
 
   /**
+   * Persiste el borrador con las respuestas dadas: el MISMO patrón
+   * atómico del autosave, compartido por guardarBorrador (PUT) y
+   * adjuntarArchivos (POST .../archivos).
+   *
+   * El UPDATE condicional (status='in_progress') es atómico: un envío
+   * concurrente deja la actualización sin efecto y el flujo lo
+   * detecta (imposible pisar una entrega ya enviada); el create con
+   * re-intento en P2002 absorbe la carrera entre dos guardados
+   * simultáneos de un borrador que aún no existe (uq_submission).
+   */
+  private async persistirBorrador(
+    contexto: ContextoEntrega,
+    respuestas: RespuestaEntrega[],
+  ): Promise<EntregaEnBD> {
+    const actualizada = await this.prisma.submissions.updateMany({
+      where: {
+        activity_id: contexto.idActividad,
+        enrollment_id: contexto.inscripcionId,
+        status: 'in_progress',
+      },
+      data: { answers: respuestas },
+    });
+
+    if (actualizada.count === 0) {
+      // No actualizó nada: o no existe la entrega, o ya no es borrador.
+      const existente = await this.prisma.submissions.findUnique({
+        where: {
+          activity_id_enrollment_id: {
+            activity_id: contexto.idActividad,
+            enrollment_id: contexto.inscripcionId,
+          },
+        },
+        select: { status: true },
+      });
+      if (existente !== null) {
+        // Existe pero ya fue enviada/calificada: nunca baja de estado.
+        throw new ConflictException(MENSAJE_ENTREGA_YA_ENVIADA);
+      }
+
+      // No existe: crear el borrador (started_at por default de la BD,
+      // submitted_at NULL: aún no se envía). Carrera con otro guardado
+      // (P2002 de uq_submission): el borrador ya quedó creado por la
+      // otra petición — reintentar la actualización condicional.
+      try {
+        await this.prisma.submissions.create({
+          data: {
+            activity_id: contexto.idActividad,
+            enrollment_id: contexto.inscripcionId,
+            status: 'in_progress',
+            answers: respuestas,
+          },
+          select: { id: true },
+        });
+      } catch (error) {
+        if (!(
+          error instanceof Prisma.PrismaClientKnownRequestError &&
+          error.code === 'P2002'
+        )) {
+          throw error;
+        }
+        const reintentada = await this.prisma.submissions.updateMany({
+          where: {
+            activity_id: contexto.idActividad,
+            enrollment_id: contexto.inscripcionId,
+            status: 'in_progress',
+          },
+          data: { answers: respuestas },
+        });
+        if (reintentada.count === 0) {
+          // La fila que apareció ya no es borrador: fue enviada al
+          // instante entre ambas consultas.
+          throw new ConflictException(MENSAJE_ENTREGA_YA_ENVIADA);
+        }
+      }
+    }
+
+    const borrador = await this.prisma.submissions.findUniqueOrThrow({
+      where: {
+        activity_id_enrollment_id: {
+          activity_id: contexto.idActividad,
+          enrollment_id: contexto.inscripcionId,
+        },
+      },
+      select: CAMPOS_ENTREGA,
+    });
+    if (borrador.status !== 'in_progress') {
+      // Un envío concurrente cerró el borrador entre el guardado y la
+      // lectura: no devolver un borrador que ya no lo es.
+      throw new ConflictException(MENSAJE_ENTREGA_YA_ENVIADA);
+    }
+    return borrador;
+  }
+
+  /**
+   * Verifica cada archivo referenciado en las respuestas de PUT/POST:
+   * la ruta debe ser la de un archivo subido por ESTE estudiante para
+   * ESTA actividad (prefijo actividad/inscripción, anti-IDOR) y debe
+   * seguir en disco con el MIME y tamaño declarados (validación
+   * doble, AGENTS.md §6). zod ya validó el formato de la metadata.
+   */
+  private async verificarArchivosReferenciados(
+    respuestas: RespuestaEntrega[],
+    contexto: ContextoEntrega,
+  ): Promise<void> {
+    for (const respuesta of respuestas) {
+      if (respuesta.files === undefined) {
+        continue;
+      }
+      for (const archivo of respuesta.files) {
+        await this.archivos.verificar(
+          contexto.idActividad,
+          contexto.inscripcionId,
+          archivo,
+        );
+      }
+    }
+  }
+
+  /**
    * Guardar o enviar exige que la actividad siga vigente
    * (fn_validate_submission aplica lo mismo en el INSERT); VER la
    * propia entrega (GET) no — mirar el resultado no es entregar.
@@ -832,6 +1081,20 @@ export class SubmissionsService {
     } catch {
       throw new NotFoundException(MENSAJE_RECURSO_NO_ENCONTRADO);
     }
+  }
+
+  /**
+   * Convierte un parámetro de ruta numérico pequeño (posición de
+   * pregunta o índice de archivo) a entero, con el 404 estándar si no
+   * lo es: la descarga no revela qué combinaciones existen
+   * (anti-enumeración, mismo criterio que aBigInt).
+   */
+  private aNumero(valor: string, minimo: number): number {
+    const numero = Number(valor);
+    if (!Number.isInteger(numero) || numero < minimo) {
+      throw new NotFoundException(MENSAJE_RECURSO_NO_ENCONTRADO);
+    }
+    return numero;
   }
 
   /**

@@ -23,7 +23,9 @@ export class CrearEntregaDto {
   /**
    * Respuestas finales de la entrega (submissions.answers, JSONB):
    * una por cada pregunta de la actividad, referenciadas por su
-   * question_position. is_correct/score/files no se aceptan nunca.
+   * question_position. is_correct/score no se aceptan nunca; en
+   * preguntas file, `files` referencia archivos YA SUBIDOS con el
+   * endpoint de subida (solo la metadata que devolvió el servidor).
    */
   @IsArray()
   respuestas!: unknown[];

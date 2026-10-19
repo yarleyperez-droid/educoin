@@ -1,6 +1,11 @@
 import { BadRequestException } from '@nestjs/common';
 import { z } from 'zod';
 import type { Pregunta } from '../../activities/dto/preguntas.schema';
+import {
+  MAX_ARCHIVOS_POR_PREGUNTA,
+  MIMES_PERMITIDOS,
+  RUTA_ARCHIVO_REGEX,
+} from '../validar-archivo';
 
 /**
  * Validación de `submissions.answers` (JSONB) con zod (AGENTS.md §2: zod
@@ -10,16 +15,22 @@ import type { Pregunta } from '../../activities/dto/preguntas.schema';
  *
  *   [
  *     { "question_position": 1, "option": "3" },   // pregunta test
- *     { "question_position": 2, "text": "4" }      // completion
+ *     { "question_position": 2, "text": "4" },     // completion
+ *     { "question_position": 3,                    // pregunta file
+ *       "files": [{ "path": "7/1/uuid.pdf", "mime": "application/pdf",
+ *                   "bytes": 12345 }] }
  *   ]
  *
- * Lo que el estudiante envía es EXACTAMENTE lo que se guarda: los campos
- * de calificación (`is_correct`, `score`) y los archivos (`files`) NO se
- * aceptan — los objetos de zod descartan las claves desconocidas, así que
- * jamás se persisten (los añade el backend al calificar, AGENTS.md
- * §11.2). La subida de archivos está pendiente de decisión de
- * almacenamiento (AGENTS.md §2): una respuesta a una pregunta `file` se
- * rechaza con 400 en lugar de guardarse a medias.
+ * Lo que el estudiante envía es EXACTAMENTE lo que se guarda, salvo los
+ * campos de calificación (`is_correct`, `score`): los objetos de zod
+ * descartan las claves desconocidas, así que jamás se persisten (los
+ * añade el backend al calificar, AGENTS.md §11.2).
+ *
+ * Los archivos de una pregunta `file` SOLO se referencian por la ruta
+ * que devolvió la subida (POST .../archivos): el Service re-valida cada
+ * referencia contra el disco y el prefijo de la propia inscripción
+ * (anti-IDOR) antes de guardar. `path` es la ruta interna generada por
+ * el servidor, no el nombre original del archivo.
  *
  * La BD solo exige que answers sea un arreglo JSON (CHECK jsonb_typeof);
  * la coherencia con las preguntas reales de la actividad (posiciones
@@ -49,15 +60,58 @@ const campoTexto = z
   .string({ error: 'La respuesta (text) debe ser un texto.' })
   .min(1, { error: 'La respuesta (text) no puede estar vacía.' });
 
+/** Ruta interna del archivo (la que devolvió la subida), no el nombre original. */
+const campoRutaArchivo = z
+  .string({ error: 'La ruta (path) del archivo debe ser un texto.' })
+  .regex(RUTA_ARCHIVO_REGEX, {
+    error:
+      'La ruta (path) del archivo no es válida: debe ser exactamente la que devolvió el servidor al subirlo.',
+  });
+
+/** Tipo del archivo subido: solo los tres permitidos (AGENTS.md §9.6). */
+const campoMimeArchivo = z.enum(MIMES_PERMITIDOS, {
+  error:
+    'El tipo (mime) del archivo debe ser application/pdf, image/jpeg o image/png.',
+});
+
+/** Tamaño en bytes, tal como lo reportó el servidor al subirlo. */
+const campoBytesArchivo = z
+  .number({ error: 'El tamaño (bytes) del archivo debe ser un número.' })
+  .int({ error: 'El tamaño (bytes) del archivo debe ser un número entero.' })
+  .positive({ error: 'El tamaño (bytes) del archivo debe ser mayor que 0.' });
+
+/**
+ * Metadata de UN archivo adjunto, tal como vive en el JSONB answers
+ * (docs/plataforma_educativa_bd.md §6): la referencia al archivo subido.
+ */
+const archivoSchema = z.object({
+  path: campoRutaArchivo,
+  mime: campoMimeArchivo,
+  bytes: campoBytesArchivo,
+});
+
+/** Archivo referenciado en una respuesta, ya validado por zod. */
+export type ArchivoRespuesta = z.infer<typeof archivoSchema>;
+
 /**
  * Respuesta individual tal como la envía el estudiante: la posición de la
  * pregunta que responde y, según el TIPO de esa pregunta, la opción
- * elegida (test) o el texto de la respuesta (completion/minigame).
+ * elegida (test), el texto de la respuesta (completion/minigame) o los
+ * archivos subidos (file — referencias a archivos ya guardados por el
+ * endpoint de subida, nunca el contenido).
  */
 const respuestaSchema = z.object({
   question_position: campoPosicion,
   option: campoOpcion.optional(),
   text: campoTexto.optional(),
+  files: z
+    .array(archivoSchema, {
+      error: 'files debe ser un arreglo de archivos subidos.',
+    })
+    .max(MAX_ARCHIVOS_POR_PREGUNTA, {
+      error: `Se permiten como máximo ${MAX_ARCHIVOS_POR_PREGUNTA} archivos por pregunta.`,
+    })
+    .optional(),
 });
 
 /** Respuesta ya validada, tal como se guarda en el JSONB answers. */
@@ -82,7 +136,11 @@ const respuestasSchema = z.array(respuestaSchema, {
  * - completion → exige text (respuesta abierta).
  * - minigame   → exige text (describe el resultado alcanzado; los
  *   minijuegos aún no existen, docs/post_mvp.md).
- * - file       → 400: la subida de archivos está pendiente (AGENTS.md §2).
+ * - file       → exige files: referencias a archivos ya subidos con el
+ *   endpoint de subida (POST .../archivos); puede venir vacío para
+ *   desadjuntar lo subido. option/text no se admiten.
+ * - Los archivos solo se aceptan en preguntas file: una respuesta de
+ *   otro tipo con files responde 400.
  *
  * Devuelve las respuestas saneadas (sin claves desconocidas) o lanza un
  * 400 con el primer problema encontrado y su ubicación, para que el
@@ -140,6 +198,11 @@ export function validarRespuestas(
             `La pregunta ${pregunta.position} (test) no admite text: responde solo con option.`,
           );
         }
+        if (respuesta.files !== undefined) {
+          throw new BadRequestException(
+            `La pregunta ${pregunta.position} (test) no admite files: los archivos solo se adjuntan a preguntas de tipo file.`,
+          );
+        }
         if (
           !pregunta.options.some((opcion) => opcion.text === respuesta.option)
         ) {
@@ -160,11 +223,29 @@ export function validarRespuestas(
             `La pregunta ${pregunta.position} (${pregunta.type}) no admite option: responde solo con text.`,
           );
         }
+        if (respuesta.files !== undefined) {
+          throw new BadRequestException(
+            `La pregunta ${pregunta.position} (${pregunta.type}) no admite files: los archivos solo se adjuntan a preguntas de tipo file.`,
+          );
+        }
         break;
       case 'file':
-        throw new BadRequestException(
-          `La pregunta ${pregunta.position} es de tipo file y aún no admite respuestas (la subida de archivos está pendiente).`,
-        );
+        if (respuesta.option !== undefined) {
+          throw new BadRequestException(
+            `La pregunta ${pregunta.position} (file) no admite option: se responde con files.`,
+          );
+        }
+        if (respuesta.text !== undefined) {
+          throw new BadRequestException(
+            `La pregunta ${pregunta.position} (file) no admite text: se responde con files.`,
+          );
+        }
+        if (respuesta.files === undefined) {
+          throw new BadRequestException(
+            `La pregunta ${pregunta.position} (file) se responde con files: las rutas que devolvió el servidor al subir cada archivo (puede ser un arreglo vacío para desadjuntarlos).`,
+          );
+        }
+        break;
     }
   }
 
@@ -174,9 +255,10 @@ export function validarRespuestas(
 /**
  * Completitud al ENVIAR (regla del equipo): la entrega no puede
  * faltarle ninguna respuesta — toda pregunta de la actividad debe
- * estar respondida, EXCEPTO las de tipo `file` (hoy no se pueden
- * responder: la subida de archivos está pendiente, AGENTS.md §2; esa
- * parte la califica el profesor).
+ * estar respondida, EXCEPTO las de tipo `file` (regla del equipo
+ * mantenida: aunque ya se pueden responder con archivos subidos, la
+ * decisión de exigirlas es del profesor al calificar; una actividad
+ * solo-file sigue siendo enviable sin respuestas).
  *
  * Debe correr DESPUÉS de validarRespuestas (posiciones válidas, sin
  * repetir). Lanza un 400 con las posiciones que faltan para que el

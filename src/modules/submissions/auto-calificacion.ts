@@ -23,7 +23,7 @@ export const UMBRAL_CORRECTAS_PORCENTAJE = 80;
  * Respuesta calificada: lo que el estudiante envió (RespuestaEntrega)
  * más el veredicto del backend — la estructura documentada del JSONB
  * answers (docs/plataforma_educativa_bd.md §6). `is_correct`/`score` en
- * null = pregunta pendiente de calificación manual (minigame).
+ * null = pregunta pendiente de calificación manual (minigame/file).
  *
  * Type alias (y no interface): los alias de objeto reciben la firma de
  * índice implícita que exige el InputJsonValue de Prisma al escribir el
@@ -69,6 +69,9 @@ function normalizar(valor: string): string {
  * - completion: compara text contra expected_answer normalizado.
  * - minigame: sin evaluación automática (docs/post_mvp.md) → null/null;
  *   su calificación la hace el profesor.
+ * - file: sin evaluación automática → null/null; el contenido del
+ *   archivo lo revisa y califica el profesor (la subida valida MIME y
+ *   tamaño, no la corrección).
  *
  * La entrega es `autoCalificable` solo si TODAS las preguntas de la
  * actividad fueron respondidas y todas son test/completion; alcanza el
@@ -119,11 +122,14 @@ export function evaluarRespuestas(
           score: null,
         };
       case 'file':
-        // Invariante: validarRespuestas ya rechazó responder preguntas
-        // de tipo file (la subida de archivos está pendiente, AGENTS.md §2).
-        throw new Error(
-          `Pregunta ${pregunta.position} de tipo file no debería llegar a la evaluación: validarRespuestas la rechaza.`,
-        );
+        // Calificación MANUAL del profesor: la subida (POST .../archivos)
+        // validó MIME y tamaño del contenido, pero la corrección de un
+        // archivo no es automática — igual que minigame, queda null/null.
+        return {
+          ...respuesta,
+          is_correct: null,
+          score: null,
+        };
     }
   });
 

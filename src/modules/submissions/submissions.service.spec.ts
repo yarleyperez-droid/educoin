@@ -2,7 +2,9 @@ import {
   BadRequestException,
   ConflictException,
   NotFoundException,
+  PayloadTooLargeException,
   UnprocessableEntityException,
+  UnsupportedMediaTypeException,
 } from '@nestjs/common';
 import { Prisma } from '../../generated/prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
@@ -31,6 +33,17 @@ import type { Pregunta } from '../activities/dto/preguntas.schema';
 import type { CrearEntregaDto } from './dto/crear-entrega.dto';
 import type { GuardarBorradorDto } from './dto/guardar-borrador.dto';
 import type { CalificarEntregaDto } from './dto/calificar-entrega.dto';
+import type { AdjuntarArchivoDto } from './dto/adjuntar-archivo.dto';
+import type { ArchivoRespuesta } from './dto/respuestas.schema';
+import type { ArchivosService } from './archivos.service';
+import {
+  MENSAJE_ARCHIVO_DEMASIADO_GRANDE,
+  MENSAJE_ARCHIVOS_ADJUNTADOS,
+  MENSAJE_ARCHIVO_AJENO,
+  MENSAJE_MIME_INVALIDO,
+  MENSAJE_PREGUNTA_NO_ES_FILE,
+  MENSAJE_SIN_ARCHIVOS,
+} from './validar-archivo';
 
 type ConsultaCreate = { data: object; select: object };
 type ConsultaUpdate = { where: object; data: object; select: object };
@@ -73,6 +86,17 @@ interface AutorizacionMock {
     Promise<void>,
     [string, string, UsuarioAutenticado]
   >;
+}
+
+/** Mock del almacén de archivos: disco y configuración (ArchivosService). */
+interface ArchivosMock {
+  limiteBytes: jest.Mock<number, []>;
+  guardar: jest.Mock<
+    Promise<ArchivoRespuesta>,
+    [bigint, bigint, Buffer, ArchivoRespuesta['mime']]
+  >;
+  verificar: jest.Mock<Promise<void>, [bigint, bigint, ArchivoRespuesta]>;
+  leer: jest.Mock<Promise<Buffer | null>, [bigint, string]>;
 }
 
 const ESTUDIANTE: UsuarioAutenticado = {
@@ -302,6 +326,7 @@ describe('SubmissionsService', () => {
   let submissionsService: SubmissionsService;
   let prisma: PrismaMock;
   let autorizacion: AutorizacionMock;
+  let archivos: ArchivosMock;
 
   beforeEach(() => {
     prisma = {
@@ -353,9 +378,37 @@ describe('SubmissionsService', () => {
         [string, string, UsuarioAutenticado]
       >(),
     };
+    archivos = {
+      limiteBytes: jest.fn<number, []>().mockReturnValue(10_485_760),
+      guardar: jest
+        .fn<
+          Promise<ArchivoRespuesta>,
+          [bigint, bigint, Buffer, ArchivoRespuesta['mime']]
+        >()
+        .mockImplementation(
+          async (_actividadId, _inscripcionId, contenido, mime) => ({
+            path: `7/1/11111111-1111-4111-8111-111111111111.${
+              mime === 'application/pdf'
+                ? 'pdf'
+                : mime === 'image/jpeg'
+                  ? 'jpg'
+                  : 'png'
+            }`,
+            mime,
+            bytes: contenido.length,
+          }),
+        ),
+      verificar: jest
+        .fn<Promise<void>, [bigint, bigint, ArchivoRespuesta]>()
+        .mockResolvedValue(undefined),
+      leer: jest
+        .fn<Promise<Buffer | null>, [bigint, string]>()
+        .mockResolvedValue(null),
+    };
     submissionsService = new SubmissionsService(
       prisma as unknown as PrismaService,
       autorizacion as unknown as AutorizacionService,
+      archivos as unknown as ArchivosService,
     );
   });
 
@@ -639,7 +692,7 @@ describe('SubmissionsService', () => {
       expect(resultado.mensaje).toBe(MENSAJE_ENTREGA_CALIFICADA);
     });
 
-    it('descarta is_correct/score/files del cliente: el veredicto lo calcula el backend', async () => {
+    it('descarta is_correct/score del cliente: el veredicto lo calcula el backend', async () => {
       await submissionsService.entregar(
         '7',
         {
@@ -649,7 +702,6 @@ describe('SubmissionsService', () => {
               option: '3',
               is_correct: false,
               score: 999,
-              files: [{ path: 'a.pdf', mime: 'application/pdf', bytes: 1 }],
             },
             { question_position: 2, text: '4' },
           ],
@@ -876,6 +928,381 @@ describe('SubmissionsService', () => {
       await expect(
         submissionsService.entregar('7', DTO, ESTUDIANTE),
       ).rejects.toThrow(Prisma.PrismaClientKnownRequestError);
+    });
+  });
+
+  describe('archivos referenciados en PUT/POST (verificación anti-IDOR)', () => {
+    const ARCHIVO: ArchivoRespuesta = {
+      path: '7/1/11111111-1111-4111-8111-111111111111.pdf',
+      mime: 'application/pdf',
+      bytes: 100,
+    };
+
+    /** zod exige que files vaya en una pregunta file: actividad con una. */
+    const ACTIVIDAD_FILE = { ...ACTIVIDAD, questions: [PREGUNTA_FILE] };
+
+    it('PUT verifica cada archivo referenciado con el contexto propio (actividad 7, inscripción 1)', async () => {
+      prisma.activities.findFirst.mockResolvedValue(ACTIVIDAD_FILE);
+
+      await submissionsService.guardarBorrador(
+        '7',
+        { respuestas: [{ question_position: 1, files: [ARCHIVO] }] },
+        ESTUDIANTE,
+      );
+
+      expect(archivos.verificar).toHaveBeenCalledWith(
+        BigInt(7),
+        BigInt(1),
+        ARCHIVO,
+      );
+    });
+
+    it('PUT con un archivo ajeno: propaga el 400 del almacén (anti-IDOR)', async () => {
+      prisma.activities.findFirst.mockResolvedValue(ACTIVIDAD_FILE);
+      archivos.verificar.mockRejectedValue(
+        new BadRequestException(MENSAJE_ARCHIVO_AJENO),
+      );
+
+      await expect(
+        submissionsService.guardarBorrador(
+          '7',
+          { respuestas: [{ question_position: 1, files: [ARCHIVO] }] },
+          ESTUDIANTE,
+        ),
+      ).rejects.toThrow(MENSAJE_ARCHIVO_AJENO);
+      expect(prisma.submissions.updateMany).not.toHaveBeenCalled();
+    });
+
+    it('POST (envío) también verifica los archivos referenciados', async () => {
+      prisma.activities.findFirst.mockResolvedValue(ACTIVIDAD_FILE);
+
+      await submissionsService.entregar(
+        '7',
+        { respuestas: [{ question_position: 1, files: [ARCHIVO] }] },
+        ESTUDIANTE,
+      );
+
+      expect(archivos.verificar).toHaveBeenCalledWith(
+        BigInt(7),
+        BigInt(1),
+        ARCHIVO,
+      );
+    });
+  });
+
+  describe('adjuntarArchivos (POST archivos)', () => {
+    /** Actividad con una pregunta file en la posición 1 (como PREGUNTA_FILE). */
+    const ACTIVIDAD_FILE = { ...ACTIVIDAD, questions: [PREGUNTA_FILE] };
+
+    const DTO_ARCHIVO: AdjuntarArchivoDto = { question_position: 1 };
+
+    const PDF = Buffer.from('%PDF-1.4\n%E2E\n%%EOF');
+
+    /** Metadata que devuelve el mock del almacén para el PDF de arriba. */
+    const ARCHIVO_PDF: ArchivoRespuesta = {
+      path: '7/1/11111111-1111-4111-8111-111111111111.pdf',
+      mime: 'application/pdf',
+      bytes: PDF.length,
+    };
+
+    /** Borrador tal como queda con el archivo adjunto en la pregunta 1. */
+    const BORRADOR_ARCHIVOS = {
+      ...BORRADOR,
+      answers: [{ question_position: 1, files: [ARCHIVO_PDF] }],
+    };
+
+    it('sube un PDF: guarda en el almacén y crea el borrador con la metadata en answers', async () => {
+      prisma.activities.findFirst.mockResolvedValue(ACTIVIDAD_FILE);
+      prisma.submissions.findUnique.mockResolvedValue(null);
+      prisma.submissions.findUniqueOrThrow.mockResolvedValue(BORRADOR_ARCHIVOS);
+
+      const resultado = await submissionsService.adjuntarArchivos(
+        '7',
+        DTO_ARCHIVO,
+        [{ buffer: PDF }],
+        ESTUDIANTE,
+      );
+
+      expect(archivos.guardar).toHaveBeenCalledWith(
+        BigInt(7),
+        BigInt(1),
+        PDF,
+        'application/pdf',
+      );
+      const data = prisma.submissions.create.mock.calls[0][0].data as Record<
+        string,
+        unknown
+      >;
+      expect(data).toEqual({
+        activity_id: BigInt(7),
+        enrollment_id: BigInt(1),
+        status: 'in_progress',
+        answers: [{ question_position: 1, files: [ARCHIVO_PDF] }],
+      });
+      expect(resultado).toEqual({
+        mensaje: MENSAJE_ARCHIVOS_ADJUNTADOS,
+        entrega: {
+          id: '11',
+          actividadId: '7',
+          estado: 'in_progress',
+          entregadoEn: null,
+          puntaje: null,
+          monedasOtorgadas: 0,
+          respuestas: [{ question_position: 1, files: [ARCHIVO_PDF] }],
+        },
+      });
+    });
+
+    it('conserva las demás respuestas y REEMPLAZA los archivos de esa pregunta', async () => {
+      const preguntas: Pregunta[] = [
+        PREGUNTA_FILE,
+        { ...PREGUNTAS_SEED[0], position: 2 },
+      ];
+      prisma.activities.findFirst.mockResolvedValue({
+        ...ACTIVIDAD,
+        questions: preguntas,
+      });
+      prisma.submissions.findUnique.mockResolvedValue({
+        status: 'in_progress',
+        answers: [
+          { question_position: 1, files: [{ ...ARCHIVO_PDF, bytes: 1 }] },
+          { question_position: 2, option: '3' },
+        ],
+      });
+      prisma.submissions.updateMany.mockResolvedValue({ count: 1 });
+
+      await submissionsService.adjuntarArchivos(
+        '7',
+        DTO_ARCHIVO,
+        [{ buffer: PDF }],
+        ESTUDIANTE,
+      );
+
+      const data = prisma.submissions.updateMany.mock.calls[0][0]
+        .data as Record<string, unknown>;
+      // La respuesta de la pregunta 2 se conserva; los archivos de la 1
+      // son los recién subidos (orden por posición, como el borrador).
+      expect(data.answers).toEqual([
+        { question_position: 1, files: [ARCHIVO_PDF] },
+        { question_position: 2, option: '3' },
+      ]);
+      expect(prisma.submissions.create).not.toHaveBeenCalled();
+    });
+
+    it('415 cuando el contenido no es PDF/JPG/PNG (magic bytes): sin escribir en el almacén', async () => {
+      prisma.activities.findFirst.mockResolvedValue(ACTIVIDAD_FILE);
+
+      await expect(
+        submissionsService.adjuntarArchivos(
+          '7',
+          DTO_ARCHIVO,
+          [{ buffer: Buffer.from('solo texto, no un pdf') }],
+          ESTUDIANTE,
+        ),
+      ).rejects.toThrow(
+        new UnsupportedMediaTypeException(MENSAJE_MIME_INVALIDO),
+      );
+      expect(archivos.guardar).not.toHaveBeenCalled();
+      expect(prisma.submissions.updateMany).not.toHaveBeenCalled();
+    });
+
+    it('413 cuando el archivo supera el límite configurado', async () => {
+      prisma.activities.findFirst.mockResolvedValue(ACTIVIDAD_FILE);
+      // Tope muy por debajo del PDF de fixture (19 bytes): pasa el MIME
+      // y cae en el tope de tamaño.
+      archivos.limiteBytes.mockReturnValue(10);
+
+      await expect(
+        submissionsService.adjuntarArchivos(
+          '7',
+          DTO_ARCHIVO,
+          [{ buffer: PDF }],
+          ESTUDIANTE,
+        ),
+      ).rejects.toThrow(
+        new PayloadTooLargeException(MENSAJE_ARCHIVO_DEMASIADO_GRANDE),
+      );
+      expect(archivos.guardar).not.toHaveBeenCalled();
+    });
+
+    it('409 si la entrega ya fue enviada: sin escribir en el almacén (sin huérfanos)', async () => {
+      prisma.activities.findFirst.mockResolvedValue(ACTIVIDAD_FILE);
+      prisma.submissions.findUnique.mockResolvedValue({
+        status: 'submitted',
+        answers: [],
+      });
+
+      await expect(
+        submissionsService.adjuntarArchivos(
+          '7',
+          DTO_ARCHIVO,
+          [{ buffer: PDF }],
+          ESTUDIANTE,
+        ),
+      ).rejects.toThrow(new ConflictException(MENSAJE_ENTREGA_YA_ENVIADA));
+      expect(archivos.guardar).not.toHaveBeenCalled();
+    });
+
+    it('422 si la actividad ya está cerrada', async () => {
+      prisma.activities.findFirst.mockResolvedValue({
+        ...ACTIVIDAD_FILE,
+        closes_at: new Date(Date.now() - 1_000),
+      });
+
+      await expect(
+        submissionsService.adjuntarArchivos(
+          '7',
+          DTO_ARCHIVO,
+          [{ buffer: PDF }],
+          ESTUDIANTE,
+        ),
+      ).rejects.toThrow(
+        new UnprocessableEntityException(MENSAJE_ACTIVIDAD_CERRADA),
+      );
+      expect(archivos.guardar).not.toHaveBeenCalled();
+    });
+
+    it('400 si la pregunta no es de tipo file', async () => {
+      prisma.activities.findFirst.mockResolvedValue(ACTIVIDAD);
+
+      await expect(
+        submissionsService.adjuntarArchivos(
+          '7',
+          DTO_ARCHIVO,
+          [{ buffer: PDF }],
+          ESTUDIANTE,
+        ),
+      ).rejects.toThrow(new BadRequestException(MENSAJE_PREGUNTA_NO_ES_FILE));
+      expect(archivos.guardar).not.toHaveBeenCalled();
+    });
+
+    it('400 si la posición no corresponde a ninguna pregunta', async () => {
+      prisma.activities.findFirst.mockResolvedValue(ACTIVIDAD_FILE);
+
+      await expect(
+        submissionsService.adjuntarArchivos(
+          '7',
+          { question_position: 99 },
+          [{ buffer: PDF }],
+          ESTUDIANTE,
+        ),
+      ).rejects.toThrow(/no corresponde a ninguna pregunta/);
+    });
+
+    it('400 si no se envió ningún archivo', async () => {
+      prisma.activities.findFirst.mockResolvedValue(ACTIVIDAD_FILE);
+
+      await expect(
+        submissionsService.adjuntarArchivos('7', DTO_ARCHIVO, [], ESTUDIANTE),
+      ).rejects.toThrow(new BadRequestException(MENSAJE_SIN_ARCHIVOS));
+    });
+  });
+
+  describe('descargarArchivo (GET archivos/:posicion/:indice)', () => {
+    const CONTENIDO = Buffer.from('%PDF-1.4 descarga e2e');
+
+    const ENTREGA_CON_ARCHIVO = {
+      answers: [
+        {
+          question_position: 1,
+          files: [
+            {
+              path: '7/1/11111111-1111-4111-8111-111111111111.pdf',
+              mime: 'application/pdf',
+              bytes: CONTENIDO.length,
+            },
+          ],
+        },
+      ],
+    };
+
+    it('el profesor dueño descarga el archivo: regla entrega + contenido del almacén', async () => {
+      prisma.submissions.findFirst.mockResolvedValue(ENTREGA_CON_ARCHIVO);
+      archivos.leer.mockResolvedValue(CONTENIDO);
+
+      const archivo = await submissionsService.descargarArchivo(
+        '7',
+        '21',
+        '1',
+        '0',
+        PROFESOR,
+      );
+
+      expect(autorizacion.verificarPertenencia).toHaveBeenCalledWith(
+        'entrega',
+        '21',
+        PROFESOR,
+      );
+      expect(archivos.leer).toHaveBeenCalledWith(
+        BigInt(7),
+        '7/1/11111111-1111-4111-8111-111111111111.pdf',
+      );
+      expect(archivo).toEqual({
+        contenido: CONTENIDO,
+        mime: 'application/pdf',
+        nombre: '11111111-1111-4111-8111-111111111111.pdf',
+      });
+    });
+
+    it('el estudiante dueño también pasa la regla entrega', async () => {
+      prisma.submissions.findFirst.mockResolvedValue(ENTREGA_CON_ARCHIVO);
+      archivos.leer.mockResolvedValue(CONTENIDO);
+
+      const archivo = await submissionsService.descargarArchivo(
+        '7',
+        '21',
+        '1',
+        '0',
+        ESTUDIANTE,
+      );
+
+      expect(autorizacion.verificarPertenencia).toHaveBeenCalledWith(
+        'entrega',
+        '21',
+        ESTUDIANTE,
+      );
+      expect(archivo.contenido).toEqual(CONTENIDO);
+    });
+
+    it('entrega inexistente (o de otra actividad): el 404 estándar', async () => {
+      prisma.submissions.findFirst.mockResolvedValue(null);
+
+      await expect(
+        submissionsService.descargarArchivo('7', '999', '1', '0', PROFESOR),
+      ).rejects.toThrow(new NotFoundException(MENSAJE_RECURSO_NO_ENCONTRADO));
+    });
+
+    it('posición sin archivos o índice fuera de rango: el mismo 404', async () => {
+      prisma.submissions.findFirst.mockResolvedValue(ENTREGA_CON_ARCHIVO);
+
+      await expect(
+        submissionsService.descargarArchivo('7', '21', '2', '0', PROFESOR),
+      ).rejects.toThrow(new NotFoundException(MENSAJE_RECURSO_NO_ENCONTRADO));
+      await expect(
+        submissionsService.descargarArchivo('7', '21', '1', '5', PROFESOR),
+      ).rejects.toThrow(new NotFoundException(MENSAJE_RECURSO_NO_ENCONTRADO));
+      expect(archivos.leer).not.toHaveBeenCalled();
+    });
+
+    it('archivo ya ausente del almacén: el mismo 404', async () => {
+      prisma.submissions.findFirst.mockResolvedValue(ENTREGA_CON_ARCHIVO);
+      archivos.leer.mockResolvedValue(null);
+
+      await expect(
+        submissionsService.descargarArchivo('7', '21', '1', '0', PROFESOR),
+      ).rejects.toThrow(new NotFoundException(MENSAJE_RECURSO_NO_ENCONTRADO));
+    });
+
+    it('ids de ruta no numéricos: el 404 estándar (anti-enumeración)', async () => {
+      await expect(
+        submissionsService.descargarArchivo('7', 'abc', '1', '0', PROFESOR),
+      ).rejects.toThrow(new NotFoundException(MENSAJE_RECURSO_NO_ENCONTRADO));
+      await expect(
+        submissionsService.descargarArchivo('7', '21', 'x', '0', PROFESOR),
+      ).rejects.toThrow(new NotFoundException(MENSAJE_RECURSO_NO_ENCONTRADO));
+      await expect(
+        submissionsService.descargarArchivo('7', '21', '1', '-1', PROFESOR),
+      ).rejects.toThrow(new NotFoundException(MENSAJE_RECURSO_NO_ENCONTRADO));
     });
   });
 

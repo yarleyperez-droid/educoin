@@ -20,8 +20,10 @@ import { IsArray } from 'class-validator';
 export class GuardarBorradorDto {
   /**
    * Respuestas parciales (submissions.answers, JSONB): lo que el
-   * estudiante lleva respondido hasta ahora. is_correct/score/files no
-   * se aceptan nunca.
+   * estudiante lleva respondido hasta ahora. is_correct/score no se
+   * aceptan nunca (AGENTS.md §9.5: mientras se resuelve, nada de lo
+   * correcto se filtra); en preguntas file, `files` referencia
+   * archivos ya subidos (la metadata que devolvió el servidor).
    */
   @IsArray()
   respuestas!: unknown[];
