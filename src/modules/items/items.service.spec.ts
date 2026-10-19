@@ -41,12 +41,14 @@ const create = jest.fn<Promise<unknown>, [AltaPrisma]>();
 const findUnique = jest.fn<Promise<unknown>, [unknown]>();
 const update = jest.fn<Promise<unknown>, [unknown]>();
 const findMany = jest.fn<Promise<unknown[]>, [unknown]>();
+const findManyInscripciones = jest.fn<Promise<unknown[]>, [unknown]>();
 
 const verificarPertenencia = jest.fn<Promise<void>, [unknown, unknown, unknown]>();
 
 const service = new ItemsService(
   {
     redeemable_items: { create, findUnique, findMany, update },
+    enrollments: { findMany: findManyInscripciones },
   } as never,
   { verificarPertenencia } as never,
 );
@@ -76,6 +78,7 @@ beforeEach(() => {
     Promise.resolve({ ...itemCreado, ...entrada.data }),
   );
   findMany.mockResolvedValue([]);
+  findManyInscripciones.mockResolvedValue([]);
   findUnique.mockResolvedValue(itemCreado);
   update.mockResolvedValue(itemCreado);
 });
@@ -171,5 +174,85 @@ describe('ItemsService.actualizar — revalida el merge (T4.1.2)', () => {
     );
     expect(verificarPertenencia).toHaveBeenCalledWith('item', '10', PROFESOR);
     expect(update).not.toHaveBeenCalled();
+  });
+});
+
+describe('ItemsService.listar — camino estudiante (T5.7.2)', () => {
+  const ESTUDIANTE: UsuarioAutenticado = {
+    id: '3',
+    username: 'est.perez',
+    role: 'student',
+    organizacionId: '1',
+    debeCambiarContrasena: false,
+  };
+
+  it('sin classId: lista solo ítems active de todas sus inscripciones activas', async () => {
+    findManyInscripciones.mockResolvedValue([
+      { class_id: 1n },
+      { class_id: 2n },
+    ]);
+    findMany.mockResolvedValue([itemCreado]);
+
+    const items = await service.listar({}, ESTUDIANTE);
+
+    expect(verificarPertenencia).not.toHaveBeenCalled();
+    expect(findManyInscripciones).toHaveBeenCalledWith({
+      where: { student_id: 3n, status: 'active' },
+      select: { class_id: true },
+    });
+    expect(findMany).toHaveBeenCalledWith({
+      where: { status: 'active', class_id: { in: [1n, 2n] } },
+      orderBy: { id: 'asc' },
+    });
+    expect(items).toHaveLength(1);
+    expect(items[0].id).toBe('10');
+    expect(items[0].status).toBe('active');
+  });
+
+  it('sin inscripciones activas: devuelve [] sin consultar el catálogo', async () => {
+    findManyInscripciones.mockResolvedValue([]);
+
+    await expect(service.listar({}, ESTUDIANTE)).resolves.toEqual([]);
+    expect(findMany).not.toHaveBeenCalled();
+    expect(verificarPertenencia).not.toHaveBeenCalled();
+  });
+
+  it('classId de una clase no inscrita → 403 uniforme', async () => {
+    findManyInscripciones.mockResolvedValue([{ class_id: 1n }]);
+
+    await expect(service.listar({ classId: 99 }, ESTUDIANTE)).rejects.toThrow(
+      ForbiddenException,
+    );
+    await expect(service.listar({ classId: 99 }, ESTUDIANTE)).rejects.toThrow(
+      MENSAJE_ITEMS_AJENOS,
+    );
+    expect(findMany).not.toHaveBeenCalled();
+  });
+
+  it('classId inscrito: acota el catálogo a esa clase y a los ítems active', async () => {
+    findManyInscripciones.mockResolvedValue([{ class_id: 1n }]);
+    findMany.mockResolvedValue([]);
+
+    await expect(service.listar({ classId: 1 }, ESTUDIANTE)).resolves.toEqual(
+      [],
+    );
+    expect(findMany).toHaveBeenCalledWith({
+      where: { status: 'active', class_id: 1n },
+      orderBy: { id: 'asc' },
+    });
+    expect(verificarPertenencia).not.toHaveBeenCalled();
+  });
+
+  it('profesor: conserva el comportamiento actual (pertenencia 403 y status != deleted)', async () => {
+    findMany.mockResolvedValue([itemCreado]);
+
+    await service.listar({ classId: 1 }, PROFESOR);
+
+    expect(verificarPertenencia).toHaveBeenCalledWith('clase', '1', PROFESOR);
+    expect(findMany).toHaveBeenCalledWith({
+      where: { class_id: 1n, status: { not: 'deleted' } },
+      orderBy: { id: 'asc' },
+    });
+    expect(findManyInscripciones).not.toHaveBeenCalled();
   });
 });

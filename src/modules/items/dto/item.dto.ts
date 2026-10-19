@@ -106,13 +106,21 @@ export class ActualizarItemDto {
 }
 
 /**
- * Query para listar los ítems de una clase (H4.1 / T4.1.1).
+ * Query para listar los ítems (H4.1 / T4.1.1; extendido en T5.7.2 / PRO-391
+ * para el estudiante).
+ *
+ * - **Profesor:** `classId` obligatorio (la propiedad de la clase se
+ *   verifica y responde 403 si es ajena).
+ * - **Estudiante:** `classId` opcional — sin él lista los ítems activos de
+ *   todas sus clases con inscripción `active`; con él, los de esa clase
+ *   solo si está inscrito (403 uniforme en caso contrario).
  */
 export class ListarItemsQueryDto {
+  @IsOptional()
   @Type(() => Number)
   @IsInt()
   @IsNotEmpty()
-  classId!: number;
+  classId?: number;
 }
 
 /**
