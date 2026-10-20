@@ -11,6 +11,7 @@ import { AutorizacionModule } from '../autorizacion/autorizacion.module';
 import { expiracionASegundos } from './cookies';
 import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
+import { SesionesActivasService } from './sesiones-activas.service';
 import {
   AuthThrottlerGuard,
   LIMITE_INTENTOS,
@@ -66,6 +67,11 @@ import { LocalStrategy } from './strategies/local.strategy';
     RolesGuard,
     PertenenciaGuard,
     AuthThrottlerGuard,
+    // Registro en memoria de las sesiones emitidas: el guard global y el
+    // refresh lo consultan para que las sesiones revocadas mueran al
+    // instante (cambio de credenciales, logout, rotación de refresh).
+    // Se exporta porque UsersService lo usa en PATCH /users/me.
+    SesionesActivasService,
     // Guards GLOBALES: toda la API exige un access token válido (incluida
     // su caducidad), respeta @Roles(...) por defecto y verifica la
     // pertenencia de los recursos declarados con @PerteneceA(...). Las
@@ -78,6 +84,6 @@ import { LocalStrategy } from './strategies/local.strategy';
     { provide: APP_GUARD, useClass: RolesGuard },
     { provide: APP_GUARD, useClass: PertenenciaGuard },
   ],
-  exports: [JwtAuthGuard, RolesGuard, JwtModule],
+  exports: [JwtAuthGuard, RolesGuard, JwtModule, SesionesActivasService],
 })
 export class AuthModule {}

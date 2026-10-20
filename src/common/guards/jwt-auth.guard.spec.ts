@@ -2,8 +2,13 @@ import type { ExecutionContext } from '@nestjs/common';
 import { UnauthorizedException } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { JwtService } from '@nestjs/jwt';
+import { SesionesActivasService } from '../../modules/auth/sesiones-activas.service';
 import { Publico } from '../decorators/publico.decorator';
-import { JwtAuthGuard, MENSAJE_NO_AUTENTICADO } from './jwt-auth.guard';
+import {
+  JwtAuthGuard,
+  MENSAJE_NO_AUTENTICADO,
+  MENSAJE_SESION_CERRADA,
+} from './jwt-auth.guard';
 
 const SECRETO_PRUEBA = 'secreto-de-pruebas-de-jwt-1234567890';
 
@@ -32,11 +37,13 @@ function crearContexto(
 
 describe('JwtAuthGuard', () => {
   let jwtService: JwtService;
+  let sesiones: SesionesActivasService;
   let guard: JwtAuthGuard;
 
   beforeEach(() => {
     jwtService = new JwtService({ secret: SECRETO_PRUEBA });
-    guard = new JwtAuthGuard(jwtService, new Reflector());
+    sesiones = new SesionesActivasService();
+    guard = new JwtAuthGuard(jwtService, new Reflector(), sesiones);
   });
 
   it('deja pasar sin token las rutas marcadas con @Publico()', () => {
@@ -79,14 +86,16 @@ describe('JwtAuthGuard', () => {
     );
   });
 
-  it('acepta un token válido y adjunta el payload en request.user', () => {
+  it('acepta un token válido con sesión registrada y adjunta el payload en request.user', () => {
     const token = jwtService.sign({
       id: '1',
       username: 'admin',
       role: 'admin',
       organizacionId: null,
       debeCambiarContrasena: true,
+      jti: 'jti-sesion-viva',
     });
+    sesiones.registrar('1', 'jti-sesion-viva');
     const peticion: PeticionMock = {
       headers: { authorization: `Bearer ${token}` },
     };
@@ -98,7 +107,67 @@ describe('JwtAuthGuard', () => {
       role: 'admin',
       organizacionId: null,
       debeCambiarContrasena: true,
+      jti: 'jti-sesion-viva',
       iat: expect.any(Number),
     });
+  });
+
+  it('rechaza con 401 de sesión cerrada un token SIN jti (previo al registro de sesiones)', () => {
+    // Firma válida pero sin el claim jti: fail-closed, no pasa aunque
+    // antes de este cambio habría sido aceptado.
+    const token = jwtService.sign({
+      id: '1',
+      username: 'admin',
+      role: 'admin',
+      organizacionId: null,
+      debeCambiarContrasena: true,
+    });
+    const peticion: PeticionMock = {
+      headers: { authorization: `Bearer ${token}` },
+    };
+
+    expect(() => guard.canActivate(crearContexto(peticion))).toThrow(
+      new UnauthorizedException(MENSAJE_SESION_CERRADA),
+    );
+  });
+
+  it('rechaza con 401 de sesión cerrada un token cuya sesión fue revocada', () => {
+    // Simula un cambio de credenciales: el jti se registró y luego
+    // revocarUsuario lo eliminó del registro.
+    const token = jwtService.sign({
+      id: '1',
+      username: 'admin',
+      role: 'admin',
+      organizacionId: null,
+      debeCambiarContrasena: true,
+      jti: 'jti-revocado',
+    });
+    sesiones.registrar('1', 'jti-revocado');
+    sesiones.revocarUsuario('1');
+    const peticion: PeticionMock = {
+      headers: { authorization: `Bearer ${token}` },
+    };
+
+    expect(() => guard.canActivate(crearContexto(peticion))).toThrow(
+      new UnauthorizedException(MENSAJE_SESION_CERRADA),
+    );
+  });
+
+  it('rechaza con 401 un jti que nunca estuvo registrado (registro vacío, p. ej. tras reinicio)', () => {
+    const token = jwtService.sign({
+      id: '7',
+      username: 'prof.unit',
+      role: 'teacher',
+      organizacionId: '1',
+      debeCambiarContrasena: false,
+      jti: 'jti-desconocido',
+    });
+    const peticion: PeticionMock = {
+      headers: { authorization: `Bearer ${token}` },
+    };
+
+    expect(() => guard.canActivate(crearContexto(peticion))).toThrow(
+      new UnauthorizedException(MENSAJE_SESION_CERRADA),
+    );
   });
 });

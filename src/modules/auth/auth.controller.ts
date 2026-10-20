@@ -40,8 +40,8 @@ import type {
  * - POST /login   → PÚBLICO; 201 con access token; refresh en cookie httpOnly.
  * - POST /refresh → PÚBLICO; canjea la cookie de refresh (se autentica por
  *                   el JWT firmado dentro de la cookie, no por un Bearer).
- * - POST /logout  → PÚBLICO; 204 y expira la cookie (debe funcionar incluso
- *                   con el access token vencido para poder cerrar sesión).
+ * - POST /logout  → PÚBLICO; 204 y expira la cookie; además consume la
+ *                   sesión del refresh en el servidor (revocación real).
  * - GET  /perfil  → protegido por los guards GLOBALES (JWT + roles).
  */
 @Controller('auth')
@@ -90,7 +90,21 @@ export class AuthController {
   @Publico()
   @Post('logout')
   @HttpCode(HttpStatus.NO_CONTENT)
-  cerrarSesion(@Res({ passthrough: true }) respuesta: Response): void {
+  async cerrarSesion(
+    @Req() request: Request,
+    @Res({ passthrough: true }) respuesta: Response,
+  ): Promise<void> {
+    // El logout también mata la sesión EN EL SERVIDOR: consume el jti del
+    // refresh de la cookie (revocación real, no solo expirar la cookie en
+    // el navegador). Un token inválido/expirado no lanza: sin cookie
+    // válida no hay nada que revocar (docs/endpoint_perfil_me.md).
+    const refreshToken = parsearCookie(
+      request.headers.cookie,
+      NOMBRE_COOKIE_REFRESH,
+    );
+    if (refreshToken !== null) {
+      await this.authService.cerrarSesion(refreshToken);
+    }
     respuesta.setHeader(
       'Set-Cookie',
       construirCookieLogout(this.esProduccion()),

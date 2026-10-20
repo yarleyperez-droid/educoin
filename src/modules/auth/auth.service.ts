@@ -1,10 +1,13 @@
 import { Injectable, UnauthorizedException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
+import { randomUUID } from 'node:crypto';
 import { verify } from 'argon2';
 import type { user_role } from '../../generated/prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import type { UsuarioAutenticado } from '../../common/interfaces/usuario-autenticado';
+import { MENSAJE_SESION_CERRADA } from '../../common/guards/jwt-auth.guard';
+import { SesionesActivasService } from './sesiones-activas.service';
 import type { UsuarioRespuestaDto } from './dto/sesion-respuesta.dto';
 import { expiracionASegundos } from './cookies';
 
@@ -52,6 +55,7 @@ export class AuthService {
     private readonly prisma: PrismaService,
     private readonly jwtService: JwtService,
     private readonly configService: ConfigService,
+    private readonly sesiones: SesionesActivasService,
   ) {}
 
   /**
@@ -102,31 +106,43 @@ export class AuthService {
     return this.aUsuarioRespuesta(usuario);
   }
 
-  /** Firma el access token (vida corta) y el refresh token (cookie httpOnly). */
+  /**
+   * Firma el access token (vida corta) y el refresh token (cookie httpOnly).
+   * Ambos viajan con un jti único y quedan REGISTRADOS en
+   * SesionesActivasService: el guard global exige sesiones vivas, así que
+   * todo token que no salga de aquí (o cuyo registro se haya borrado) está
+   * muerto. Cubre también el refresh, que rota llamando a este método.
+   */
   async login(usuario: UsuarioRespuestaDto): Promise<SesionInterna> {
     const expiraEn = this.configService.getOrThrow<string>(
       'JWT_ACCESS_EXPIRES_IN',
     );
+    const jtiAccess = randomUUID();
     const accessToken = await this.jwtService.signAsync(
-      this.aPayload(usuario),
+      { ...this.aPayload(usuario), jti: jtiAccess },
       {
         expiresIn: expiracionASegundos(expiraEn),
       },
     );
-    const refreshToken = await this.generarRefreshToken(usuario.id);
-    return { accessToken, refreshToken, expiraEn, usuario };
+    const refresh = await this.generarRefreshToken(usuario.id);
+    this.sesiones.registrar(usuario.id, jtiAccess, refresh.jti);
+    return { accessToken, refreshToken: refresh.token, expiraEn, usuario };
   }
 
   /**
    * Canjea el refresh token de la cookie por una sesión nueva (access token
    * nuevo y refresh rotado). El usuario debe seguir existiendo y activo.
+   *
+   * El refresh es de USO ÚNICO: su jti debe seguir registrado y se consume
+   * en el mismo canje — una cookie ya usada (o revocada por un cambio de
+   * credenciales, o tras un reinicio) responde 401.
    */
   async refrescar(refreshToken: string): Promise<SesionInterna> {
     const secretoRefresh =
       this.configService.getOrThrow<string>('JWT_REFRESH_SECRET');
-    let payload: { id: string };
+    let payload: { id: string; jti?: string };
     try {
-      payload = await this.jwtService.verifyAsync<{ id: string }>(
+      payload = await this.jwtService.verifyAsync<{ id: string; jti?: string }>(
         refreshToken,
         {
           secret: secretoRefresh,
@@ -138,8 +154,38 @@ export class AuthService {
       );
     }
 
+    if (
+      payload.jti === undefined ||
+      !this.sesiones.esValida(payload.id, payload.jti)
+    ) {
+      throw new UnauthorizedException(MENSAJE_SESION_CERRADA);
+    }
+    this.sesiones.consumir(payload.id, payload.jti);
+
     const usuario = await this.buscarUsuarioActivoPorId(payload.id);
     return this.login(usuario);
+  }
+
+  /**
+   * Logout: consume la sesión del refresh token de la cookie para que el
+   * token MUERA también en el servidor, no solo al expirar la cookie en
+   * el navegador. Un token inválido/corrupto/expirado no lanza: no hay
+   * sesión que revocar y el endpoint debe responder 204 igualmente.
+   */
+  async cerrarSesion(refreshToken: string): Promise<void> {
+    try {
+      const secretoRefresh =
+        this.configService.getOrThrow<string>('JWT_REFRESH_SECRET');
+      const payload = await this.jwtService.verifyAsync<{
+        id: string;
+        jti?: string;
+      }>(refreshToken, { secret: secretoRefresh });
+      if (payload.jti !== undefined) {
+        this.sesiones.consumir(payload.id, payload.jti);
+      }
+    } catch {
+      // Token corrupto, expirado o revocado: nada que consumir.
+    }
   }
 
   /** Perfil fresco desde la BD para el usuario del token de acceso. */
@@ -178,19 +224,23 @@ export class AuthService {
     };
   }
 
-  private async generarRefreshToken(id: string): Promise<string> {
+  private async generarRefreshToken(
+    id: string,
+  ): Promise<{ token: string; jti: string }> {
     const secretoRefresh =
       this.configService.getOrThrow<string>('JWT_REFRESH_SECRET');
     const expiraEn = this.configService.getOrThrow<string>(
       'JWT_REFRESH_EXPIRES_IN',
     );
-    return this.jwtService.signAsync(
-      { id },
+    const jti = randomUUID();
+    const token = await this.jwtService.signAsync(
+      { id, jti },
       {
         secret: secretoRefresh,
         expiresIn: expiracionASegundos(expiraEn),
       },
     );
+    return { token, jti };
   }
 
   private aUsuarioRespuesta(usuario: UsuarioEncontrado): UsuarioRespuestaDto {

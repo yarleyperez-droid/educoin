@@ -5,22 +5,32 @@ import {
   NotFoundException,
   UnauthorizedException,
 } from '@nestjs/common';
+import { hash } from 'argon2';
 import { Prisma } from '../../generated/prisma/client';
 import { MENSAJE_SIN_ROL } from '../../common/guards/roles.guard';
 import type { UsuarioAutenticado } from '../../common/interfaces/usuario-autenticado';
 import { MENSAJE_RECURSO_NO_ENCONTRADO } from '../autorizacion/autorizacion.service';
+import type { SesionesActivasService } from '../auth/sesiones-activas.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import {
   UsersService,
+  MENSAJE_ACTUALIZACION_PERFIL_VACIA,
   MENSAJE_ACTUALIZACION_VACIA,
+  MENSAJE_CONTRASENA_ACTUAL_INCORRECTA,
   MENSAJE_CORREO_DUPLICADO,
+  MENSAJE_CORREO_ACTUAL_REQUERIDO,
+  MENSAJE_CREDENCIALES_ACTUALIZADAS,
   MENSAJE_ESPECIALIDAD_SOLO_PROFESOR,
+  MENSAJE_IDENTIFICACION_ERRONEA,
   MENSAJE_ORGANIZACION_INVALIDA,
+  MENSAJE_PERFIL_ACTUALIZADO,
+  MENSAJE_TOKEN_NO_FRESCO,
   MENSAJE_USERNAME_DUPLICADO,
   MENSAJE_USUARIO_CREADO,
 } from './users.service';
 import type { CrearUsuarioDto } from './dto/crear-usuario.dto';
 import type { ActualizarUsuarioDto } from './dto/actualizar-usuario.dto';
+import type { ActualizarPerfilDto } from './dto/actualizar-perfil.dto';
 import type { ListarUsuariosQueryDto } from './dto/listar-usuarios.dto';
 
 type ConsultaFind = { where: object; select: object };
@@ -48,6 +58,10 @@ interface PrismaMock {
   organizations: {
     findFirst: jest.Mock<Promise<unknown>, [ConsultaFind]>;
   };
+}
+
+interface SesionesMock {
+  revocarUsuario: jest.Mock<void, [string]>;
 }
 
 const ADMIN: UsuarioAutenticado = {
@@ -132,9 +146,19 @@ function errorNoEncontrado(): Prisma.PrismaClientKnownRequestError {
   );
 }
 
+/** Contraseña actual de las fixtures de actualizarPerfil (hash real argon2). */
+const CONTRASENA_PERFIL = 'ContrasenaPerfil123!';
+
 describe('UsersService', () => {
   let usersService: UsersService;
   let prisma: PrismaMock;
+  let sesiones: SesionesMock;
+  /** Hash argon2 REAL de CONTRASENA_PERFIL, calculado una sola vez. */
+  let hashPerfil: string;
+
+  beforeAll(async () => {
+    hashPerfil = await hash(CONTRASENA_PERFIL);
+  });
 
   beforeEach(() => {
     prisma = {
@@ -150,7 +174,13 @@ describe('UsersService', () => {
         findFirst: jest.fn<Promise<unknown>, [ConsultaFind]>(),
       },
     };
-    usersService = new UsersService(prisma as unknown as PrismaService);
+    sesiones = {
+      revocarUsuario: jest.fn<void, [string]>(),
+    };
+    usersService = new UsersService(
+      prisma as unknown as PrismaService,
+      sesiones as unknown as SesionesActivasService,
+    );
   });
 
   describe('crear', () => {
@@ -691,6 +721,381 @@ describe('UsersService', () => {
       ).rejects.toThrow(new ForbiddenException(MENSAJE_SIN_ROL));
       expect(prisma.users.findFirst).not.toHaveBeenCalled();
       expect(prisma.users.update).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('actualizarPerfil (PATCH /users/me)', () => {
+    /**
+     * Fila que devuelve el mock de users.findFirst en el paso de
+     * re-verificación: refleja el select CAMPOS_PERFIL (email, hash y
+     * rol) — el hash SOLO se usa para verificar la contraseña actual.
+     * El id es el del TOKEN (PROFESOR.id): el objetivo de /me nunca
+     * llega por la petición.
+     */
+    const perfilActual = (): Record<string, unknown> => ({
+      id: BigInt(2),
+      email: 'prof.unit@educoins.test',
+      password_hash: hashPerfil,
+      role: 'teacher',
+    });
+
+    /** Token del profesor con iat RECIENTE (dentro de los 5 minutos). */
+    const profesorFresco = (): UsuarioAutenticado => ({
+      ...PROFESOR,
+      iat: Math.floor(Date.now() / 1000),
+    });
+
+    /** Factory del DTO: objetos planos nuevos con la contraseña actual. */
+    const dtoPerfil = (
+      sobrescrituras: Partial<ActualizarPerfilDto> = {},
+    ): ActualizarPerfilDto => ({
+      contrasena: CONTRASENA_PERFIL,
+      ...sobrescrituras,
+    });
+
+    it('actualiza campos genéricos con la contraseña correcta y NO cierra sesión', async () => {
+      prisma.users.findFirst.mockResolvedValue(perfilActual());
+      prisma.users.update.mockResolvedValue(USUARIO);
+
+      const resultado = await usersService.actualizarPerfil(
+        profesorFresco(),
+        dtoPerfil({
+          nombre: 'Nuevo',
+          apellido: 'Apellido',
+          especialidad: 'Biology',
+        }),
+      );
+
+      expect(prisma.users.update).toHaveBeenCalledWith({
+        where: { id: BigInt(2) },
+        data: {
+          first_name: 'Nuevo',
+          last_name: 'Apellido',
+          specialty: 'Biology',
+        },
+        select: expect.any(Object),
+      });
+      expect(resultado).toEqual({
+        mensaje: MENSAJE_PERFIL_ACTUALIZADO,
+        sesionCerrada: false,
+        usuario: USUARIO_RESPUESTA,
+      });
+      expect(sesiones.revocarUsuario).not.toHaveBeenCalled();
+    });
+
+    it('la contraseña actual se verifica con argon2: incorrecta → 403 sin UPDATE', async () => {
+      prisma.users.findFirst.mockResolvedValue(perfilActual());
+
+      await expect(
+        usersService.actualizarPerfil(
+          profesorFresco(),
+          dtoPerfil({ contrasena: 'Incorrecta123!', nombre: 'Nuevo' }),
+        ),
+      ).rejects.toThrow(
+        new ForbiddenException(MENSAJE_CONTRASENA_ACTUAL_INCORRECTA),
+      );
+      expect(prisma.users.update).not.toHaveBeenCalled();
+    });
+
+    it('un hash corrupto se trata como contraseña incorrecta, no como 500', async () => {
+      prisma.users.findFirst.mockResolvedValue({
+        ...perfilActual(),
+        password_hash: 'HASH_CORRUPTO',
+      });
+
+      await expect(
+        usersService.actualizarPerfil(
+          profesorFresco(),
+          dtoPerfil({ nombre: 'Nuevo' }),
+        ),
+      ).rejects.toThrow(
+        new ForbiddenException(MENSAJE_CONTRASENA_ACTUAL_INCORRECTA),
+      );
+      expect(prisma.users.update).not.toHaveBeenCalled();
+    });
+
+    it('solo la contraseña (nada que actualizar) → 400', async () => {
+      prisma.users.findFirst.mockResolvedValue(perfilActual());
+
+      await expect(
+        usersService.actualizarPerfil(profesorFresco(), dtoPerfil()),
+      ).rejects.toThrow(
+        new BadRequestException(MENSAJE_ACTUALIZACION_PERFIL_VACIA),
+      );
+      expect(prisma.users.update).not.toHaveBeenCalled();
+    });
+
+    it('un estudiante no puede tocar la especialidad → 400', async () => {
+      prisma.users.findFirst.mockResolvedValue({
+        ...perfilActual(),
+        role: 'student',
+      });
+
+      await expect(
+        usersService.actualizarPerfil(
+          profesorFresco(),
+          dtoPerfil({ especialidad: 'Trucos' }),
+        ),
+      ).rejects.toThrow(
+        new BadRequestException(MENSAJE_ESPECIALIDAD_SOLO_PROFESOR),
+      );
+      expect(prisma.users.update).not.toHaveBeenCalled();
+    });
+
+    it('especialidad null LIMPIA y un campo ausente no se toca', async () => {
+      prisma.users.findFirst.mockResolvedValue(perfilActual());
+      prisma.users.update.mockResolvedValue({ ...USUARIO, specialty: null });
+
+      await usersService.actualizarPerfil(
+        profesorFresco(),
+        dtoPerfil({ especialidad: null }),
+      );
+
+      // Solo el campo presente llega al UPDATE: ni first_name ni
+      // last_name ni nada más.
+      expect(prisma.users.update).toHaveBeenCalledWith({
+        where: { id: BigInt(2) },
+        data: { specialty: null },
+        select: expect.any(Object),
+      });
+    });
+
+    it('cambia username con identificación completa y cierra TODAS las sesiones', async () => {
+      // 1º findFirst: re-verificación; 2º: duplicados auto-excluido.
+      prisma.users.findFirst
+        .mockResolvedValueOnce(perfilActual())
+        .mockResolvedValueOnce(null);
+      prisma.users.update.mockResolvedValue(USUARIO);
+
+      const resultado = await usersService.actualizarPerfil(
+        profesorFresco(),
+        dtoPerfil({
+          correoActual: 'prof.unit@educoins.test',
+          usuario: 'prof.nuevo',
+        }),
+      );
+
+      expect(prisma.users.update).toHaveBeenCalledWith({
+        where: { id: BigInt(2) },
+        data: { username: 'prof.nuevo' },
+        select: expect.any(Object),
+      });
+      expect(sesiones.revocarUsuario).toHaveBeenCalledWith('2');
+      expect(resultado).toEqual({
+        mensaje: MENSAJE_CREDENCIALES_ACTUALIZADAS,
+        sesionCerrada: true,
+        usuario: USUARIO_RESPUESTA,
+      });
+    });
+
+    it('el pre-check de duplicados se auto-excluye (NOT id propio)', async () => {
+      prisma.users.findFirst
+        .mockResolvedValueOnce(perfilActual())
+        .mockResolvedValueOnce(null);
+      prisma.users.update.mockResolvedValue(USUARIO);
+
+      await usersService.actualizarPerfil(
+        profesorFresco(),
+        dtoPerfil({
+          correoActual: 'prof.unit@educoins.test',
+          usuario: 'prof.unit',
+        }),
+      );
+
+      expect(prisma.users.findFirst).toHaveBeenLastCalledWith({
+        where: { OR: [{ username: 'prof.unit' }], NOT: { id: BigInt(2) } },
+        select: { username: true, email: true },
+      });
+      expect(prisma.users.update).toHaveBeenCalled();
+    });
+
+    it('token antiguo (> 5 min) → 401 de token no fresco, sin UPDATE', async () => {
+      prisma.users.findFirst.mockResolvedValue(perfilActual());
+      const tokenViejo: UsuarioAutenticado = {
+        ...PROFESOR,
+        iat: Math.floor(Date.now() / 1000) - 400,
+      };
+
+      await expect(
+        usersService.actualizarPerfil(
+          tokenViejo,
+          dtoPerfil({
+            correoActual: 'prof.unit@educoins.test',
+            contrasenaNueva: 'NuevaClave123!',
+          }),
+        ),
+      ).rejects.toThrow(new UnauthorizedException(MENSAJE_TOKEN_NO_FRESCO));
+      expect(prisma.users.update).not.toHaveBeenCalled();
+    });
+
+    it('token sin iat → 401 (fail-closed)', async () => {
+      prisma.users.findFirst.mockResolvedValue(perfilActual());
+
+      await expect(
+        usersService.actualizarPerfil(
+          PROFESOR,
+          dtoPerfil({
+            correoActual: 'prof.unit@educoins.test',
+            contrasenaNueva: 'NuevaClave123!',
+          }),
+        ),
+      ).rejects.toThrow(new UnauthorizedException(MENSAJE_TOKEN_NO_FRESCO));
+      expect(prisma.users.update).not.toHaveBeenCalled();
+    });
+
+    it('credencial sin correoActual → 400', async () => {
+      prisma.users.findFirst.mockResolvedValue(perfilActual());
+
+      await expect(
+        usersService.actualizarPerfil(
+          profesorFresco(),
+          dtoPerfil({ contrasenaNueva: 'NuevaClave123!' }),
+        ),
+      ).rejects.toThrow(
+        new BadRequestException(MENSAJE_CORREO_ACTUAL_REQUERIDO),
+      );
+      expect(prisma.users.update).not.toHaveBeenCalled();
+    });
+
+    it('correoActual que no coincide → 403 con mensaje único', async () => {
+      prisma.users.findFirst.mockResolvedValue(perfilActual());
+
+      await expect(
+        usersService.actualizarPerfil(
+          profesorFresco(),
+          dtoPerfil({
+            correoActual: 'otro@educoins.test',
+            contrasenaNueva: 'NuevaClave123!',
+          }),
+        ),
+      ).rejects.toThrow(new ForbiddenException(MENSAJE_IDENTIFICACION_ERRONEA));
+      expect(prisma.users.update).not.toHaveBeenCalled();
+    });
+
+    it('correoActual coincide aunque cambien las mayúsculas (CITEXT)', async () => {
+      prisma.users.findFirst.mockResolvedValue(perfilActual());
+      prisma.users.update.mockResolvedValue(USUARIO);
+
+      await usersService.actualizarPerfil(
+        profesorFresco(),
+        dtoPerfil({
+          correoActual: 'PROF.UNIT@EDUCOINS.TEST',
+          contrasenaNueva: 'NuevaClave123!',
+        }),
+      );
+
+      expect(prisma.users.update).toHaveBeenCalled();
+    });
+
+    it('contrasenaNueva se guarda como hash argon2 y baja must_change_password', async () => {
+      prisma.users.findFirst.mockResolvedValue(perfilActual());
+      prisma.users.update.mockResolvedValue(USUARIO);
+
+      const resultado = await usersService.actualizarPerfil(
+        profesorFresco(),
+        dtoPerfil({
+          correoActual: 'prof.unit@educoins.test',
+          contrasenaNueva: 'NuevaClave123!',
+        }),
+      );
+
+      const data = prisma.users.update.mock.calls[0][0].data as Record<
+        string,
+        unknown
+      >;
+      // La contraseña nueva jamás en texto plano: hash argon2 real.
+      expect(data.password_hash).not.toBe('NuevaClave123!');
+      expect(String(data.password_hash)).toMatch(/^\$argon2/);
+      expect(data.must_change_password).toBe(false);
+      expect(resultado.sesionCerrada).toBe(true);
+      expect(resultado.usuario.debeCambiarContrasena).toBe(true); // valor del fixture USUARIO
+    });
+
+    it('username duplicado en OTRA cuenta → 409', async () => {
+      prisma.users.findFirst
+        .mockResolvedValueOnce(perfilActual())
+        .mockResolvedValueOnce({
+          username: 'Prof.Nuevo',
+          email: 'ajeno@educoins.test',
+        });
+
+      await expect(
+        usersService.actualizarPerfil(
+          profesorFresco(),
+          dtoPerfil({
+            correoActual: 'prof.unit@educoins.test',
+            usuario: 'prof.nuevo',
+          }),
+        ),
+      ).rejects.toThrow(new ConflictException(MENSAJE_USERNAME_DUPLICADO));
+      expect(prisma.users.update).not.toHaveBeenCalled();
+    });
+
+    it('correo duplicado (incluso con otras mayúsculas) → 409', async () => {
+      prisma.users.findFirst
+        .mockResolvedValueOnce(perfilActual())
+        .mockResolvedValueOnce({
+          username: 'ajeno',
+          email: 'NUEVO@EDUCOINS.TEST',
+        });
+
+      await expect(
+        usersService.actualizarPerfil(
+          profesorFresco(),
+          dtoPerfil({
+            correoActual: 'prof.unit@educoins.test',
+            correo: 'nuevo@educoins.test',
+          }),
+        ),
+      ).rejects.toThrow(new ConflictException(MENSAJE_CORREO_DUPLICADO));
+      expect(prisma.users.update).not.toHaveBeenCalled();
+    });
+
+    it('usuario inactivo o inexistente → 401 (re-verificación en BD)', async () => {
+      prisma.users.findFirst.mockResolvedValue(null);
+
+      await expect(
+        usersService.actualizarPerfil(
+          profesorFresco(),
+          dtoPerfil({ nombre: 'Nuevo' }),
+        ),
+      ).rejects.toThrow(UnauthorizedException);
+      expect(prisma.users.update).not.toHaveBeenCalled();
+    });
+
+    it('id del token no numérico → 401 sin consultar la BD', async () => {
+      const tokenCorrupto: UsuarioAutenticado = {
+        ...PROFESOR,
+        id: 'no-soy-numero',
+      };
+
+      await expect(
+        usersService.actualizarPerfil(
+          tokenCorrupto,
+          dtoPerfil({ nombre: 'Nuevo' }),
+        ),
+      ).rejects.toThrow(UnauthorizedException);
+      expect(prisma.users.findFirst).not.toHaveBeenCalled();
+      expect(prisma.users.update).not.toHaveBeenCalled();
+    });
+
+    it('jamás escribe role ni organization_id en el UPDATE (imposibles de cambiar)', async () => {
+      prisma.users.findFirst.mockResolvedValue(perfilActual());
+      prisma.users.update.mockResolvedValue(USUARIO);
+
+      await usersService.actualizarPerfil(
+        profesorFresco(),
+        dtoPerfil({ nombre: 'Nuevo', apellido: 'Apellido' }),
+      );
+
+      const data = prisma.users.update.mock.calls[0][0].data as Record<
+        string,
+        unknown
+      >;
+      expect(data).not.toHaveProperty('role');
+      expect(data).not.toHaveProperty('organization_id');
+      expect(data).not.toHaveProperty('updated_at');
+      expect(data).not.toHaveProperty('is_active');
     });
   });
 });

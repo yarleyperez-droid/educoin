@@ -4,6 +4,8 @@ import { JwtService } from '@nestjs/jwt';
 import { hash } from 'argon2';
 import type { users } from '../../generated/prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
+import { MENSAJE_SESION_CERRADA } from '../../common/guards/jwt-auth.guard';
+import { SesionesActivasService } from './sesiones-activas.service';
 import { AuthService, MENSAJE_CREDENCIALES_INVALIDAS } from './auth.service';
 
 type UsuarioDePrueba = users;
@@ -25,7 +27,7 @@ interface JwtMock {
     [payload: object, opciones?: { secret?: string; expiresIn?: number }]
   >;
   verifyAsync: jest.Mock<
-    Promise<{ id: string }>,
+    Promise<{ id: string; jti?: string }>,
     [token: string, opciones: { secret: string }]
   >;
 }
@@ -61,6 +63,7 @@ describe('AuthService', () => {
   let authService: AuthService;
   let prisma: PrismaMock;
   let jwtService: JwtMock;
+  let sesiones: SesionesActivasService;
   let valoresConfig: Record<string, string>;
   let configService: ConfigMock;
 
@@ -77,10 +80,11 @@ describe('AuthService', () => {
         [payload: object, opciones?: { secret?: string; expiresIn?: number }]
       >(),
       verifyAsync: jest.fn<
-        Promise<{ id: string }>,
+        Promise<{ id: string; jti?: string }>,
         [token: string, opciones: { secret: string }]
       >(),
     };
+    sesiones = new SesionesActivasService();
     valoresConfig = {
       JWT_ACCESS_EXPIRES_IN: '15m',
       JWT_REFRESH_SECRET: 'secreto-refresh-de-pruebas-12345678',
@@ -102,6 +106,7 @@ describe('AuthService', () => {
       prisma as unknown as PrismaService,
       jwtService as unknown as JwtService,
       configService as unknown as ConfigService,
+      sesiones,
     );
     jwtService.signAsync.mockImplementation(
       async (
@@ -236,7 +241,7 @@ describe('AuthService', () => {
   });
 
   describe('login', () => {
-    it('firma access token corto y refresh token con secreto propio', async () => {
+    it('firma access token corto y refresh token con secreto propio, ambos con jti registrado', async () => {
       const usuarioDto = {
         id: '1',
         username: 'admin',
@@ -263,21 +268,65 @@ describe('AuthService', () => {
           role: 'admin',
           organizacionId: null,
           debeCambiarContrasena: true,
+          jti: expect.any(String),
         },
         { expiresIn: 900 },
       );
       expect(jwtService.signAsync).toHaveBeenCalledWith(
-        { id: '1' },
+        { id: '1', jti: expect.any(String) },
         { secret: valoresConfig['JWT_REFRESH_SECRET'], expiresIn: 604800 },
       );
+
+      // Ambos tokens quedan REGISTRADOS: el guard y el refresh los
+      // exigen vivos (SesionesActivasService).
+      const payloadAccess = jwtService.signAsync.mock.calls[0][0] as {
+        jti: string;
+      };
+      const payloadRefresh = jwtService.signAsync.mock.calls[1][0] as {
+        jti: string;
+      };
+      expect(sesiones.esValida('1', payloadAccess.jti)).toBe(true);
+      expect(sesiones.esValida('1', payloadRefresh.jti)).toBe(true);
+    });
+
+    it('cada login genera sesiones (jti) distintas', async () => {
+      const usuarioDto = {
+        id: '1',
+        username: 'admin',
+        email: 'admin@educoins.test',
+        role: 'admin' as const,
+        nombre: 'Ada',
+        apellido: 'Admin',
+        organizacionId: null,
+        debeCambiarContrasena: true,
+      };
+
+      await authService.login(usuarioDto);
+      await authService.login(usuarioDto);
+
+      const jtiPrimero = (
+        jwtService.signAsync.mock.calls[0][0] as {
+          jti: string;
+        }
+      ).jti;
+      const jtiSegundo = (
+        jwtService.signAsync.mock.calls[2][0] as {
+          jti: string;
+        }
+      ).jti;
+      expect(jtiSegundo).not.toBe(jtiPrimero);
+      // Ambos siguen vivos: son sesiones paralelas (distintos dispositivos).
+      expect(sesiones.esValida('1', jtiPrimero)).toBe(true);
+      expect(sesiones.esValida('1', jtiSegundo)).toBe(true);
     });
   });
 
   describe('refrescar', () => {
-    it('canjea un refresh token válido por una sesión nueva', async () => {
+    it('canjea un refresh token registrado por una sesión nueva y consume el usado', async () => {
       const usuario = await crearUsuarioDePrueba();
-      jwtService.verifyAsync.mockResolvedValue({ id: '1' });
+      jwtService.verifyAsync.mockResolvedValue({ id: '1', jti: 'jti-refresh' });
       prisma.users.findFirst.mockResolvedValue(usuario);
+      sesiones.registrar('1', 'jti-refresh');
 
       const sesion = await authService.refrescar('refresh-valido');
 
@@ -286,6 +335,17 @@ describe('AuthService', () => {
       });
       expect(sesion.accessToken).toBe('access-token-firmado');
       expect(sesion.usuario.id).toBe('1');
+      // Uso único: el refresh consumido ya no sirve para otro canje.
+      expect(sesiones.esValida('1', 'jti-refresh')).toBe(false);
+      // La rotación registró los tokens NUEVOS.
+      const payloadAccess = jwtService.signAsync.mock.calls[0][0] as {
+        jti: string;
+      };
+      const payloadRefresh = jwtService.signAsync.mock.calls[1][0] as {
+        jti: string;
+      };
+      expect(sesiones.esValida('1', payloadAccess.jti)).toBe(true);
+      expect(sesiones.esValida('1', payloadRefresh.jti)).toBe(true);
       // El refresh NO es un login: no debe tocar last_login.
       expect(prisma.users.update).not.toHaveBeenCalled();
     });
@@ -298,13 +358,74 @@ describe('AuthService', () => {
       );
     });
 
+    it('rechaza un refresh sin jti o con sesión no registrada (401 de sesión cerrada)', async () => {
+      // Sin jti: token previo al registro de sesiones (fail-closed).
+      jwtService.verifyAsync.mockResolvedValue({ id: '1' });
+      await expect(authService.refrescar('refresh-viejo')).rejects.toThrow(
+        new UnauthorizedException(MENSAJE_SESION_CERRADA),
+      );
+      expect(prisma.users.findFirst).not.toHaveBeenCalled();
+
+      // Con jti pero revocado (p. ej. cambio de credenciales).
+      jwtService.verifyAsync.mockResolvedValue({ id: '1', jti: 'jti-muerto' });
+      await expect(authService.refrescar('refresh-revocado')).rejects.toThrow(
+        new UnauthorizedException(MENSAJE_SESION_CERRADA),
+      );
+      expect(prisma.users.findFirst).not.toHaveBeenCalled();
+    });
+
+    it('rechaza reutilizar un refresh ya consumido (rotación de uso único)', async () => {
+      const usuario = await crearUsuarioDePrueba();
+      jwtService.verifyAsync.mockResolvedValue({ id: '1', jti: 'jti-refresh' });
+      prisma.users.findFirst.mockResolvedValue(usuario);
+      sesiones.registrar('1', 'jti-refresh');
+
+      await authService.refrescar('refresh-valido');
+
+      // La cookie vieja se reenvía (p. ej. segunda pestaña): su jti ya
+      // fue consumido en el primer canje → 401.
+      await expect(authService.refrescar('refresh-valido')).rejects.toThrow(
+        new UnauthorizedException(MENSAJE_SESION_CERRADA),
+      );
+    });
+
     it('rechaza si el usuario del refresh ya no existe o está inactivo', async () => {
-      jwtService.verifyAsync.mockResolvedValue({ id: '99' });
+      jwtService.verifyAsync.mockResolvedValue({ id: '99', jti: 'jti-99' });
+      sesiones.registrar('99', 'jti-99');
       prisma.users.findFirst.mockResolvedValue(null);
 
       await expect(authService.refrescar('refresh-valido')).rejects.toThrow(
         UnauthorizedException,
       );
+    });
+  });
+
+  describe('cerrarSesion (logout)', () => {
+    it('consume la sesión del refresh de la cookie: el token muere en el servidor', async () => {
+      jwtService.verifyAsync.mockResolvedValue({ id: '1', jti: 'jti-refresh' });
+      sesiones.registrar('1', 'jti-refresh');
+
+      await authService.cerrarSesion('refresh-valido');
+
+      expect(sesiones.esValida('1', 'jti-refresh')).toBe(false);
+    });
+
+    it('un token corrupto o expirado no lanza: no hay sesión que revocar', async () => {
+      jwtService.verifyAsync.mockRejectedValue(new Error('jwt expired'));
+
+      await expect(
+        authService.cerrarSesion('refresh-roto'),
+      ).resolves.toBeUndefined();
+    });
+
+    it('un refresh sin jti (token previo) no lanza ni toca el registro', async () => {
+      jwtService.verifyAsync.mockResolvedValue({ id: '1' });
+      sesiones.registrar('1', 'jti-existente');
+
+      await expect(
+        authService.cerrarSesion('refresh-sin-jti'),
+      ).resolves.toBeUndefined();
+      expect(sesiones.esValida('1', 'jti-existente')).toBe(true);
     });
   });
 

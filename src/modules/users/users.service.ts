@@ -7,18 +7,21 @@ import {
   NotFoundException,
   UnauthorizedException,
 } from '@nestjs/common';
-import { hash } from 'argon2';
+import { hash, verify } from 'argon2';
 import type { Prisma, user_role } from '../../generated/prisma/client';
 import { MENSAJE_SIN_ROL } from '../../common/guards/roles.guard';
 import type { UsuarioAutenticado } from '../../common/interfaces/usuario-autenticado';
 import { MENSAJE_RECURSO_NO_ENCONTRADO } from '../autorizacion/autorizacion.service';
+import { SesionesActivasService } from '../auth/sesiones-activas.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import { ROLES_CREABLES } from './dto/crear-usuario.dto';
 import type { CrearUsuarioDto } from './dto/crear-usuario.dto';
 import type { ActualizarUsuarioDto } from './dto/actualizar-usuario.dto';
+import type { ActualizarPerfilDto } from './dto/actualizar-perfil.dto';
 import type { ListarUsuariosQueryDto } from './dto/listar-usuarios.dto';
 import type {
   ListadoUsuariosDto,
+  PerfilActualizadoRespuestaDto,
   UsuarioCreadoRespuestaDto,
   UsuarioRespuestaDto,
 } from './dto/usuario-respuesta.dto';
@@ -50,6 +53,55 @@ export const MENSAJE_ORGANIZACION_INVALIDA =
 /** 400 cuando el PATCH no lleva ningún campo para actualizar. */
 export const MENSAJE_ACTUALIZACION_VACIA =
   'Debes enviar al menos un campo para actualizar: activa.';
+
+/** Mensajes de PATCH /users/me (docs/endpoint_perfil_me.md). */
+
+/** 200 tras actualizar campos genéricos: la sesión sigue viva. */
+export const MENSAJE_PERFIL_ACTUALIZADO = 'Perfil actualizado con éxito.';
+
+/**
+ * 200 tras cambiar usuario/correo/contraseña: TODAS las sesiones del
+ * usuario fueron eliminadas del registro (SesionesActivasService) y el
+ * cliente debe volver a iniciar sesión con las credenciales nuevas.
+ */
+export const MENSAJE_CREDENCIALES_ACTUALIZADAS =
+  'Credenciales actualizadas. Tu sesión fue cerrada por seguridad: inicia sesión de nuevo.';
+
+/** 400 cuando el PATCH /me solo trae la contraseña (nada que actualizar). */
+export const MENSAJE_ACTUALIZACION_PERFIL_VACIA =
+  'Debes enviar al menos un campo para actualizar: nombre, apellido, especialidad, usuario, correo o contrasenaNueva.';
+
+/**
+ * 403 cuando la contraseña actual no coincide: bloquea que quien robó
+ * una sesión pueda editar el perfil del dueño.
+ */
+export const MENSAJE_CONTRASENA_ACTUAL_INCORRECTA =
+  'La contraseña actual es incorrecta.';
+
+/** 400 cuando hay cambio de credenciales pero falta el correo actual. */
+export const MENSAJE_CORREO_ACTUAL_REQUERIDO =
+  'Para cambiar tu usuario, correo o contraseña debes confirmar también tu correo actual.';
+
+/**
+ * 403 cuando la identificación completa (correoActual + contrasena) no
+ * coincide con la cuenta: mensaje único para no revelar cuál falló.
+ */
+export const MENSAJE_IDENTIFICACION_ERRONEA =
+  'El correo o la contraseña actuales son erróneos.';
+
+/**
+ * 401 cuando el access token usado para cambiar credenciales no es
+ * reciente: hay que volver a iniciar sesión (como un "sudo mode").
+ */
+export const MENSAJE_TOKEN_NO_FRESCO =
+  'Tu sesión no es reciente: vuelve a iniciar sesión para cambiar tu usuario, correo o contraseña.';
+
+/**
+ * Ventana máxima (segundos) de antigüedad del access token para cambios
+ * de credenciales: el login debe haber sido hace menos de 5 minutos.
+ * Decisión del equipo (docs/endpoint_perfil_me.md §Flujos).
+ */
+export const SEGUNDOS_FRESCURA_TOKEN = 300;
 
 /**
  * Campos leídos de la tabla users (AGENTS.md §5: nombres reales de la
@@ -89,6 +141,19 @@ const CAMPOS_ID = {
 } as const;
 
 /**
+ * Select para re-verificar al dueño del token en actualizarPerfil: el
+ * hash SOLO se lee para verificar la contraseña actual (jamás sale de
+ * la BD hacia el cliente), el correo para la identificación completa y
+ * el rol para la regla de la especialidad.
+ */
+const CAMPOS_PERFIL = {
+  id: true,
+  email: true,
+  password_hash: true,
+  role: true,
+} as const;
+
+/**
  * Alta, listado y borrado lógico (más reactivación) de cuentas
  * teacher/student para el panel del administrador (AGENTS.md §5: solo
  * el admin crea profesores y estudiantes, con contraseña inicial que
@@ -118,7 +183,10 @@ const CAMPOS_ID = {
  */
 @Injectable()
 export class UsersService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly sesiones: SesionesActivasService,
+  ) {}
 
   /**
    * Crea una cuenta teacher/student en una organización. El INSERT solo
@@ -342,6 +410,184 @@ export class UsersService {
     });
 
     return this.aUsuarioRespuesta(actualizado);
+  }
+
+  /**
+   * PATCH /users/me — el usuario edita SU PROPIO perfil. El objetivo
+   * sale EXCLUSIVAMENTE del id del token (nada llega por la petición),
+   * así que la pertenencia es estructural: IDOR imposible (AGENTS.md
+   * §9.7) y el admin gestiona otras cuentas por PATCH /users/:id.
+   *
+   * Capas de identidad (docs/endpoint_perfil_me.md):
+   * 1. Cualquier cambio exige la contraseña ACTUAL (argon2): un ladrón
+   *    de sesión no puede editar el perfil sin ella.
+   * 2. Cambiar usuario/correo/contrasenaNueva exige ADEMÁS un token
+   *    reciente (iat ≤ SEGUNDOS_FRESCURA_TOKEN: "como si acabaras de
+   *    iniciar sesión") y la identificación completa con el correo
+   *    actual — la pareja correo+contraseña, igual que el login.
+   * 3. Tras aplicar credenciales se cierran TODAS las sesiones del
+   *    usuario (revocarUsuario): todos los dispositivos vuelven al
+   *    login con las credenciales nuevas.
+   *
+   * rol y organización jamás se escriben aquí: ni el DTO los acepta
+   * (mensaje específico 400) ni este método los mapea al UPDATE — son
+   * exclusivos del admin. updated_at lo mantiene el trigger.
+   */
+  async actualizarPerfil(
+    usuario: UsuarioAutenticado,
+    dto: ActualizarPerfilDto,
+  ): Promise<PerfilActualizadoRespuestaDto> {
+    // 1. Id del token; uno corrupto no llega a la BD.
+    const idUsuario = this.aBigInt(usuario.id);
+    if (idUsuario === null) {
+      throw new UnauthorizedException('No autenticado o sesión expirada.');
+    }
+
+    // 2. Re-verificación en BD (patrón de buscarUsuarioActivoPorId): el
+    //    token pudo firmarse antes de una desactivación.
+    const actual = await this.prisma.users.findFirst({
+      where: { id: idUsuario, is_active: true },
+      select: CAMPOS_PERFIL,
+    });
+    if (actual === null) {
+      throw new UnauthorizedException('No autenticado o sesión expirada.');
+    }
+
+    // 3. Contraseña actual en TODOS los cambios (dueño de la sesión).
+    //    Hash corrupto = identificación fallida, no un 500 (patrón de
+    //    AuthService.validarUsuario).
+    let contrasenaValida: boolean;
+    try {
+      contrasenaValida = await verify(actual.password_hash, dto.contrasena);
+    } catch {
+      contrasenaValida = false;
+    }
+    if (!contrasenaValida) {
+      throw new ForbiddenException(MENSAJE_CONTRASENA_ACTUAL_INCORRECTA);
+    }
+
+    // 4. Al menos un campo editable.
+    const cambiaCredenciales =
+      dto.usuario !== undefined ||
+      dto.correo !== undefined ||
+      dto.contrasenaNueva !== undefined;
+    const cambiaGenericos =
+      dto.nombre !== undefined ||
+      dto.apellido !== undefined ||
+      dto.especialidad !== undefined;
+    if (!cambiaCredenciales && !cambiaGenericos) {
+      throw new BadRequestException(MENSAJE_ACTUALIZACION_PERFIL_VACIA);
+    }
+
+    // 5. Exigencias extra solo para credenciales.
+    if (cambiaCredenciales) {
+      // 5a. Token reciente — fail-closed sin iat (token sin el claim).
+      if (
+        typeof usuario.iat !== 'number' ||
+        Date.now() / 1000 - usuario.iat > SEGUNDOS_FRESCURA_TOKEN
+      ) {
+        throw new UnauthorizedException(MENSAJE_TOKEN_NO_FRESCO);
+      }
+      // 5b. Identificación completa: el correo actual de la cuenta.
+      if (dto.correoActual === undefined) {
+        throw new BadRequestException(MENSAJE_CORREO_ACTUAL_REQUERIDO);
+      }
+      // CITEXT compara sin mayúsculas, pero `actual.email` ya está en
+      // memoria: la comparación se hace insensible aquí (patrón del
+      // pre-check de duplicados de crear).
+      if (dto.correoActual.toLowerCase() !== actual.email.toLowerCase()) {
+        throw new ForbiddenException(MENSAJE_IDENTIFICACION_ERRONEA);
+      }
+    }
+
+    // 6. La especialidad solo existe para profesores (regla de crear).
+    if (dto.especialidad !== undefined && actual.role !== 'teacher') {
+      throw new BadRequestException(MENSAJE_ESPECIALIDAD_SOLO_PROFESOR);
+    }
+
+    // 7. Pre-check de duplicados auto-excluido: enviar el PROPIO
+    //    username/correo sin cambio real no es un 409. La BD sigue de
+    //    red de seguridad con P2002 → 409 (carreras de escritura).
+    if (dto.usuario !== undefined || dto.correo !== undefined) {
+      const duplicado = await this.buscarDuplicadoPerfil(dto, idUsuario);
+      if (duplicado !== null) {
+        if (
+          dto.usuario !== undefined &&
+          duplicado.username.toLowerCase() === dto.usuario.toLowerCase()
+        ) {
+          throw new ConflictException(MENSAJE_USERNAME_DUPLICADO);
+        }
+        throw new ConflictException(MENSAJE_CORREO_DUPLICADO);
+      }
+    }
+
+    // 8. UPDATE solo con los campos presentes (Prisma ignora los
+    //    ausentes); role y organization_id NO se mapean NUNCA.
+    const data: Prisma.usersUpdateInput = {};
+    if (dto.nombre !== undefined) {
+      data.first_name = dto.nombre;
+    }
+    if (dto.apellido !== undefined) {
+      data.last_name = dto.apellido;
+    }
+    if (dto.especialidad !== undefined) {
+      data.specialty = dto.especialidad; // null limpia (columna nullable)
+    }
+    if (dto.usuario !== undefined) {
+      data.username = dto.usuario;
+    }
+    if (dto.correo !== undefined) {
+      data.email = dto.correo;
+    }
+    if (dto.contrasenaNueva !== undefined) {
+      data.password_hash = await hash(dto.contrasenaNueva);
+      data.must_change_password = false;
+    }
+
+    const actualizado = await this.prisma.users.update({
+      where: { id: idUsuario },
+      data,
+      select: CAMPOS_USUARIO,
+    });
+
+    // 9. Cierre de sesión TOTAL solo por cambio de credenciales: la
+    //    respuesta avisa (sesionCerrada) y el controller expira la
+    //    cookie del refresh en esta misma respuesta.
+    if (cambiaCredenciales) {
+      this.sesiones.revocarUsuario(usuario.id);
+      return {
+        mensaje: MENSAJE_CREDENCIALES_ACTUALIZADAS,
+        sesionCerrada: true,
+        usuario: this.aUsuarioRespuesta(actualizado),
+      };
+    }
+    return {
+      mensaje: MENSAJE_PERFIL_ACTUALIZADO,
+      sesionCerrada: false,
+      usuario: this.aUsuarioRespuesta(actualizado),
+    };
+  }
+
+  /**
+   * Pre-check de duplicados para el perfil: busca username/correo
+   * nuevos en OTRA cuenta (NOT id propio) — el usuario puede reenviar
+   * sus valores actuales sin chocar consigo mismo.
+   */
+  private async buscarDuplicadoPerfil(
+    dto: ActualizarPerfilDto,
+    idUsuario: bigint,
+  ): Promise<{ username: string; email: string } | null> {
+    const condiciones: Prisma.usersWhereInput[] = [];
+    if (dto.usuario !== undefined) {
+      condiciones.push({ username: dto.usuario });
+    }
+    if (dto.correo !== undefined) {
+      condiciones.push({ email: dto.correo });
+    }
+    return this.prisma.users.findFirst({
+      where: { OR: condiciones, NOT: { id: idUsuario } },
+      select: { username: true, email: true },
+    });
   }
 
   /**

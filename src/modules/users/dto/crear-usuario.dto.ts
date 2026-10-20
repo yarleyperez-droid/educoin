@@ -23,16 +23,22 @@ export type RolCreable = Exclude<user_role, 'admin'>;
  * Username de 3 a 50 caracteres que empieza y termina en alfanumérico
  * y admite puntos, guiones y guiones bajos en medio (mismo estilo que
  * las cuentas del seed: 'prof.lopez', 'est.perez', 'admin').
+ *
+ * Exportado porque ActualizarPerfilDto lo reutiliza para validar un
+ * cambio de username en PATCH /users/me.
  */
-const PATRON_USERNAME = /^[a-zA-Z0-9][a-zA-Z0-9._-]{1,48}[a-zA-Z0-9]$/;
+export const PATRON_USERNAME = /^[a-zA-Z0-9][a-zA-Z0-9._-]{1,48}[a-zA-Z0-9]$/;
 
 /**
  * Nombres propios: letras (incluidas acentuadas), espacios, apóstrofes
  * y guiones — cubre 'María', 'Ana María', 'Jean-Pierre'. Sin dígitos ni
  * símbolos: el requisito del MVP es que todos los campos lleguen con
  * datos válidos.
+ *
+ * Exportado porque ActualizarPerfilDto lo reutiliza para validar nombre
+ * y apellido en PATCH /users/me.
  */
-const PATRON_NOMBRE = /^[A-Za-zÀ-ÖØ-öø-ÿ' -]+$/;
+export const PATRON_NOMBRE = /^[A-Za-zÀ-ÖØ-öø-ÿ' -]+$/;
 
 /**
  * Datos para crear una cuenta teacher/student. La creación es exclusiva

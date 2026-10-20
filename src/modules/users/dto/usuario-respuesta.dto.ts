@@ -39,6 +39,18 @@ export class UsuarioCreadoRespuestaDto {
 }
 
 /**
+ * Respuesta de PATCH /api/v1/users/me. `sesionCerrada` avisa al cliente
+ * del cierre total de sesión tras cambiar credenciales: true → debe
+ * descartar sus tokens y volver al login (el controller además expira
+ * la cookie del refresh en esa misma respuesta).
+ */
+export class PerfilActualizadoRespuestaDto {
+  mensaje!: string;
+  sesionCerrada!: boolean;
+  usuario!: UsuarioRespuestaDto;
+}
+
+/**
  * Meta de la paginación estándar de listados (AGENTS.md §8). Misma
  * forma que la de organizaciones: { total, page, limit }.
  */
