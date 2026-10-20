@@ -37,14 +37,8 @@ interface PrismaMock {
     update: jest.Mock<Promise<unknown>, [ConsultaUpdate]>;
   };
   enrollments: {
-    findFirst: jest.Mock<
-      Promise<unknown>,
-      [{ where: object; select: object }]
-    >;
-    create: jest.Mock<
-      Promise<unknown>,
-      [{ data: object; select: object }]
-    >;
+    findFirst: jest.Mock<Promise<unknown>, [{ where: object; select: object }]>;
+    create: jest.Mock<Promise<unknown>, [{ data: object; select: object }]>;
     findMany: jest.Mock<Promise<unknown[]>, [object]>;
     count: jest.Mock<Promise<number>, [object]>;
   };
@@ -143,10 +137,7 @@ describe('ClassesService', () => {
           Promise<unknown>,
           [{ where: object; select: object }]
         >(),
-        create: jest.fn<
-          Promise<unknown>,
-          [{ data: object; select: object }]
-        >(),
+        create: jest.fn<Promise<unknown>, [{ data: object; select: object }]>(),
         findMany: jest.fn<Promise<unknown[]>, [object]>(),
         count: jest.fn<Promise<number>, [object]>(),
       },
@@ -327,9 +318,9 @@ describe('ClassesService', () => {
         new NotFoundException(MENSAJE_RECURSO_NO_ENCONTRADO),
       );
 
-      await expect(classesService.obtener('999', ESTUDIANTE)).rejects.toBeInstanceOf(
-        NotFoundException,
-      );
+      await expect(
+        classesService.obtener('999', ESTUDIANTE),
+      ).rejects.toBeInstanceOf(NotFoundException);
       expect(prisma.classes.findFirst).not.toHaveBeenCalled();
     });
 
@@ -742,6 +733,87 @@ describe('ClassesService', () => {
       expect(resultado).toEqual({
         data: [],
         meta: { total: 0, page: 1, limit: 20 },
+      });
+    });
+  });
+
+  describe('listarInscripciones', () => {
+    const INSCRIPCION_DEL_ESTUDIANTE = {
+      id: BigInt(7),
+      status: 'active' as const,
+      enrolled_at: new Date('2026-10-08T02:53:19.000Z'),
+      classes: {
+        id: BigInt(5),
+        name: 'Matemática 5A',
+      },
+    };
+
+    it('mapea inscripciones activas a { data, meta } con id y nombre de clase', async () => {
+      prisma.enrollments.findMany.mockResolvedValue([
+        INSCRIPCION_DEL_ESTUDIANTE,
+      ]);
+      prisma.enrollments.count.mockResolvedValue(1);
+
+      const resultado = await classesService.listarInscripciones(
+        { page: 1, limit: 20 },
+        ESTUDIANTE,
+      );
+
+      expect(resultado).toEqual({
+        data: [
+          {
+            id: '7',
+            clase: { id: '5', nombre: 'Matemática 5A' },
+            estado: 'active',
+            inscritoEn: '2026-10-08T02:53:19.000Z',
+          },
+        ],
+        meta: { total: 1, page: 1, limit: 20 },
+      });
+    });
+
+    it('filtra por student_id y status active + clase active', async () => {
+      prisma.enrollments.findMany.mockResolvedValue([]);
+      prisma.enrollments.count.mockResolvedValue(0);
+
+      await classesService.listarInscripciones({}, ESTUDIANTE);
+
+      const whereEsperado = {
+        student_id: BigInt(3),
+        status: 'active',
+        classes: { status: 'active' },
+      };
+      expect(prisma.enrollments.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({ where: whereEsperado }),
+      );
+      expect(prisma.enrollments.count).toHaveBeenCalledWith(
+        expect.objectContaining({ where: whereEsperado }),
+      );
+    });
+
+    it('usa page=1 y limit=50 por defecto', async () => {
+      prisma.enrollments.findMany.mockResolvedValue([]);
+      prisma.enrollments.count.mockResolvedValue(0);
+
+      await classesService.listarInscripciones({}, ESTUDIANTE);
+
+      expect(prisma.enrollments.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({ skip: 0, take: 50 }),
+      );
+    });
+
+    it('devuelve lista vacía con total 0 cuando el estudiante no tiene inscripciones', async () => {
+      prisma.enrollments.findMany.mockResolvedValue([]);
+      prisma.enrollments.count.mockResolvedValue(0);
+
+      const resultado = await classesService.listarInscripciones(
+        {},
+        ESTUDIANTE,
+      );
+
+      expect(resultado).toEqual({
+        data: [],
+        meta: { total: 0, page: 1, limit: 50 },
       });
     });
   });

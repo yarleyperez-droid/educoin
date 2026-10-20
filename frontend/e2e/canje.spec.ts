@@ -125,6 +125,23 @@ test.beforeAll(() => {
   resetearCanjeDelSeed();
 });
 
+test.afterAll(() => {
+  // Restaura el estado del seed: `login.spec.ts` y
+  // `estudiante-cuestionario.spec.ts` dependen de que est.perez tenga
+  // `must_change_password = TRUE` (el guard H2.2 de su flujo).
+  execFileSync(
+    "psql",
+    [
+      leerDatabaseUrl(),
+      "-v",
+      "ON_ERROR_STOP=1",
+      "-c",
+      `UPDATE users SET must_change_password = TRUE WHERE username = '${USUARIO_ESTUDIANTE}';`,
+    ],
+    { stdio: "pipe" },
+  );
+});
+
 test.beforeEach(async ({ context }) => {
   await limpiarSesion(context);
 });

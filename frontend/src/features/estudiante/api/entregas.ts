@@ -131,6 +131,8 @@ interface EntregaEnviadaBackend {
   entregadoEn: string;
   puntaje: number | null;
   monedasOtorgadas: number;
+  /** Retroalimentación del profesor (`submissions.feedback`); null sin calificar. */
+  feedback?: string | null;
   respuestas: RespuestaCalificadaBackend[];
 }
 
@@ -200,8 +202,9 @@ function aResultado(
  *
  * Mapeo (ver cabecera de `contrato/entregas.ts`): `entregadoEn` →
  * `enviadaEn`; `resultado` se deriva de los veredictos de las respuestas
- * calificadas; `retroalimentacion` llega neutra (`null`, H3.5 aún no
- * expone `feedback`); `estudianteId`/`iniciadaEn`/`calificadaEn` ya no
+ * calificadas; `feedback` → `retroalimentacion` (H3.5 lo expone desde el
+ * primer día en `EntregaRespuestaDto`; T5.9.3 corrigió el mapeo que lo
+ * dejaba siempre `null`); `estudianteId`/`iniciadaEn`/`calificadaEn` ya no
  * existen en el tipo porque el backend no los expone.
  *
  * @param backend Borrador o entrega enviada de H3.4.
@@ -230,7 +233,7 @@ function aEntrega(backend: EntregaBackend): Entrega {
     enviadaEn: backend.entregadoEn,
     puntaje: backend.puntaje,
     monedasOtorgadas: backend.monedasOtorgadas,
-    retroalimentacion: null,
+    retroalimentacion: backend.feedback ?? null,
     resultado: aResultado(backend.respuestas),
   };
 }

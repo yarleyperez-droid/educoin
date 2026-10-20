@@ -3,9 +3,10 @@
  * (`/teacher/clases/[id]`) — T5.6.3 (PRO-387).
  *
  * Muestra la cabecera de la clase (nombre + estado) y su lista de
- * actividades con badge, las acciones permitidas **solo en `draft`**
- * ("Editar" y "Publicar") y **ninguna** para `published` (CA 3 de H5.6:
- * no se ofrece la reversión a borrador).
+ * actividades con badge, las acciones de edición **solo en `draft`**
+ * ("Editar" y "Publicar") y el enlace **"Ver entregas"** en `published`
+ * (T5.9.1: entrada a la cola de calificación). No se ofrece la reversión
+ * a borrador (CA 3 de H5.6).
  *
  * Contrato con el backend (H3.1/H3.3, T5.6.4):
  * - Clase: `obtenerClase` → `GET /classes/:id` (async; `404` → `null`).
@@ -238,6 +239,17 @@ export default function DetalleClasePage() {
                         ? "Publicando…"
                         : "Publicar"}
                     </button>
+                  </div>
+                )}
+
+                {actividad.estado === "published" && (
+                  <div className="flex items-center gap-2">
+                    <Link
+                      href={`/teacher/clases/${clase.id}/actividades/${actividad.id}/entregas`}
+                      className="rounded-md border border-neutral-300 px-3 py-1.5 text-xs font-medium text-neutral-700 hover:bg-neutral-100"
+                    >
+                      Ver entregas
+                    </Link>
                   </div>
                 )}
               </div>

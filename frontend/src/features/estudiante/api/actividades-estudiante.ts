@@ -1,47 +1,27 @@
 /**
  * Fachada de actividades para el estudiante (T5.8.1 → T5.8.4, PRO-397).
  *
- * Punto único entre la vista del cuestionario y el transporte. Desde
- * T5.8.4 habla con la **API real de H3.3** (`src/modules/activities/`)
- * mediante `apiPlano` de `@/lib/api-client`; el mock del profesor ya no
- * existe.
+ * Punto único entre la vista del cuestionario y el transporte. Habla con
+ * la API real de H3.3 (`src/modules/activities/`):
  *
- * ## Contrato con H3.3 (verificado en `test/activities.e2e-spec.ts`)
+ * - `GET /api/v1/activities/:id` → detalle en plano
+ *   (`ActividadEstudianteRespuestaDto`, preguntas sanitizadas).
+ * - `GET /api/v1/enrollments/:inscripcionId/activities` → listado publicado
+ *   de una de sus clases (respuesta `{ data, meta }`).
  *
- * - `GET /api/v1/activities/:id` (`@Roles('teacher','student')` +
- *   `@PerteneceA('actividadVisible','id')`) → `ActividadEstudianteRespuestaDto`
- *   **en plano**, con el JSONB `preguntas` ya sanitizado por rol: sin
- *   `options[].is_correct` ni `expected_answer` (AGENTS.md §9.5). La
- *   responsabilidad de no filtrar secretos es del backend; el mapper de
- *   esta fachada solo traduce vocabulario y —defensa en profundidad—
- *   construye objetos nuevos con las claves permitidas, sin hacer spread
- *   del original, de modo que un secreto no puede colarse por accidente.
- * - Si la actividad no existe, no está publicada o el estudiante no tiene
- *   inscripción activa en la clase, `@PerteneceA` responde **404**
- *   (anti-enumeración) antes de llegar al handler.
- *
- * ## Limitación del listado (T5.8.4)
- *
- * El único listado del estudiante es
- * `GET /api/v1/enrollments/:inscripcionId/activities` y exige un
- * `inscripcionId` que el frontend **no tiene a mano** (no hay endpoint
- * que lo devuelva ni viaja en la sesión; ver decisión en el ticket
- * PRO-397). Sin endpoints nuevos (fuera de alcance),
- * {@link listarPublicadas} devuelve `[]` y la vista muestra su estado
- * vacío; el detalle por URL ({@link obtenerParaEstudiante}) sí funciona.
- *
- * Los errores siempre salen como `ApiError` con `message` en español: la
- * vista solo muestra `error.message`. La única excepción es
- * {@link obtenerParaEstudiante}, que traduce el `404` a `null` para el
- * estado "no encontrada" de la vista.
+ * La responsabilidad de no filtrar secretos es del backend; los mappers de
+ * esta fachada traducen vocabulario y construyen objetos nuevos con las
+ * claves permitidas, sin hacer spread del original (defensa en profundidad).
  */
 
-import { ApiError, apiPlano } from "@/lib/api-client";
+import { ApiError, api, apiPlano } from '@/lib/api-client';
+import type { ApiMeta } from '@/lib/api-client';
 
 import type {
   ActividadEstudiante,
+  ActividadResumen,
   PreguntaEstudiante,
-} from "../contrato/cuestionario";
+} from '../contrato/cuestionario';
 
 /**
  * `PreguntaSinRespuestas` de H3.3 tal cual sale del backend (ya
@@ -51,7 +31,7 @@ import type {
  */
 interface PreguntaEstudianteBackend {
   position: number;
-  type: "test" | "completion" | "file" | "minigame";
+  type: 'test' | 'completion' | 'file' | 'minigame';
   prompt: string;
   score: number;
   /** Solo los tipos que la usan la traen; nunca con `is_correct`. */
@@ -71,6 +51,20 @@ interface ActividadEstudianteBackend {
   recompensaMonedas: number;
   preguntas: PreguntaEstudianteBackend[];
   publicadaEn: string | null;
+}
+
+/**
+ * Ítem de `ListadoActividadesDto` (`ActividadListadoDto`). No incluye
+ * preguntas: para resolverlas se va al detalle.
+ */
+interface ActividadListadoBackend {
+  id: string;
+  titulo: string;
+  estado: string;
+  recompensaMonedas: number;
+  publicadaEn: string | null;
+  cierraEn: string | null;
+  creadoEn: string;
 }
 
 /**
@@ -123,22 +117,48 @@ function aActividadEstudiante(
 }
 
 /**
- * Lista las actividades **publicadas** para el estudiante.
+ * Traduce `ActividadListadoDto` al resumen del dominio.
  *
- * **Limitación documentada (T5.8.4):** el listado real de H3.3 es
- * `GET /enrollments/:inscripcionId/activities` y el frontend no dispone
- * del `inscripcionId` (ver cabecera del archivo). Hasta que exista una
- * vía para obtenerlo sin endpoints nuevos, esta función devuelve siempre
- * `[]` — sin invocar el transporte — y la vista muestra su estado vacío.
- * El detalle por id ({@link obtenerParaEstudiante}) no tiene esta
- * limitación.
- *
- * @returns Siempre `[]` mientras el listado requiera `inscripcionId`.
+ * @param backend Ítem del listado publicado del estudiante.
+ * @returns Resumen seguro para pintar en la lista.
  */
-export async function listarPublicadas(): Promise<ActividadEstudiante[]> {
-  await Promise.resolve();
+function aActividadResumen(backend: ActividadListadoBackend): ActividadResumen {
+  return {
+    id: String(backend.id),
+    titulo: backend.titulo,
+    recompensaMonedas: backend.recompensaMonedas,
+    publicadaEn: backend.publicadaEn,
+    cierraEn: backend.cierraEn,
+    creadoEn: backend.creadoEn,
+  };
+}
 
-  return [];
+/**
+ * Lista las actividades **publicadas** de una inscripción del estudiante.
+ *
+ * @param inscripcionId Id de la inscripción (`enrollments.id`), obtenido
+ *   vía {@link listarInscripciones}.
+ * @param page Página 1-indexada (default 1).
+ * @param limit Filas por página (default 50).
+ * @returns Actividades publicadas de esa clase con paginación.
+ */
+export async function listarPublicadas(
+  inscripcionId: string,
+  page = 1,
+  limit = 50,
+): Promise<{ data: ActividadResumen[]; meta: ApiMeta }> {
+  const respuesta = await api.get<ActividadListadoBackend[]>(
+    `enrollments/${encodeURIComponent(inscripcionId)}/activities?page=${page}&limit=${limit}`,
+  );
+
+  return {
+    data: respuesta.data.map(aActividadResumen),
+    meta: respuesta.meta ?? {
+      total: respuesta.data.length,
+      page,
+      limit,
+    },
+  };
 }
 
 /**

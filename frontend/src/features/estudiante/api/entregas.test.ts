@@ -95,6 +95,7 @@ const ENTREGA_CALIFICADA_BACKEND = {
   entregadoEn: "2026-10-12T10:05:00.000Z",
   puntaje: 15,
   monedasOtorgadas: 120,
+  feedback: "Buen trabajo; revisa el paso 2.",
   respuestas: [
     { question_position: 1, option: "Bogotá", is_correct: true, score: 10 },
     { question_position: 2, text: "100", is_correct: true, score: 5 },
@@ -108,6 +109,7 @@ const ENTREGA_PENDIENTE_BACKEND = {
   estado: "submitted",
   puntaje: null,
   monedasOtorgadas: 0,
+  feedback: null,
   respuestas: [
     { question_position: 1, option: "Cali", is_correct: false, score: 0 },
     { question_position: 2, text: "100", is_correct: true, score: 5 },
@@ -151,7 +153,7 @@ describe("enviarRespuestas", () => {
       enviadaEn: "2026-10-12T10:05:00.000Z",
       puntaje: 15,
       monedasOtorgadas: 120,
-      retroalimentacion: null,
+      retroalimentacion: "Buen trabajo; revisa el paso 2.",
       resultado: [
         { question_position: 1, correcta: true, puntos: 10 },
         { question_position: 2, correcta: true, puntos: 5 },
@@ -317,7 +319,28 @@ describe("obtenerEntrega", () => {
       { question_position: 1, correcta: true, puntos: 10 },
       { question_position: 2, correcta: true, puntos: 5 },
     ]);
-    expect(entrega?.retroalimentacion).toBeNull(); // H3.5 aún sin feedback
+    expect(entrega?.retroalimentacion).toBe("Buen trabajo; revisa el paso 2.");
+  });
+
+  it("mapea el feedback del backend a retroalimentacion (T5.9.3)", async () => {
+    // H3.5 sí expone `feedback` en EntregaRespuestaDto: la vista de T5.8.3
+    // debe mostrarlo tal cual (antes la fachada lo descartaba y el
+    // estudiante veía "Aún sin retroalimentación." aunque el profesor
+    // hubiera escrito comentarios).
+    vi.mocked(apiPlano.get).mockResolvedValue(ENTREGA_CALIFICADA_BACKEND);
+
+    const entrega = await obtenerEntrega("7");
+
+    expect(entrega?.retroalimentacion).toBe("Buen trabajo; revisa el paso 2.");
+  });
+
+  it("conserva retroalimentacion null cuando el backend no envía feedback", async () => {
+    vi.mocked(apiPlano.get).mockResolvedValue(ENTREGA_PENDIENTE_BACKEND);
+
+    const entrega = await obtenerEntrega("7");
+
+    expect(entrega?.estado).toBe("submitted");
+    expect(entrega?.retroalimentacion).toBeNull();
   });
 
   it("devuelve null cuando todavía no hay entrega (404)", async () => {

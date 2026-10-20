@@ -3,10 +3,10 @@
  *
  * Punto de entrada del panel: tarjeta de **monedas ganadas** (H4.2, leídas
  * de la vista `student_coins`) y formulario de **unión a clase por código**
- * (`POST /classes/join` de H3.2, cuyo endpoint aún no existe: el contrato
- * futuro está declarado en `features/billetera/api/unirse.ts` y el 404 se
- * traduce a un mensaje amable). Además, los enlaces del hub del panel:
- * Actividades, Billetera y Canjear.
+ * (`POST /classes/join` de H3.2; el contrato real está en
+ * `features/billetera/api/unirse.ts` y el mensaje de éxito lo devuelve el
+ * backend). Además, los enlaces del hub del panel: Actividades, Billetera
+ * y Canjear.
  *
  * Estados cubiertos (kit H5.2): carga y error con reintento en la tarjeta
  * de monedas; el formulario usa toast para éxito/error (H5.1).
@@ -28,9 +28,8 @@ import { obtenerSaldo } from "@/features/billetera/api/billetera";
 import { unirseAClase } from "@/features/billetera/api/unirse";
 import { ApiError } from "@/lib/api-client";
 
-/** Mensaje de éxito al enviar el código (aunque H3.2 aún no exista). */
-const MENSAJE_ENVIADO =
-  "Código enviado. Te avisaremos cuando la unión a clases esté disponible.";
+/** Mensaje de éxito de respaldo si el backend no devolviera `mensaje`. */
+const MENSAJE_ENVIADO = "Te has unido a la clase.";
 
 /** Etiqueta accesible del campo de código. */
 const ETIQUETA_CODIGO = "Código de la clase";
@@ -85,7 +84,7 @@ export default function StudentPage() {
   }
 
   /**
-   * Envía el código de unión al backend (contrato supuesto de H3.2).
+   * Envía el código de unión al backend (`POST /classes/join`).
    *
    * @param evento Submit del formulario.
    */
@@ -100,8 +99,8 @@ export default function StudentPage() {
     }
     setEnviando(true);
     try {
-      await unirseAClase(limpio);
-      mostrar(MENSAJE_ENVIADO, "exito");
+      const resultado = await unirseAClase(limpio);
+      mostrar(resultado.mensaje || MENSAJE_ENVIADO, "exito");
       setCodigo("");
     } catch (e) {
       mostrar(mensajeDeErrorApi(e), "error");
