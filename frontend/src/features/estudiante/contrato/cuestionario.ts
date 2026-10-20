@@ -18,7 +18,7 @@
  * con las claves en inglés que son contrato de la BD.
  */
 
-import { z } from "zod";
+import { z } from 'zod';
 
 /**
  * Opción de respuesta vista por el estudiante: **solo el texto**.
@@ -44,7 +44,7 @@ export const PreguntaEstudianteSchema = z.object({
   position: z.number().int().min(1),
 
   /** Tipo de pregunta (enum real de la BD). */
-  type: z.enum(["test", "completion", "file", "minigame"]),
+  type: z.enum(['test', 'completion', 'file', 'minigame']),
 
   /** Enunciado (puede contener fórmulas `$…$`). */
   prompt: z.string(),
@@ -58,6 +58,30 @@ export const PreguntaEstudianteSchema = z.object({
 
 /** Pregunta derivada del esquema seguro. */
 export type PreguntaEstudiante = z.infer<typeof PreguntaEstudianteSchema>;
+
+/**
+ * Resumen de actividad en los listados del estudiante: sin preguntas ni
+ * descripción. El backend ya filtra `published` para estudiantes.
+ */
+export interface ActividadResumen {
+  /** ID de la actividad (BigInt de la BD como string). */
+  id: string;
+
+  /** Título visible. */
+  titulo: string;
+
+  /** Monedas que otorga al ser calificada. */
+  recompensaMonedas: number;
+
+  /** Fecha de publicación (ISO). */
+  publicadaEn: string | null;
+
+  /** Fecha de cierre (ISO) o `null` si no tiene. */
+  cierraEn: string | null;
+
+  /** Fecha de creación (ISO). */
+  creadoEn: string;
+}
 
 /**
  * Actividad publicada tal como la ve el estudiante.

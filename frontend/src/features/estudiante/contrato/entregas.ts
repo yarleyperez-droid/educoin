@@ -33,8 +33,10 @@
  *   los lee. Con API real el backend es la única fuente de verdad y el
  *   cliente no rellena campos que no puede saber.
  * - `retroalimentacion` se **conserva** porque la vista de T5.8.3 la
- *   muestra; el backend aún no expone `feedback` (H3.5), así que llega
- *   siempre `null` y la vista pinta su estado vacío.
+ *   muestra; desde T5.9.3 se mapea desde el `feedback` real de H3.5
+ *   (`EntregaRespuestaDto.feedback`) — antes la fachada lo dejaba siempre
+ *   `null` y la vista pintaba su estado vacío aunque el profesor hubiera
+ *   escrito retroalimentación.
  * - `resultado` se **deriva** de `respuestas` calificadas del backend
  *   (`RespuestaCalificada`: `is_correct`/`score` por respuesta) y
  *   `respuestas` se sanea a la forma enviada por el estudiante (sin

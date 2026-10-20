@@ -20,6 +20,7 @@ import {
 import type { ActualizarClaseDto } from './dto/actualizar-clase.dto';
 import type { BuscarClasesQueryDto } from './dto/buscar-clases.dto';
 import type { ListarEstudiantesQueryDto } from './dto/listar-estudiantes.dto';
+import type { ListarInscripcionesQueryDto } from './dto/listar-inscripciones.dto';
 import type {
   ClaseCreadaRespuestaDto,
   ClaseListadoDto,
@@ -31,6 +32,10 @@ import type {
   EstudianteInscritoDto,
   ListadoEstudiantesDto,
 } from './dto/estudiante-inscrito-respuesta.dto';
+import type {
+  InscripcionListadoDto,
+  ListadoInscripcionesDto,
+} from './dto/inscripcion-respuesta.dto';
 
 /**
  * Mensaje de éxito de la creación: se arma con el código de unión real
@@ -105,6 +110,17 @@ interface InscripcionEncontrada {
     username: string;
     first_name: string;
     last_name: string;
+  };
+}
+
+/** Inscripción leída con los datos básicos de la clase. */
+interface InscripcionDelEstudiante {
+  id: bigint;
+  status: enrollment_status;
+  enrolled_at: Date;
+  classes: {
+    id: bigint;
+    name: string;
   };
 }
 
@@ -437,6 +453,68 @@ export class ClassesService {
       estudianteId: inscripcion.users.id.toString(),
       username: inscripcion.users.username,
       nombre: `${inscripcion.users.first_name} ${inscripcion.users.last_name}`,
+      estado: inscripcion.status,
+      inscritoEn: inscripcion.enrolled_at.toISOString(),
+    };
+  }
+
+  /**
+   * Lista las inscripciones activas del estudiante autenticado (GET
+   * /api/v1/enrollments). El guard HTTP (`@Roles('student')`) ya filtró
+   * el rol; aquí se restringe por `student_id`, se exige inscripción
+   * `active` y clase `active`, y se devuelve `{ data, meta }` paginado.
+   *
+   * No se re-verifica pertenencia por id: es una colección del usuario
+   * autenticado, misma postura que `buscar` para student. No expone
+   * códigos de unión, monedas ni datos del profesor.
+   */
+  async listarInscripciones(
+    dto: ListarInscripcionesQueryDto,
+    usuario: UsuarioAutenticado,
+  ): Promise<ListadoInscripcionesDto> {
+    const estudianteId = BigInt(usuario.id);
+    const page = dto.page ?? 1;
+    const limit = dto.limit ?? 50;
+
+    const where = {
+      student_id: estudianteId,
+      status: 'active' as const,
+      classes: { status: 'active' as const },
+    };
+
+    const [filas, total] = await Promise.all([
+      this.prisma.enrollments.findMany({
+        where,
+        select: {
+          id: true,
+          status: true,
+          enrolled_at: true,
+          classes: { select: { id: true, name: true } },
+        },
+        orderBy: { enrolled_at: 'desc' },
+        skip: (page - 1) * limit,
+        take: limit,
+      }),
+      this.prisma.enrollments.count({ where }),
+    ]);
+
+    return {
+      data: filas.map((i) =>
+        this.aInscripcionListado(i as InscripcionDelEstudiante),
+      ),
+      meta: { total, page, limit },
+    };
+  }
+
+  private aInscripcionListado(
+    inscripcion: InscripcionDelEstudiante,
+  ): InscripcionListadoDto {
+    return {
+      id: inscripcion.id.toString(),
+      clase: {
+        id: inscripcion.classes.id.toString(),
+        nombre: inscripcion.classes.name,
+      },
       estado: inscripcion.status,
       inscritoEn: inscripcion.enrolled_at.toISOString(),
     };

@@ -6,9 +6,10 @@
  * true` (columna real `users.must_change_password`; nombre del backend
  * desde T5.4.3), el middleware (T5.3.2 ampliado en T5.4.2) no deja navegar a
  * ningún otro sitio hasta completar el cambio aquí. La vista consume la capa
- * `@/features/auth/api/auth`, cuyo `cambiarContrasena` sigue siendo **mock
- * documentado** porque H2.2 (endpoint real de cambio) no existe todavía
- * (PRO-381 integró solo login/logout de H2.1).
+ * `@/features/auth/api/auth`, cuyo `cambiarContrasena` habla con el
+ * endpoint real de H2.2 (`POST auth/cambiar-contrasena`) y refresca la
+ * sesión después (PRO-381 integró login/logout; el cambio quedó integrado
+ * con H2.2).
  *
  * Responsabilidades de esta vista:
  * - Renderizar **el mismo DOM en servidor y cliente** (formulario siempre
@@ -47,9 +48,9 @@
  * - El frontend no es barrera de seguridad (AGENTS.md §9): el bloqueo real
  *   lo impone el backend (H2.1/H2.2); este guard de Next es UX.
  *
- * **Límite del mock (plan §7):** hasta que exista H2.2 el cambio vive solo
- * en la cookie del navegador: al volver a hacer login, el backend (que sigue
- * con `must_change_password = true` en la BD) volverá a exigir el cambio.
+ * **Contrato con H2.2:** el cambio vive en la BD (`password_hash` nuevo y
+ * `must_change_password = false`); la capa refresca la sesión después, así
+ * que al volver a entrar (o a hacer login) el backend ya no exige el cambio.
  */
 
 "use client";
