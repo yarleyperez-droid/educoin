@@ -5,8 +5,8 @@
  * de la vista `student_coins`) y formulario de **unión a clase por código**
  * (`POST /classes/join` de H3.2; el contrato real está en
  * `features/billetera/api/unirse.ts` y el mensaje de éxito lo devuelve el
- * backend). Además, los enlaces del hub del panel: Actividades, Billetera
- * y Canjear.
+ * backend). Además, los enlaces del hub del panel: Actividades, Ranking,
+ * Mi progreso, Billetera y Canjear.
  *
  * Estados cubiertos (kit H5.2): carga y error con reintento en la tarjeta
  * de monedas; el formulario usa toast para éxito/error (H5.1).
@@ -150,6 +150,18 @@ export default function StudentPage() {
             className="rounded-md bg-neutral-900 px-4 py-2 text-sm font-medium text-white hover:bg-neutral-700 focus:outline-none focus:ring-2 focus:ring-neutral-500 focus:ring-offset-2"
           >
             Mis actividades
+          </Link>
+          <Link
+            href="/student/ranking"
+            className="rounded-md border border-neutral-300 px-4 py-2 text-sm font-medium text-neutral-700 hover:bg-neutral-50 focus:outline-none focus:ring-2 focus:ring-neutral-500 focus:ring-offset-2"
+          >
+            Ranking
+          </Link>
+          <Link
+            href="/student/progreso"
+            className="rounded-md border border-neutral-300 px-4 py-2 text-sm font-medium text-neutral-700 hover:bg-neutral-50 focus:outline-none focus:ring-2 focus:ring-neutral-500 focus:ring-offset-2"
+          >
+            Mi progreso
           </Link>
           <Link
             href="/student/billetera"
