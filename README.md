@@ -153,11 +153,9 @@ ranking global           → ordena por monedas GANADAS (vista)
   La regresión continua la cubre `test:e2e` en CI.
 - **Backend**: `pnpm test:cov` (29 suites / 437 tests **con piso de cobertura**
   `coverageThreshold` 60/53/61/60 en `jest.config.ts`; medido 60.98/54.44/63.12/61.64)
-  y `pnpm test:e2e` (21 suites / 322 tests, requieren la BD Docker corriendo).
-  Local: `activities.e2e-spec` tiene un fallo **preexistente** (espera el id `1`
-  en la página 1 y la BD local acumula datos entre corridas) e inestabilidad
-  intermitente entre suites en paralelo (al reintento queda verde); ambos
-  reproducidos en `develop` sin cambios recientes.
+  y `pnpm test:e2e` (21 suites / 322 tests **en verde**, requieren la BD Docker
+  corriendo; el fallo preexistente de `activities.e2e` quedó corregido — ya no
+  depende del id seed `1`).
 - **Frontend**: `pnpm --dir frontend test` (Vitest), `pnpm --dir frontend test:e2e`
   (Playwright contra backend real + Next; requiere BD Docker), más
   `typecheck`/`lint`/`build`.

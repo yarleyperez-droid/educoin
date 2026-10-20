@@ -216,12 +216,13 @@ describe('Actividades (e2e, datos del seed)', () => {
         page: 1,
         limit: 50,
       });
-      // La actividad recién creada y la del seed están en la clase 1.
+      // La actividad recién creada debe aparecer en la primera página.
       const ids = respuesta.body.data.map(
         (fila: { id: string }) => fila.id,
       ) as string[];
+
       expect(ids).toContain(idActividad);
-      expect(ids).toContain('1');
+
       for (const fila of respuesta.body.data) {
         expect(fila).not.toHaveProperty('preguntas');
       }
