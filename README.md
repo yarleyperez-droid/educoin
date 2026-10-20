@@ -151,17 +151,19 @@ ranking global           → ordena por monedas GANADAS (vista)
   saldo sin negativo, organización compartida, recalificación sin duplicar,
   reversión de canje, bloqueo a actividad `draft` y auditoría en `coin_movements`.
   La regresión continua la cubre `test:e2e` en CI.
-- **Backend**: `pnpm test` (29 suites / 437 tests) y `pnpm test:e2e` (20 suites /
-  306 tests, requieren la BD Docker corriendo). Local: `activities.e2e-spec`
-  tiene un fallo **preexistente** (espera el id `1` en la página 1 y la BD
-  local acumula datos entre corridas) e inestabilidad intermitente entre
-  suites en paralelo; ambos reproducidos en `develop` sin cambios recientes.
+- **Backend**: `pnpm test:cov` (29 suites / 437 tests **con piso de cobertura**
+  `coverageThreshold` 60/53/61/60 en `jest.config.ts`; medido 60.98/54.44/63.12/61.64)
+  y `pnpm test:e2e` (21 suites / 322 tests, requieren la BD Docker corriendo).
+  Local: `activities.e2e-spec` tiene un fallo **preexistente** (espera el id `1`
+  en la página 1 y la BD local acumula datos entre corridas) e inestabilidad
+  intermitente entre suites en paralelo (al reintento queda verde); ambos
+  reproducidos en `develop` sin cambios recientes.
 - **Frontend**: `pnpm --dir frontend test` (Vitest), `pnpm --dir frontend test:e2e`
   (Playwright contra backend real + Next; requiere BD Docker), más
   `typecheck`/`lint`/`build`.
 - **CI (H6.4 / PRO-295)**: cada PR a `main`/`develop` y cada push a `develop`
   corren [.github/workflows/ci.yml](.github/workflows/ci.yml) — backend
-  (`typecheck`, `lint`, `build`, `test`, `test:e2e` contra PostgreSQL 16
+  (`typecheck`, `lint`, `build`, `test:cov`, `test:e2e` contra PostgreSQL 16
   efímero con esquema + seed por corrida) **y** `build` del frontend, en paralelo.
   Verificado con un PR sano en **verde** y un PR con error intencional en **rojo**.
   Nota: `db/002_seed.sql` lleva hashes argon2id reales de las contraseñas de
@@ -238,9 +240,20 @@ ranking global           → ordena por monedas GANADAS (vista)
   espejo de `condicionPorRol`); acceso por clase **sin `@PerteneceA`** (la
   regla `'clase'` es teacher-only y rechazaría estudiantes): admin pasa,
   teacher dueño, estudiante inscripto `active`, resto → 404
-  anti-enumeración. Suite `test/rankings.e2e-spec.ts` (11 tests; org
-  sintética por corrida para ser inmune a la BD acumulativa y respetando el
-  límite de 5 logins/min de auth) + 13 unit.
+   anti-enumeración. Suite `test/rankings.e2e-spec.ts` (11 tests; org
+   sintética por corrida para ser inmune a la BD acumulativa y respetando el
+   límite de 5 logins/min de auth) + 13 unit.
+- **Suite de regresión del hito (H6.3 / PRO-294)**:
+  `test/regresion-hito.e2e-spec.ts` (16 tests) recorre en una corrida el
+  flujo completo (clase propia por corrida → unión → actividad → envío bajo
+  umbral → calificar con **+75 exactos** por `fn_award_coins` →
+  recalificación **409 sin doble pago** → canje) más la matriz de
+  negativos (rol equivocado → 403, ajeno → 404/ítems 403/billetera 403,
+  validaciones → 409/422/400) auditando **cada respuesta** con
+  `auditarSinSecretos` (vistas con veredictos usan la variante que solo
+  prohíbe `password_hash`; `is_correct`/`expected_answer` viajan por
+  contrato al dueño, AGENTS.md §9.5). Cierra el CA 4 con
+  `coverageThreshold` + CI en `pnpm test:cov`.
 
 ## Stack
 

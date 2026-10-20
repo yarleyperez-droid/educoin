@@ -90,8 +90,10 @@ jobs:
           psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f db/001_schema.sql
           psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f db/002_seed.sql
 
-      - name: test (unitarios)
-        run: pnpm test
+      # H6.3 / T6.3.4: con cobertura para que el coverageThreshold de
+      # jest.config.ts haga fallar al PR que baje el piso mínimo.
+      - name: test (unitarios con cobertura)
+        run: pnpm test:cov
 
       - name: test:e2e (Jest + Supertest contra la BD del service)
         run: pnpm test:e2e
