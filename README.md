@@ -14,9 +14,9 @@
 | [`educoins_platform.html`](educoins_platform.html) | **Demo principal** (prototipo de interfaz autocontenido: HTML + CSS, sin dependencias). Ábrelo directo en el navegador. |
 | [`db/001_schema.sql`](db/001_schema.sql) | Esquema completo de la BD (9 tablas, 10 enums, 7 triggers, 3 vistas) — *docstring de cabecera con uso y convenciones*. |
 | [`db/002_seed.sql`](db/002_seed.sql) | Datos de prueba mínimos para recorrer todo el ciclo — *docstring de cabecera*. |
-| [`docs/plataforma_educativa_bd.md`](docs/plataforma_educativa_bd.md) | **Especificación de la BD**: reglas de negocio, diagrama Mermaid, estructura JSONB, resultados de verificación. |
-| [`docs/post_mvp.md`](docs/post_mvp.md) | **Backlog post-MVP**: funcionalidades planificadas (minijuegos, modalidades, aprobación de canjes…) que *no existen aún* en la BD. |
-| [`docs/contexto_mvp.md`](docs/contexto_mvp.md) | **Contexto del MVP**: reglas de negocio, stack y decisiones, qué está hecho y qué falta. |
+| [`docs/EduCoin.md`](docs/EduCoin.md) | **Ficha técnica oficial** (Plan de Dirección Técnica v1.0): requerimientos por rol (Dev 1/2/3), stack permitido, estándares de código y flujo Git. |
+| [`docs/post_mvp.md`](docs/post_mvp.md) | **Post-MVP (backlog + planes, documento único)**: trazabilidad contra la ficha (§0), funcionalidades planificadas que *no existen aún* en la BD (Parte I) + plan de la épica E7 — canje con aprobación (Parte II) + plan de la épica E8 — minijuegos como pregunta de actividad (Parte III) + plan de la épica E9 — KaTeX + responsive (Parte IV). |
+| [`docs/guard_pertenencia.md`](docs/guard_pertenencia.md) | **Guard `@PerteneceA`**: cómo funciona la verificación de propiedad de recursos y cómo declararla en endpoints nuevos. |
 | [`.opencode/agents/AGENTS.md`](.opencode/agents/AGENTS.md) | Guardrails del proyecto para agentes de IA. |
 | [`package.json`](package.json) | **Backend NestJS** (API REST): scripts, dependencias y `engines`. |
 | [`src/`](src) | Código del backend (NestJS). Módulos reales: `auth` (H2.1 completo), `autorizacion`, `classes` (parcial), `common/` (guards, decorators, filters), `config/` (validación .env), `prisma/`, `generated/prisma/`. |
@@ -53,6 +53,10 @@ pnpm start:dev
 # 5. Terminal 2 -> Frontend Next en http://localhost:3001
 pnpm dev:web
 ```
+
+> **Documentación de la API (H1.3):** UI en <http://localhost:3000/api> y spec
+> OpenAPI JSON en <http://localhost:3000/api-json> (todas las rutas bajo
+> `/api/v1`, esquema de seguridad JWT bearer).
 
 ### Comandos
 
@@ -142,13 +146,101 @@ ranking global           → ordena por monedas GANADAS (vista)
 
 ## Verificación
 
-- **Esquema BD**: verificado en PostgreSQL 16 con **12/12 pruebas** — detalle en
-  [`docs/plataforma_educativa_bd.md` §7](docs/plataforma_educativa_bd.md).
-- **Backend**: `pnpm test` (11 suites / 85 tests) y `pnpm test:e2e` (5 suites /
-  36 tests, requieren la BD Docker corriendo).
+- **Esquema BD**: verificado en PostgreSQL 16 con **12/12 pruebas** (2026-10-02):
+  otorgamiento de monedas, contadores, canje + stock, ranking, unicidad de clase,
+  saldo sin negativo, organización compartida, recalificación sin duplicar,
+  reversión de canje, bloqueo a actividad `draft` y auditoría en `coin_movements`.
+  La regresión continua la cubre `test:e2e` en CI.
+- **Backend**: `pnpm test` (29 suites / 437 tests) y `pnpm test:e2e` (20 suites /
+  306 tests, requieren la BD Docker corriendo). Local: `activities.e2e-spec`
+  tiene un fallo **preexistente** (espera el id `1` en la página 1 y la BD
+  local acumula datos entre corridas) e inestabilidad intermitente entre
+  suites en paralelo; ambos reproducidos en `develop` sin cambios recientes.
 - **Frontend**: `pnpm --dir frontend test` (Vitest), `pnpm --dir frontend test:e2e`
   (Playwright contra backend real + Next; requiere BD Docker), más
   `typecheck`/`lint`/`build`.
+- **CI (H6.4 / PRO-295)**: cada PR a `main`/`develop` y cada push a `develop`
+  corren [.github/workflows/ci.yml](.github/workflows/ci.yml) — backend
+  (`typecheck`, `lint`, `build`, `test`, `test:e2e` contra PostgreSQL 16
+  efímero con esquema + seed por corrida) **y** `build` del frontend, en paralelo.
+  Verificado con un PR sano en **verde** y un PR con error intencional en **rojo**.
+  Nota: `db/002_seed.sql` lleva hashes argon2id reales de las contraseñas de
+  esta sección; sin ellos los e2e de login fallan en CI.
+- **Catálogo de ítems (H4.1 / PRO-279)**: `src/modules/items/` con CRUD
+  del profesor (`POST/GET/PATCH/DELETE /api/v1/items`, solo rol teacher):
+  validación por tipo en el Service → **422** antes de tocar la BD
+  (`fun_activity` exige stock, `grade_bonus` exige grade_points, costo > 0),
+  propiedad ajena/inexistente → **403 uniforme** (sin filtrar existencia),
+  duplicado → 409 y borrado **lógico** (`status='deleted'`, la FK de
+  `redemptions` prohíbe el físico). Suite `test/items.e2e-spec.ts`
+  (11 tests) + 9 unit.
+- **Billetera del estudiante (H4.2 / PRO-280)**: `src/modules/wallet/` con
+  `GET /api/v1/wallet` (saldo leído de la vista `student_coins`, sin recalcular)
+  y `GET /api/v1/wallet/movements` (historial de `coin_movements` con
+  `{ data, meta }`, orden descendente y la clase de cada movimiento). Solo el
+  propio estudiante (`?studentId=` ajeno → 403; rol ≠ student → 403). Suite
+  `test/wallet.e2e-spec.ts` (7 tests) y 5 unit del helper.
+- **Canje instantáneo (H4.4 / PRO-282)**: módulo `src/modules/redemptions/`
+  con `GET /api/v1/redemptions/preview` (costo/saldo/stock), `POST /api/v1/redemptions`
+  (atómico, costo congelado por trigger) y `POST /api/v1/redemptions/:id/reverse`
+  (anulación; monedas y stock revueltos por el trigger `fn_reverse_redemption`;
+  `reversed_at` lo sella la app porque el trigger es AFTER UPDATE). Documentado
+  en el contrato de H1.3 con tag `redemptions`. Suite `test/redemptions.e2e-spec.ts`
+  (11 tests: CAs 1–4, rollback total de saldo/stock, doble anulación 409,
+  404 anti-enumeración y 403 para roles ≠ student).
+- **Contrato OpenAPI (H1.3 / PRO-267)**: `GET /api` (Swagger UI) y
+  `GET /api-json` (spec `openapi 3.0`) generados en el arranque desde
+  `src/swagger.config.ts`; los esquemas de los 12 DTO los infiere el plugin CLI
+  de `@nestjs/swagger` (`nest-cli.json`). Suite `test/swagger.e2e-spec.ts`
+  (5 tests: prefijo `/api/v1`, `securitySchemes` bearer aplicado a las rutas
+  protegidas, convención `{ data, meta }` + códigos, UI). Verificado además en
+  arranque compilado (`pnpm build` → `node dist/main` → esquemas reales).
+- **Kit UI y accesibilidad (H5.2 / PRO-283)**: componentes en
+  [`frontend/src/components/ui/`](frontend/src/components/ui/) — `EstadoCarga`
+  (`role="status"` + `aria-live`), `EstadoVacio` (acción sugerida),
+  `EstadoError` (`role="alert"`) y toast accesible propio (auto-ocultado 3 s,
+  sin librerías de runtime); 13 tests con Testing Library. Auditoría de
+  contraste **WCAG AA** (T5.2.3): 3 fallos detectados y corregidos —
+
+  | Elemento | Antes | Después | Mínimo |
+  |---|---:|---:|---:|
+  | placeholder de inputs | 2.52:1 (`neutral-400`) | 4.74:1 (`neutral-500`) | 4.5:1 |
+  | texto atenuado del kit | 4.37:1 (`--muted` del prototipo) | 5.43:1 (`#6b6a63`) | 4.5:1 |
+  | anillo de foco | 1.48:1 (`ring-neutral-300`) | 10.37:1 (`ring-neutral-700`) | 3:1 |
+
+  El resto (labels, `text-red-700` 6.47:1, botón primario 17.93:1, toast de
+  éxito 5.34:1 y de error 7.07:1) cumple AA sin cambios.
+- **Endurecimiento transversal (H6.1 / PRO-292)**: CORS limitado a
+  `FRONTEND_URL` (el ACAO se fija siempre al origen del frontend y jamás
+  refleja orígenes ajenos ni `*`), helmet y `ValidationPipe` globales
+  (`whitelist` + `transform`) **cubiertos por tests**, rate limit **global**
+  de 300/min por IP (`src/modules/rate-limit/` + `RateLimitGlobalGuard`,
+  registrado antes que `JwtAuthGuard`: flood → **429** sin verificar JWT) y
+  auditoría de filtraciones sin `password_hash`/`is_correct`/`expected_answer`
+  (`test/helpers/auditoria-respuestas.ts`, reutilizable en H6.3). Suite
+  `test/seguridad-transversal.e2e-spec.ts` (8 tests) + 11 unit; el rate limit
+  de auth (5/min) quedó intacto.
+- **Unión a clase por código (H3.2 / PRO-274)**: `POST /api/v1/classes/join`
+  (solo estudiante) — el DTO normaliza el código (trim + mayúsculas);
+  código inexistente o clase archivada → **404** anti-enumeración;
+  pre-validación de inscripción previa (**409** si `active`,
+  **422** si `withdrawn`/`blocked`, sin reactivar) con la `UNIQUE
+  (class_id, student_id)` de la BD como segunda barrera ante la carrera;
+  organización ajena cae en el trigger `fn_validate_enrollment` → **422**
+  sin reimplementar reglas. Suite `test/unirse-clase.e2e-spec.ts`
+  (10 tests) + 8 unit.
+- **Rankings global y por clase (H4.3 / PRO-281)**: módulo
+  `src/modules/rankings/` con `GET /api/v1/rankings` y
+  `GET /api/v1/rankings/classes/:id`, **solo lectura** sobre las vistas
+  `global_ranking`/`class_ranking` (`$queryRaw` con `Prisma.sql`; orden por
+  `coins_earned` → canjear no baja de puesto, con orden secundario
+  determinista). Filtro multi-tenant por la org del token (admin ve todas,
+  espejo de `condicionPorRol`); acceso por clase **sin `@PerteneceA`** (la
+  regla `'clase'` es teacher-only y rechazaría estudiantes): admin pasa,
+  teacher dueño, estudiante inscripto `active`, resto → 404
+  anti-enumeración. Suite `test/rankings.e2e-spec.ts` (11 tests; org
+  sintética por corrida para ser inmune a la BD acumulativa y respetando el
+  límite de 5 logins/min de auth) + 13 unit.
 
 ## Stack
 
@@ -171,14 +263,15 @@ ranking global           → ordena por monedas GANADAS (vista)
 - **H2.2**: endpoint de cambio de contraseña en el backend (único pendiente
   de auth; desbloquea reemplazar el mock de `cambiarContrasena` del frontend).
 - **Backend de dominio**: clases completas, actividades, entregas,
-  inscripciones, canjes y ranking (ver `docs/contexto_mvp.md` §5).
+  inscripciones, canjes y ranking (estado y asignación en **Linear**;
+  plan post-MVP en `docs/post_mvp.md`).
 - **Autorización por recurso**: verificar propiedad/organización en cada
   service de los módulos nuevos (los guards globales ya existen).
 - **Frontend**: paneles por rol (H5.6+).
-- **Swagger** para publicar el contrato de la API.
-- **CI y despliegue**: no hay pipeline; el script `pnpm deploy` de
-  `@nestjs/mau` aún no está configurado. Estrategia pendiente de confirmar.
-  - Nota: el flujo de ramas y PRs ya existe (H6.2 / PRO-293); el CI por PR llegará con H6.4.
+- **Swagger**: ✅ contrato publicado en `/api` (H1.3 / PRO-267).
+- **Despliegue**: el script `pnpm deploy` de `@nestjs/mau` aún no está
+  configurado; estrategia pendiente de confirmar.
+  - Hecho: flujo de ramas y PR (H6.2 / PRO-293) **y** CI en cada PR (H6.4 / PRO-295).
 
 ## Flujo de ramas y PRs
 

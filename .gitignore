@@ -49,6 +49,9 @@ playwright-report/
 .env.production.local
 .env.local
 
+# almacén de archivos subidos (UPLOAD_DIR)
+/.data/
+
 # temp directory
 .temp
 .tmp

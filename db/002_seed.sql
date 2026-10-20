@@ -11,12 +11,15 @@
 --   psql -U <usuario> -d plataforma_educativa -f db/002_seed.sql
 --
 -- NOTAS:
---   · Los password_hash son marcadores de posición ('HASH_*').
---     La aplicación real debe generar hashes bcrypt/argon2.
+--   · Los password_hash son hashes argon2id REALES de las contraseñas
+--     documentadas en README §Usuarios de prueba (admin/Admin123!,
+--     prof.lopez/Prof123!, estudiantes/Estudiante123!). Sin ellos los
+--     e2e de login fallan (verificado en CI, H6.4 / PRO-295). Solo para
+--     desarrollo: jamás reutilizar estas contraseñas fuera del seed.
 --   · Todas las semillas respetan los triggers: los estudiantes y el
 --     profesor pertenecen a la misma organización que la clase.
---   · Después de ejecutar este archivo, aplicar las pruebas de la
---     sección §7 de docs/plataforma_educativa_bd.md.
+--   · Después de ejecutar este archivo, smoke-test de los flujos del
+--     README §Ciclo principal (o correr test:e2e, que hace lo mismo).
 -- =====================================================================
 
 BEGIN;
@@ -25,7 +28,9 @@ BEGIN;
 -- 1. Administrador global (sin organización, permitido por ck_users_org)
 -- ---------------------------------------------------------------------
 INSERT INTO users (role, username, email, password_hash, first_name, last_name)
-VALUES ('admin', 'admin', 'admin@educoins.test', 'HASH_ADMIN', 'Ada', 'Admin');
+VALUES ('admin', 'admin', 'admin@educoins.test',
+        '$argon2id$v=19$m=65536,p=4,t=3$u3+ATgL0lyWy+Pzbr8k51A$QQRGMsYtgYe7Df05flT7BFXgY6SxV37sTQCVk58n7RQ',
+        'Ada', 'Admin');
 
 -- ---------------------------------------------------------------------
 -- 2. Organización (multi-tenant)
@@ -38,7 +43,8 @@ VALUES ('Colegio Demo', 'school', 'Buga');
 -- ---------------------------------------------------------------------
 INSERT INTO users (organization_id, role, username, email, password_hash,
                    first_name, last_name, specialty, must_change_password)
-SELECT o.id, 'teacher', 'prof.lopez', 'lopez@educoins.test', 'HASH_PROF',
+SELECT o.id, 'teacher', 'prof.lopez', 'lopez@educoins.test',
+       '$argon2id$v=19$m=65536,p=4,t=3$wqUUPXJ83uBaR982L251Vw$I2nvzzgs1gh0vW5hu35rL/yQdD7rFzbLsJfk+wQCeGg',
        'Ana', 'López', 'Mathematics', TRUE
 FROM organizations o
 WHERE o.name = 'Colegio Demo';
@@ -48,7 +54,8 @@ WHERE o.name = 'Colegio Demo';
 -- ---------------------------------------------------------------------
 INSERT INTO users (organization_id, role, username, email, password_hash,
                    first_name, last_name, must_change_password)
-SELECT o.id, 'student', x.username, x.email, 'HASH_EST',
+SELECT o.id, 'student', x.username, x.email,
+       '$argon2id$v=19$m=65536,p=4,t=3$iAqxY4mnRJMM3mBszblO5w$xpVqxLvREUUH/YbFD8p7CyEcTGhzsxLHZxNGv98dcWw',
        x.first_name, x.last_name, TRUE
 FROM organizations o
 CROSS JOIN (VALUES ('est.perez',  'perez@educoins.test',  'Juan',   'Pérez'),

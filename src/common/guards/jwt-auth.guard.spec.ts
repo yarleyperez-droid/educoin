@@ -3,6 +3,7 @@ import { UnauthorizedException } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { JwtService } from '@nestjs/jwt';
 import { Publico } from '../decorators/publico.decorator';
+import { PermitirCambioContrasena } from '../decorators/permitir-cambio-contrasena.decorator';
 import { JwtAuthGuard, MENSAJE_NO_AUTENTICADO } from './jwt-auth.guard';
 
 const SECRETO_PRUEBA = 'secreto-de-pruebas-de-jwt-1234567890';
@@ -17,6 +18,9 @@ class ControladorDePrueba {
   rutaPublica(this: void): void {}
 
   rutaProtegida(this: void): void {}
+
+  @PermitirCambioContrasena()
+  cambiarContrasena(this: void): void {}
 }
 
 function crearContexto(
@@ -85,7 +89,7 @@ describe('JwtAuthGuard', () => {
       username: 'admin',
       role: 'admin',
       organizacionId: null,
-      debeCambiarContrasena: true,
+      debeCambiarContrasena: false,
     });
     const peticion: PeticionMock = {
       headers: { authorization: `Bearer ${token}` },
@@ -97,8 +101,50 @@ describe('JwtAuthGuard', () => {
       username: 'admin',
       role: 'admin',
       organizacionId: null,
-      debeCambiarContrasena: true,
+      debeCambiarContrasena: false,
       iat: expect.any(Number),
     });
+  });
+    it('bloquea las rutas protegidas si debe cambiar la contraseña', () => {
+    const token = jwtService.sign({
+      id: '1',
+      username: 'admin',
+      role: 'admin',
+      organizacionId: null,
+      debeCambiarContrasena: true,
+    });
+
+    const peticion: PeticionMock = {
+      headers: { authorization: `Bearer ${token}` },
+    };
+
+    expect(() => guard.canActivate(crearContexto(peticion))).toThrow(
+      new UnauthorizedException(
+        'Debes cambiar tu contraseña inicial antes de continuar.',
+      ),
+    );
+  });
+
+  it('permite cambiar la contraseña si el cambio es obligatorio', () => {
+    const token = jwtService.sign({
+      id: '1',
+      username: 'admin',
+      role: 'admin',
+      organizacionId: null,
+      debeCambiarContrasena: true,
+    });
+
+    const peticion: PeticionMock = {
+      headers: { authorization: `Bearer ${token}` },
+    };
+
+    expect(
+      guard.canActivate(
+        crearContexto(
+          peticion,
+          ControladorDePrueba.prototype.cambiarContrasena,
+        ),
+      ),
+    ).toBe(true);
   });
 });

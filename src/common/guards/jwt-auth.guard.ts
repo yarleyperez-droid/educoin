@@ -4,6 +4,7 @@ import {
   Injectable,
   UnauthorizedException,
 } from '@nestjs/common';
+import { PERMITIR_CAMBIO_CONTRASENA_KEY } from '../decorators/permitir-cambio-contrasena.decorator';
 import { Reflector } from '@nestjs/core';
 import { JwtService } from '@nestjs/jwt';
 import type { Request } from 'express';
@@ -46,12 +47,31 @@ export class JwtAuthGuard implements CanActivate {
       throw new UnauthorizedException(MENSAJE_NO_AUTENTICADO);
     }
 
+   let usuario: UsuarioAutenticado;
+
     try {
-      request.user = this.jwtService.verify<UsuarioAutenticado>(token);
-      return true;
+      usuario = this.jwtService.verify<UsuarioAutenticado>(token);
     } catch {
       throw new UnauthorizedException(MENSAJE_NO_AUTENTICADO);
     }
+
+    request.user = usuario;
+
+    const puedeCambiarContrasena =
+      this.reflector.getAllAndOverride<boolean>(
+        PERMITIR_CAMBIO_CONTRASENA_KEY,
+        [contexto.getHandler(), contexto.getClass()],
+      );
+
+    if (
+      usuario.debeCambiarContrasena &&
+      puedeCambiarContrasena !== true
+    ) {
+      throw new UnauthorizedException(
+        'Debes cambiar tu contraseña inicial antes de continuar.',
+      );
+    }
+    return true;
   }
 
   private extraerToken(

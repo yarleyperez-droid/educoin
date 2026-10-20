@@ -24,7 +24,7 @@
 --   · Estados y roles: tipos ENUM de PostgreSQL
 --   · Contraseñas: solo hash (bcrypt/argon2); nunca texto plano
 --
--- VER TAMBIÉN: docs/plataforma_educativa_bd.md (especificación completa)
+-- VER TAMBIÉN: README.md (§Verificación) y docs/post_mvp.md (pendientes)
 -- =====================================================================
 
 BEGIN;
