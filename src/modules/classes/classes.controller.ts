@@ -38,7 +38,9 @@ import { UnirseClaseDto } from './dto/unirse-clase.dto';
 
 /**
  * Endpoints de clases bajo /api/v1/classes (AGENTS.md §8):
- * - GET   /                → busca clases por nombre (pg_trgm) paginado.
+ * - GET   /                → lista las clases del usuario; si se envía `q`
+ *                            (≥ 3 caracteres) filtra por nombre (pg_trgm),
+ *                            si no, devuelve todas ordenadas por creación.
  * - GET   /:id             → devuelve la clase OWN :id del profesor.
  * - GET   /:id/estudiantes → lista los estudiantes inscritos en la clase
  *                            OWN :id del profesor autenticado.

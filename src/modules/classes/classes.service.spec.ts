@@ -623,6 +623,34 @@ describe('ClassesService', () => {
         meta: { total: 0, page: 1, limit: 20 },
       });
     });
+
+    it('sin q lista todas las clases por creación descendente, sin similitud ni ILIKE', async () => {
+      prisma.$queryRaw
+        .mockResolvedValueOnce([FILA_ENCONTRADA])
+        .mockResolvedValueOnce([{ total: BigInt(3) }]);
+
+      const resultado = await classesService.buscar({}, PROFESOR);
+
+      const { sql } = sqlDe(0);
+      expect(sql).not.toContain('c.name % ?');
+      expect(sql).not.toContain('c.name ILIKE ?');
+      expect(sql).toContain('ORDER BY c.created_at DESC');
+      expect(sql).toContain('c.teacher_id = ?');
+      expect(resultado.meta).toEqual({ total: 3, page: 1, limit: 20 });
+      expect(resultado.data).toHaveLength(1);
+    });
+
+    it('un q vacío o en blanco se trata como ausente (listado completo)', async () => {
+      prisma.$queryRaw
+        .mockResolvedValueOnce([])
+        .mockResolvedValueOnce([{ total: BigInt(0) }]);
+
+      await classesService.buscar({ q: '   ' }, ADMIN);
+
+      const { sql } = sqlDe(0);
+      expect(sql).toContain('ORDER BY c.created_at DESC');
+      expect(sql).not.toContain('ILIKE');
+    });
   });
 
   describe('listarEstudiantes', () => {

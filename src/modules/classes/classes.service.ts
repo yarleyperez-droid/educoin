@@ -326,10 +326,17 @@ export class ClassesService {
   }
 
   /**
-   * Busca clases por nombre con pg_trgm: coincide por similitud de
-   * trigramas (operador %, tolera errores de tipeo) o por subcadena
-   * (ILIKE, cubre términos cortos cuya similitud cae bajo el umbral
-   * 0.3); ambos caminos usan el índice GIN idx_classes_name_trgm.
+   * Lista o busca clases según el texto `q`.
+   *
+   * - **Sin `q`**: lista todas las clases visibles para el rol (para
+   *   `teacher`, las suyas propias; para `student`, las activas de su
+   *   organización; para `admin`, todas), ordenadas por fecha de creación
+   *   descendente. Esto permite al panel docente mostrar su resumen de
+   *   clases sin depender de un texto de búsqueda.
+   * - **Con `q`**: coincide por similitud de trigramas (operador %, tolera
+   *   errores de tipeo) o por subcadena (ILIKE, cubre términos cortos cuya
+   *   similitud cae bajo el umbral 0.3); ambos caminos usan el índice GIN
+   *   idx_classes_name_trgm y ordenan por similitud descendente.
    *
    * La pertenencia del profesor NO se resuelve con @PerteneceA (ese
    * guard valida un recurso individual por :id de ruta y una búsqueda
@@ -348,29 +355,55 @@ export class ClassesService {
   ): Promise<ListadoClasesDto> {
     const page = dto.page ?? 1;
     const limit = dto.limit ?? 20;
-    const patron = `%${this.escaparLike(dto.q)}%`;
     const condicion = this.condicionPorRol(usuario);
     const offset = (page - 1) * limit;
+    const hayTexto = dto.q !== undefined && dto.q.trim() !== '';
 
-    const filas = await this.prisma.$queryRaw<FilaClaseEncontrada[]>(Prisma.sql`
-      SELECT c.id, c.name, c.status, c.created_at, u.first_name, u.last_name
-      FROM classes c
-      JOIN users u ON u.id = c.teacher_id
-      WHERE (c.name % ${dto.q} OR c.name ILIKE ${patron})
-        AND ${condicion}
-      ORDER BY similarity(c.name, ${dto.q}) DESC, c.name ASC
-      LIMIT ${limit} OFFSET ${offset}
-    `);
+    let filas: FilaClaseEncontrada[];
+    let conteo: { total: bigint | number | string }[];
 
-    const conteo = await this.prisma.$queryRaw<
-      { total: bigint | number | string }[]
-    >(Prisma.sql`
-      SELECT count(*) AS total
-      FROM classes c
-      JOIN users u ON u.id = c.teacher_id
-      WHERE (c.name % ${dto.q} OR c.name ILIKE ${patron})
-        AND ${condicion}
-    `);
+    if (hayTexto) {
+      const texto = (dto.q ?? '').trim();
+      const patron = `%${this.escaparLike(texto)}%`;
+
+      filas = await this.prisma.$queryRaw<FilaClaseEncontrada[]>(Prisma.sql`
+        SELECT c.id, c.name, c.status, c.created_at, u.first_name, u.last_name
+        FROM classes c
+        JOIN users u ON u.id = c.teacher_id
+        WHERE (c.name % ${texto} OR c.name ILIKE ${patron})
+          AND ${condicion}
+        ORDER BY similarity(c.name, ${texto}) DESC, c.name ASC
+        LIMIT ${limit} OFFSET ${offset}
+      `);
+
+      conteo = await this.prisma.$queryRaw<
+        { total: bigint | number | string }[]
+      >(Prisma.sql`
+        SELECT count(*) AS total
+        FROM classes c
+        JOIN users u ON u.id = c.teacher_id
+        WHERE (c.name % ${texto} OR c.name ILIKE ${patron})
+          AND ${condicion}
+      `);
+    } else {
+      filas = await this.prisma.$queryRaw<FilaClaseEncontrada[]>(Prisma.sql`
+        SELECT c.id, c.name, c.status, c.created_at, u.first_name, u.last_name
+        FROM classes c
+        JOIN users u ON u.id = c.teacher_id
+        WHERE ${condicion}
+        ORDER BY c.created_at DESC, c.name ASC
+        LIMIT ${limit} OFFSET ${offset}
+      `);
+
+      conteo = await this.prisma.$queryRaw<
+        { total: bigint | number | string }[]
+      >(Prisma.sql`
+        SELECT count(*) AS total
+        FROM classes c
+        JOIN users u ON u.id = c.teacher_id
+        WHERE ${condicion}
+      `);
+    }
 
     return {
       data: filas.map((fila) => this.aClaseListado(fila)),

@@ -157,6 +157,42 @@ export interface ResultadoBusquedaClases {
 }
 
 /**
+ * Lista las clases del profesor autenticado sin texto de búsqueda
+ * (`GET /classes` sin `q`).
+ *
+ * El backend admite `q` opcional: cuando se omite lista todas las clases
+ * visibles para el rol (para `teacher`, las suyas propias), ordenadas por
+ * fecha de creación descendente. Esto permite al dashboard y a "Mis
+ * Clases" mostrar el resumen completo sin depender de un término de
+ * búsqueda.
+ *
+ * @param page Página 1-indexada (por defecto 1).
+ * @param limit Filas por página (por defecto 20, tope 50).
+ * @returns Página de resultados con su `meta`.
+ */
+export async function listarMisClases(
+  page = 1,
+  limit = 20,
+): Promise<ResultadoBusquedaClases> {
+  const pagina = Math.max(page, 1);
+  const parametros = new URLSearchParams({
+    page: String(pagina),
+    limit: String(limit),
+  });
+
+  const respuesta = await api.get<ClaseListado[]>(`classes?${parametros}`);
+
+  return {
+    data: respuesta.data,
+    meta: respuesta.meta ?? {
+      total: respuesta.data.length,
+      page: pagina,
+      limit,
+    },
+  };
+}
+
+/**
  * Busca clases del profesor por nombre (`GET /classes`).
  *
  * Reproduce `BuscarClasesQueryDto` (H3.1): **`q` obligatorio con ≥ 3

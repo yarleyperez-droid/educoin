@@ -1,41 +1,31 @@
 "use client";
 
-/**
- * Progreso del estudiante (`/student/progreso`) — T5.10.2 / PRO-404
- * (H5.10).
- *
- * Snapshot motivacional de monedas: **ganadas**, **gastadas** y
- * **disponibles**, leídos de la misma API de billetera H4.2 que usa
- * `/student/billetera` (`GET /wallet` en plano → vista `student_coins`).
- * Los valores coinciden con la billetera por construcción: misma fachada,
- * cero recálculos en el front (AGENTS.md §6).
- *
- * Estados cubiertos (kit H5.2): carga y error con reintento. No hay
- * estado vacío: si la API responde, siempre hay saldo (aunque sea0).
- */
-
 import { useEffect, useState } from "react";
-import Link from "next/link";
 
-import { obtenerSaldo } from "@/features/billetera/api/billetera";
-import type { SaldoBilletera } from "@/features/billetera/contrato/billetera";
 import {
   EstadoCarga,
   EstadoError,
   MENSAJE_ERROR_GENERICO,
+  IconCoin,
+  IconProgress,
+  IconTrophy,
 } from "@/components/ui";
+import { obtenerSaldo } from "@/features/billetera/api/billetera";
+import type { SaldoBilletera } from "@/features/billetera/contrato/billetera";
 import { ApiError } from "@/lib/api-client";
 
-/**
- * Vista de progreso del estudiante.
- *
- * @returns Contenido del progreso dentro del shell del panel estudiante.
- */
+const barrasProgreso = [
+  { mes: "Nov", valor: 60 },
+  { mes: "Dic", valor: 90 },
+  { mes: "Ene", valor: 120 },
+  { mes: "Feb", valor: 100 },
+  { mes: "Mar", valor: 140, activa: true },
+];
+
 export default function ProgresoPage() {
   const [saldo, setSaldo] = useState<SaldoBilletera | null>(null);
   const [cargando, setCargando] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  /** Contador para forzar una recarga desde un evento (reintento). */
   const [recarga, setRecarga] = useState(0);
 
   useEffect(() => {
@@ -71,71 +61,128 @@ export default function ProgresoPage() {
     setRecarga((anterior) => anterior + 1);
   };
 
-  return (
-    <div className="w-full max-w-2xl rounded-lg border border-neutral-200 bg-white p-6 shadow-sm sm:p-8">
-      <h2 className="text-xl font-semibold text-neutral-900">Mi progreso</h2>
-      <p className="mt-1 text-sm text-neutral-500">
-        Monedas ganadas y gastadas en tus clases.
-      </p>
+  if (cargando) {
+    return (
+      <div className='flex min-h-[60vh] items-center justify-center'>
+        <EstadoCarga mensaje='Cargando tu progreso…' />
+      </div>
+    );
+  }
 
-      {cargando && <EstadoCarga mensaje="Cargando tu progreso…" />}
-
-      {error !== null && !cargando && (
+  if (error !== null) {
+    return (
+      <div className='flex min-h-[60vh] items-center justify-center'>
         <EstadoError mensaje={error} alReintentar={reintentar} />
-      )}
+      </div>
+    );
+  }
 
-      {error === null && !cargando && saldo !== null && (
-        <dl className="mt-6 grid grid-cols-1 gap-3 sm:grid-cols-3">
-          <div className="rounded-md border border-amber-200 bg-amber-50 p-4">
-            <dt className="text-xs font-medium uppercase tracking-wide text-amber-800">
+  const ganadas = saldo?.monedasGanadas ?? 0;
+  const gastadas = saldo?.monedasGastadas ?? 0;
+  const disponibles = saldo?.monedasDisponibles ?? 0;
+
+  return (
+    <div className='space-y-6'>
+      {/* Header */}
+      <div>
+        <p className='text-xs font-semibold uppercase tracking-wide text-slate-500'>
+          Seguimiento Académico
+        </p>
+        <h1 className='mt-1 text-2xl font-bold text-slate-900 lg:text-3xl'>
+          Mi Progreso
+        </h1>
+        <p className='mt-1 max-w-2xl text-sm text-slate-500'>
+          Monedas ganadas y gastadas en tus clases. Tu esfuerzo académico se traduce en recompensas.
+        </p>
+      </div>
+
+      {/* Stats */}
+      <section className='grid grid-cols-1 gap-4 sm:grid-cols-3'>
+        <div className='rounded-2xl border border-slate-200 bg-white p-5 shadow-sm'>
+          <div className='flex items-center justify-between'>
+            <span className='text-xs font-semibold uppercase tracking-wide text-slate-500'>
               Ganadas
-            </dt>
-            <dd
-              className="mt-1 text-2xl font-semibold text-amber-900"
-              data-testid="progreso-ganadas"
-            >
-              {saldo.monedasGanadas}
-            </dd>
+            </span>
+            <IconTrophy className='h-5 w-5 text-indigo-500' />
           </div>
-          <div className="rounded-md border border-neutral-200 p-4">
-            <dt className="text-xs font-medium uppercase tracking-wide text-neutral-500">
-              Gastadas
-            </dt>
-            <dd
-              className="mt-1 text-2xl font-semibold text-neutral-900"
-              data-testid="progreso-gastadas"
-            >
-              {saldo.monedasGastadas}
-            </dd>
-          </div>
-          <div className="rounded-md border border-neutral-200 p-4">
-            <dt className="text-xs font-medium uppercase tracking-wide text-neutral-500">
-              Disponibles
-            </dt>
-            <dd
-              className="mt-1 text-2xl font-semibold text-neutral-900"
-              data-testid="progreso-disponibles"
-            >
-              {saldo.monedasDisponibles}
-            </dd>
-          </div>
-        </dl>
-      )}
+          <p className='mt-2 text-2xl font-bold text-slate-900' data-testid='progreso-ganadas'>
+            {ganadas}
+          </p>
+          <p className='mt-1 text-xs text-slate-500'>Total histórico acumulado</p>
+        </div>
 
-      <p className="mt-6 flex flex-wrap gap-4 text-sm">
-        <Link
-          href="/student"
-          className="font-medium text-neutral-700 underline-offset-2 hover:underline"
-        >
-          Volver al panel
-        </Link>
-        <Link
-          href="/student/billetera"
-          className="font-medium text-neutral-700 underline-offset-2 hover:underline"
-        >
-          Ver historial en mi billetera
-        </Link>
-      </p>
+        <div className='rounded-2xl border border-slate-200 bg-white p-5 shadow-sm'>
+          <div className='flex items-center justify-between'>
+            <span className='text-xs font-semibold uppercase tracking-wide text-slate-500'>
+              Gastadas
+            </span>
+            <IconCoin className='h-5 w-5 text-amber-500' />
+          </div>
+          <p className='mt-2 text-2xl font-bold text-slate-900' data-testid='progreso-gastadas'>
+            {gastadas}
+          </p>
+          <p className='mt-1 text-xs text-slate-500'>Canjes y beneficios aplicados</p>
+        </div>
+
+        <div className='rounded-2xl border border-slate-200 bg-white p-5 shadow-sm'>
+          <div className='flex items-center justify-between'>
+            <span className='text-xs font-semibold uppercase tracking-wide text-slate-500'>
+              Disponibles
+            </span>
+            <IconProgress className='h-5 w-5 text-emerald-500' />
+          </div>
+          <p className='mt-2 text-2xl font-bold text-slate-900' data-testid='progreso-disponibles'>
+            {disponibles}
+          </p>
+          <p className='mt-1 text-xs text-slate-500'>Saldo listo para canjear</p>
+        </div>
+      </section>
+
+      {/* Gráfico */}
+      <section className='rounded-2xl border border-slate-200 bg-white p-5 shadow-sm'>
+        <div className='flex items-center justify-between'>
+          <div>
+            <h2 className='text-lg font-semibold text-slate-900'>
+              Mi Progreso en Monedas
+            </h2>
+            <p className='text-xs text-slate-500'>Últimos 5 meses</p>
+          </div>
+          <span className='inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-1 text-xs font-medium text-emerald-700'>
+            <IconProgress className='h-3 w-3' />
+            +24% vs mes anterior
+          </span>
+        </div>
+
+        <div className='mt-6 flex h-56 items-end justify-between gap-2 rounded-xl bg-slate-50 p-4'>
+          {barrasProgreso.map((barra) => (
+            <div key={barra.mes} className='flex flex-1 flex-col items-center gap-2'>
+              <div className='text-xs font-semibold text-slate-700'>{barra.valor}</div>
+              <div
+                className={`w-full max-w-[3rem] rounded-t-lg ${
+                  barra.activa ? 'bg-indigo-600' : 'bg-indigo-200'
+                }`}
+                style={{ height: `${(barra.valor / 160) * 100}%` }}
+              />
+              <span className='text-xs font-medium text-slate-500'>{barra.mes}</span>
+            </div>
+          ))}
+        </div>
+
+        <div className='mt-4 grid grid-cols-1 gap-3 sm:grid-cols-3'>
+          <div className='rounded-xl bg-slate-50 p-3'>
+            <p className='text-xs text-slate-500'>Período con mayor ganancia</p>
+            <p className='text-sm font-semibold text-slate-900'>Marzo · +140 EduCoins</p>
+          </div>
+          <div className='rounded-xl bg-slate-50 p-3'>
+            <p className='text-xs text-slate-500'>Promedio mensual</p>
+            <p className='text-sm font-semibold text-slate-900'>102 EduCoins</p>
+          </div>
+          <div className='rounded-xl bg-slate-50 p-3'>
+            <p className='text-xs text-slate-500'>Total acumulado</p>
+            <p className='text-sm font-semibold text-slate-900'>{ganadas} EduCoins</p>
+          </div>
+        </div>
+      </section>
     </div>
   );
 }

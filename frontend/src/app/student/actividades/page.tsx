@@ -1,21 +1,3 @@
-/**
- * Listado de actividades para el estudiante (`/student/actividades`)
- * — T5.8.1 (PRO-394) → T5.8.4 (PRO-397).
- *
- * Ahora consume la API real:
- *
- * 1. `GET /api/v1/enrollments` para obtener las clases en las que el
- *    estudiante está inscrito y activo.
- * 2. `GET /api/v1/enrollments/:inscripcionId/activities` para listar las
- *    actividades publicadas de cada clase.
- *
- * El resultado se agrupa por clase, cumpliendo también el requisito de
- * "mostrar las clases" en las que está registrado.
- *
- * Estados cubiertos (AGENTS.md §8): carga, vacío (sin clases / sin
- * actividades) y error con reintento.
- */
-
 'use client';
 
 import Link from 'next/link';
@@ -27,6 +9,11 @@ import {
   EstadoError,
   EstadoVacio,
   MENSAJE_ERROR_GENERICO,
+  IconBookOpen,
+  IconClock,
+  IconCalendar,
+  IconCoin,
+  IconArrowRight,
 } from '@/components/ui';
 import { listarPublicadas } from '@/features/estudiante/api/actividades-estudiante';
 import {
@@ -41,7 +28,6 @@ interface ClaseConActividades {
   actividades: ActividadResumen[];
 }
 
-/** Agrupa actividades con la clase correspondiente. */
 function agrupar(
   inscripciones: Inscripcion[],
   listas: { data: ActividadResumen[] }[],
@@ -62,11 +48,6 @@ function formatearFecha(fecha: string | null): string {
   });
 }
 
-/**
- * Listado de actividades publicadas del estudiante, agrupadas por clase.
- *
- * @returns Panel de actividades dentro del shell del panel estudiante.
- */
 export default function ActividadesEstudiantePage() {
   const router = useRouter();
   const [clases, setClases] = useState<ClaseConActividades[]>([]);
@@ -115,76 +96,126 @@ export default function ActividadesEstudiantePage() {
     setError(null);
   }
 
+  if (cargando) {
+    return (
+      <div className='flex min-h-[60vh] items-center justify-center'>
+        <EstadoCarga mensaje='Cargando tus actividades…' />
+      </div>
+    );
+  }
+
+  if (error !== null) {
+    return (
+      <div className='flex min-h-[60vh] items-center justify-center'>
+        <EstadoError mensaje={error} alReintentar={reintentar} />
+      </div>
+    );
+  }
+
+  const totalActividades = clases.reduce(
+    (suma, item) => suma + item.actividades.length,
+    0,
+  );
+
   return (
-    <div className="w-full max-w-2xl rounded-lg border border-neutral-200 bg-white p-6 shadow-sm sm:p-8">
-      <h2 className="text-xl font-semibold text-neutral-900">
-        Mis actividades
-      </h2>
-      <p className="mt-1 text-sm text-neutral-500">
-        Actividades publicadas de las clases en las que estás inscrito.
-      </p>
-
-      {cargando && <EstadoCarga mensaje="Cargando tus actividades…" />}
-
-      {!cargando && error !== null && (
-        <div className="mt-6">
-          <EstadoError mensaje={error} alReintentar={reintentar} />
+    <div className='space-y-6'>
+      <div className='flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between'>
+        <div>
+          <p className='text-xs font-semibold uppercase tracking-wide text-slate-500'>
+            Panel de Actividades
+          </p>
+          <h1 className='mt-1 text-2xl font-bold text-slate-900 lg:text-3xl'>
+            Mis Actividades
+          </h1>
+          <p className='mt-1 max-w-2xl text-sm text-slate-500'>
+            Actividades publicadas de las clases en las que estás inscrito. Resuélvelas antes del cierre para ganar EduCoins.
+          </p>
         </div>
+        <span className='inline-flex items-center gap-1.5 self-start rounded-full bg-indigo-50 px-3 py-1.5 text-sm font-medium text-indigo-700'>
+          <IconBookOpen className='h-4 w-4' />
+          {totalActividades} publicadas
+        </span>
+      </div>
+
+      {clases.length === 0 && (
+        <EstadoVacio
+          titulo='Aún no estás en ninguna clase'
+          descripcion='Pide el código a tu profesor y únete desde el panel.'
+          accion={{
+            texto: 'Unirme a una clase',
+            alHacerClic: () => router.push('/student'),
+          }}
+        />
       )}
 
-      {!cargando && error === null && clases.length === 0 && (
-        <div className="mt-6">
-          <EstadoVacio
-            titulo="Aún no estás en ninguna clase"
-            descripcion="Pide el código a tu profesor y únete desde el panel."
-            accion={{
-              texto: 'Unirme a una clase',
-              alHacerClic: () => router.push('/student'),
-            }}
-          />
-        </div>
-      )}
-
-      {!cargando &&
-        error === null &&
-        clases.map(({ inscripcion, actividades }) => (
-          <section key={inscripcion.id} className="mt-6">
-            <h3 className="text-sm font-semibold uppercase tracking-wide text-neutral-700">
+      {clases.map(({ inscripcion, actividades }) => (
+        <section
+          key={inscripcion.id}
+          className='rounded-2xl border border-slate-200 bg-white p-5 shadow-sm'
+        >
+          <div className='mb-4 flex items-center gap-2'>
+            <span className='rounded-lg bg-indigo-100 p-1.5 text-indigo-600'>
+              <IconBookOpen className='h-4 w-4' />
+            </span>
+            <h2 className='text-base font-semibold text-slate-900'>
               {inscripcion.clase.nombre}
-            </h3>
-            {actividades.length === 0 ? (
-              <p className="mt-3 text-sm text-neutral-500">
-                Aún no hay actividades publicadas en esta clase.
-              </p>
-            ) : (
-              <ul className="mt-3 space-y-3">
-                {actividades.map((actividad) => (
-                  <li
-                    key={actividad.id}
-                    className="rounded-md border border-neutral-200 p-4"
-                  >
-                    <div className="flex flex-wrap items-center justify-between gap-2">
-                      <Link
-                        href={`/student/actividades/${actividad.id}`}
-                        className="text-sm font-medium text-neutral-900 underline-offset-2 hover:underline"
-                      >
-                        {actividad.titulo}
-                      </Link>
-                      <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800">
+            </h2>
+            <span className='ml-auto rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-600'>
+              {actividades.length} activid{actividades.length === 1 ? 'ad' : 'ades'}
+            </span>
+          </div>
+
+          {actividades.length === 0 ? (
+            <p className='rounded-xl bg-slate-50 p-4 text-sm text-slate-500'>
+              Aún no hay actividades publicadas en esta clase.
+            </p>
+          ) : (
+            <ul className='grid grid-cols-1 gap-3 md:grid-cols-2'>
+              {actividades.map((actividad) => (
+                <li
+                  key={actividad.id}
+                  className='group flex flex-col justify-between rounded-xl border border-slate-100 bg-slate-50/50 p-4 transition-colors hover:bg-slate-50'
+                >
+                  <div>
+                    <div className='flex items-center justify-between gap-2'>
+                      <span className='rounded-md bg-indigo-50 px-2 py-0.5 text-xs font-medium text-indigo-700'>
+                        {inscripcion.clase.nombre}
+                      </span>
+                      <span className='inline-flex items-center gap-1 rounded-full bg-amber-50 px-2 py-0.5 text-xs font-semibold text-amber-700'>
+                        <IconCoin className='h-3 w-3' />
                         {actividad.recompensaMonedas} monedas
                       </span>
                     </div>
-                    <p className="mt-1 text-xs text-neutral-500">
-                      {actividad.cierraEn !== null
-                        ? `Cierra el ${formatearFecha(actividad.cierraEn)}`
-                        : `Publicada el ${formatearFecha(actividad.publicadaEn)}`}
+                    <h3 className='mt-2 text-sm font-semibold text-slate-900'>
+                      {actividad.titulo}
+                    </h3>
+                    <p className='mt-1 inline-flex items-center gap-1 text-xs text-slate-500'>
+                      {actividad.cierraEn !== null ? (
+                        <>
+                          <IconClock className='h-3 w-3 text-red-500' />
+                          Cierra el {formatearFecha(actividad.cierraEn)}
+                        </>
+                      ) : (
+                        <>
+                          <IconCalendar className='h-3 w-3' />
+                          Publicada el {formatearFecha(actividad.publicadaEn)}
+                        </>
+                      )}
                     </p>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </section>
-        ))}
+                  </div>
+                  <Link
+                    href={`/student/actividades/${actividad.id}`}
+                    className='mt-4 inline-flex items-center gap-1 self-start rounded-lg bg-indigo-600 px-3 py-2 text-xs font-medium text-white hover:bg-indigo-700'
+                  >
+                    Ver actividad
+                    <IconArrowRight className='h-3 w-3' />
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+      ))}
     </div>
   );
 }
