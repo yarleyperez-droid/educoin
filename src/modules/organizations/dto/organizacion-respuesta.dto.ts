@@ -1,4 +1,5 @@
-import type { organization_type } from '../../../generated/prisma/client';
+import { ApiProperty, ApiSchema } from '@nestjs/swagger';
+import { organization_type } from '../../../generated/prisma/client';
 
 /**
  * Datos de la organización que SALEN hacia el cliente (AGENTS.md §8:
@@ -10,7 +11,14 @@ import type { organization_type } from '../../../generated/prisma/client';
 export class OrganizacionRespuestaDto {
   id!: string;
   nombre!: string;
+
+  /** El plugin CLI no infiere los enums-objeto de Prisma: explícito. */
+  @ApiProperty({
+    enum: organization_type,
+    description: 'Tipo de organización: school, university u other.',
+  })
   tipo!: organization_type;
+
   ciudad!: string | null;
   activa!: boolean;
   creadoEn!: string;
@@ -31,7 +39,11 @@ export class OrganizacionCreadaRespuestaDto {
 /**
  * Meta de la paginación estándar de listados (AGENTS.md §8). Misma
  * forma que la de clases: { total, page, limit }.
+ *
+ * @ApiSchema lo renombra en el spec: classes tiene su propia clase
+ * ListadoMetaDto y Swagger nombra los esquemas por clase.
  */
+@ApiSchema({ name: 'ListadoOrganizacionesMetaDto' })
 export class ListadoMetaDto {
   total!: number;
   page!: number;

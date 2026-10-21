@@ -7,6 +7,7 @@ import {
   MaxLength,
   MinLength,
 } from 'class-validator';
+import { ApiProperty } from '@nestjs/swagger';
 import { organization_type } from '../../../generated/prisma/client';
 
 /**
@@ -30,6 +31,10 @@ export class ActualizarOrganizacionDto {
   nombre?: string;
 
   /** Tipo de organización (enum organization_type de la BD). */
+  @ApiProperty({
+    enum: organization_type,
+    description: 'Tipo de organización: school, university u other.',
+  })
   @IsOptional()
   @IsIn(Object.values(organization_type))
   tipo?: organization_type;

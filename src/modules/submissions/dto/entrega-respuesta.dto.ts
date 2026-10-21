@@ -1,6 +1,11 @@
-import type { submission_status } from '../../../generated/prisma/client';
+import { ApiProperty } from '@nestjs/swagger';
+import { submission_status } from '../../../generated/prisma/client';
 import type { RespuestaCalificada } from '../auto-calificacion';
 import type { RespuestaEntrega } from './respuestas.schema';
+import {
+  RespuestaCalificadaDocDto,
+  RespuestaDocDto,
+} from './respuestas-doc.dto';
 
 /**
  * DTOs de respuesta del flujo de entregas, separados por ESTADO (mismo
@@ -24,15 +29,46 @@ import type { RespuestaEntrega } from './respuestas.schema';
 export class EntregaBorradorRespuestaDto {
   id!: string;
   actividadId!: string;
-  /** Siempre 'in_progress' en esta respuesta: el borrador aún no se envía. */
+
+  /** Literal del enum real: el borrador siempre está 'in_progress'. */
+  @ApiProperty({
+    enum: ['in_progress'],
+    description: "Siempre 'in_progress': el borrador aún no se envía.",
+    example: 'in_progress',
+  })
   estado!: 'in_progress';
+
   /** null mientras es borrador: la entrega se registra al enviarla. */
+  @ApiProperty({
+    type: String,
+    nullable: true,
+    example: null,
+    description:
+      'null mientras es borrador: la fecha de envío se registra al ENVIAR (POST).',
+  })
   entregadoEn!: null;
+
   /** null mientras es borrador: todavía no hay calificación. */
+  @ApiProperty({
+    type: Number,
+    nullable: true,
+    example: null,
+    description: 'null mientras es borrador: todavía no hay calificación.',
+  })
   puntaje!: null;
+
   /** 0 mientras es borrador: las monedas llegan solo al calificarse. */
   monedasOtorgadas!: number;
-  /** answers JSONB saneado tal como quedó guardado, SIN veredicto. */
+
+  /**
+   * answers JSONB saneado tal como quedó guardado, SIN veredicto.
+   * Tipo zod-inferido que el plugin no puede reflejar: esquema doc.
+   */
+  @ApiProperty({
+    type: [RespuestaDocDto],
+    description:
+      'answers JSONB tal como quedó guardado, SIN veredicto (nunca lleva is_correct/score).',
+  })
   respuestas!: RespuestaEntrega[];
 }
 
@@ -49,20 +85,39 @@ export class EntregaBorradorRespuestaDto {
 export class EntregaRespuestaDto {
   id!: string;
   actividadId!: string;
+
+  /** El plugin CLI no infiere los enums-objeto de Prisma: explícito. */
+  @ApiProperty({
+    enum: submission_status,
+    description: 'Estado de la entrega: submitted, graded o rejected.',
+  })
   estado!: submission_status;
+
   /** Momento del envío (submissions.submitted_at, ISO 8601). */
   entregadoEn!: string;
+
   /** Puntaje total al calificarse; null mientras espera al profesor. */
   puntaje!: number | null;
+
   /** Monedas otorgadas por fn_award_coins al pasar a 'graded' (0 antes). */
   monedasOtorgadas!: number;
+
   /**
    * Retroalimentación del profesor (submissions.feedback): null hasta
    * que la califique; con él ve el motivo de un 'rejected' o los
    * comentarios de un 'graded'.
    */
   feedback!: string | null;
-  /** answers JSONB: lo enviado + veredicto (is_correct/score por respuesta). */
+
+  /**
+   * answers JSONB: lo enviado + veredicto (is_correct/score por respuesta).
+   * Tipo zod-inferido que el plugin no puede reflejar: esquema doc.
+   */
+  @ApiProperty({
+    type: [RespuestaCalificadaDocDto],
+    description:
+      'answers JSONB: lo que el estudiante envió MÁS el veredicto por respuesta (is_correct/score).',
+  })
   respuestas!: RespuestaCalificada[];
 }
 
@@ -113,11 +168,21 @@ export class EstudianteColaDto {
 export class EntregaColaDto {
   id!: string;
   estudiante!: EstudianteColaDto;
+
+  /** El plugin CLI no infiere los enums-objeto de Prisma: explícito. */
+  @ApiProperty({
+    enum: submission_status,
+    description:
+      'Estado de la entrega: in_progress, submitted, graded o rejected.',
+  })
   estado!: submission_status;
+
   /** Momento del envío (submissions.submitted_at, ISO 8601); null en borrador. */
   entregadoEn!: string | null;
+
   /** Puntaje total al calificarse; null mientras espera al profesor. */
   puntaje!: number | null;
+
   /** Monedas otorgadas por fn_award_coins al pasar a 'graded' (0 antes). */
   monedasOtorgadas!: number;
 }
@@ -152,15 +217,35 @@ export class ListadoEntregasDto {
 export class EntregaDetalleProfesorDto {
   id!: string;
   estudiante!: EstudianteColaDto;
+
+  /** El plugin CLI no infiere los enums-objeto de Prisma: explícito. */
+  @ApiProperty({
+    enum: submission_status,
+    description:
+      'Estado de la entrega: in_progress, submitted, graded o rejected.',
+  })
   estado!: submission_status;
+
   entregadoEn!: string | null;
+
   /** Momento de la calificación (graded_at, ISO 8601); null sin calificar. */
   calificadoEn!: string | null;
+
   puntaje!: number | null;
   monedasOtorgadas!: number;
+
   /** Retroalimentación escrita al calificar; null si no hay. */
   feedback!: string | null;
-  /** answers JSONB: lo enviado + veredicto por respuesta (is_correct/score). */
+
+  /**
+   * answers JSONB: lo enviado + veredicto por respuesta (is_correct/score).
+   * Tipo zod-inferido que el plugin no puede reflejar: esquema doc.
+   */
+  @ApiProperty({
+    type: [RespuestaCalificadaDocDto],
+    description:
+      'answers JSONB: lo que el estudiante envió MÁS el veredicto por respuesta (is_correct/score).',
+  })
   respuestas!: RespuestaCalificada[];
 }
 

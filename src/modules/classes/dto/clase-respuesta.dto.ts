@@ -1,4 +1,5 @@
-import type { class_status } from '../../../generated/prisma/client';
+import { ApiProperty, ApiSchema } from '@nestjs/swagger';
+import { class_status } from '../../../generated/prisma/client';
 
 /**
  * Datos de la clase que SALEN hacia el cliente (AGENTS.md §8: nunca se
@@ -11,7 +12,14 @@ export class ClaseRespuestaDto {
   nombre!: string;
   /** Código de unión generado por la BD (8 caracteres). */
   codigo!: string;
+
+  /** El plugin CLI no infiere los enums-objeto de Prisma: explícito. */
+  @ApiProperty({
+    enum: class_status,
+    description: 'Estado de la clase: active o archived.',
+  })
   estado!: class_status;
+
   creadoEn!: string;
   actualizadoEn!: string;
 }
@@ -37,12 +45,25 @@ export class ClaseCreadaRespuestaDto {
 export class ClaseListadoDto {
   id!: string;
   nombre!: string;
+
+  /** El plugin CLI no infiere los enums-objeto de Prisma: explícito. */
+  @ApiProperty({
+    enum: class_status,
+    description: 'Estado de la clase: active o archived.',
+  })
   estado!: class_status;
+
   profesorNombre!: string;
   creadoEn!: string;
 }
 
-/** Meta de la paginación estándar de listados (AGENTS.md §8). */
+/**
+ * Meta de la paginación estándar de listados (AGENTS.md §8).
+ *
+ * @ApiSchema lo renombra en el spec: organizations tiene su propia
+ * clase ListadoMetaDto y Swagger nombra los esquemas por clase.
+ */
+@ApiSchema({ name: 'ListadoClasesMetaDto' })
 export class ListadoMetaDto {
   total!: number;
   page!: number;

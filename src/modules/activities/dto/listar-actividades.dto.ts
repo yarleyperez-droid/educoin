@@ -1,4 +1,5 @@
 import { Type } from 'class-transformer';
+import { ApiProperty } from '@nestjs/swagger';
 import { IsIn, IsInt, IsOptional, Max, Min } from 'class-validator';
 import { activity_status } from '../../../generated/prisma/client';
 
@@ -26,6 +27,10 @@ export class ListarActividadesQueryDto {
   limit?: number;
 
   /** Filtro opcional por estado: 'draft', 'published' o 'deleted'. */
+  @ApiProperty({
+    enum: activity_status,
+    description: 'Filtro opcional por estado: draft, published o deleted.',
+  })
   @IsOptional()
   @IsIn(Object.values(activity_status))
   estado?: activity_status;

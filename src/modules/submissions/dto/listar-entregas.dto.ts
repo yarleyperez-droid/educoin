@@ -1,4 +1,5 @@
 import { Type } from 'class-transformer';
+import { ApiProperty } from '@nestjs/swagger';
 import { IsIn, IsInt, IsOptional, Max, Min } from 'class-validator';
 import { submission_status } from '../../../generated/prisma/client';
 
@@ -31,6 +32,11 @@ export class ListarEntregasQueryDto {
   limit?: number;
 
   /** Filtro opcional por estado: in_progress, submitted, graded o rejected. */
+  @ApiProperty({
+    enum: submission_status,
+    description:
+      'Filtro opcional por estado: in_progress, submitted, graded o rejected. El caso principal de la cola es ?estado=submitted.',
+  })
   @IsOptional()
   @IsIn(Object.values(submission_status))
   estado?: submission_status;

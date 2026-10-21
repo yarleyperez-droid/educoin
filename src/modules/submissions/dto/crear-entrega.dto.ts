@@ -1,4 +1,6 @@
 import { IsArray } from 'class-validator';
+import { ApiProperty } from '@nestjs/swagger';
+import { RespuestaDocDto } from './respuestas-doc.dto';
 
 /**
  * Datos para ENVIAR la entrega de una actividad
@@ -27,6 +29,15 @@ export class CrearEntregaDto {
    * preguntas file, `files` referencia archivos YA SUBIDOS con el
    * endpoint de subida (solo la metadata que devolvió el servidor).
    */
+  @ApiProperty({
+    type: [RespuestaDocDto],
+    description:
+      'Respuestas FINALES (JSONB): zod exige COMPLETITUD contra las preguntas reales — toda la actividad respondida (excepto preguntas file, que hoy el profesor las califica).',
+    example: [
+      { question_position: 1, option: '4' },
+      { question_position: 2, text: '4' },
+    ],
+  })
   @IsArray()
   respuestas!: unknown[];
 }

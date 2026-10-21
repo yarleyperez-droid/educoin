@@ -6,6 +6,7 @@ import {
   MaxLength,
   MinLength,
 } from 'class-validator';
+import { ApiProperty } from '@nestjs/swagger';
 import { class_status } from '../../../generated/prisma/client';
 
 /**
@@ -25,6 +26,11 @@ export class ActualizarClaseDto {
   nombre?: string;
 
   /** Estado de la clase: 'active' o 'archived' (enum class_status de la BD). */
+  @ApiProperty({
+    enum: class_status,
+    description:
+      'Nuevo estado de la clase: active (reactivar) o archived (archivar).',
+  })
   @IsOptional()
   @IsIn(Object.values(class_status))
   estado?: class_status;

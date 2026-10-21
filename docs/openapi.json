@@ -1,0 +1,4622 @@
+{
+  "openapi": "3.0.0",
+  "paths": {
+    "/api/v1": {
+      "get": {
+        "description": "Confirma que la API responde (sin datos ni autenticación). Es la sonda de los smoke tests.",
+        "operationId": "AppController_getHello",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "La API está en línea.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Healthcheck de la API",
+        "tags": [
+          "Sistema"
+        ]
+      }
+    },
+    "/api/v1/auth/login": {
+      "post": {
+        "description": "PÚBLICO. Valida las credenciales (nombre de usuario O correo — insensible a mayúsculas — y contraseña) y devuelve el access token. La contraseña inicial la genera el servidor al crear la cuenta; si `debeCambiarContrasena=true`, el usuario debe cambiarla con PATCH /users/me.",
+        "operationId": "AuthController_iniciarSesion",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/IniciarSesionDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Sesión iniciada: access token en el cuerpo y refresh token en la cookie httpOnly.",
+            "headers": {
+              "Set-Cookie": {
+                "description": "Cookie httpOnly refresh_token=<jwt> (Path=/api/v1/auth, SameSite=Lax): el refresh token de la sesión."
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SesionRespuestaDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Cuerpo inválido: usuarioOEmail (3-255 caracteres) o contrasena (8-128) fuera de las reglas.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorRespuestaDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Credenciales incorrectas o cuenta desactivada.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorRespuestaDto"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limit: 5 intentos de login por minuto por IP.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorRespuestaDto"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Iniciar sesión",
+        "tags": [
+          "Auth"
+        ]
+      }
+    },
+    "/api/v1/auth/refresh": {
+      "post": {
+        "description": "PÚBLICO. Canjea la cookie httpOnly `refresh_token` (no un Bearer) por una sesión nueva: access token renovado y refresh token rotado en la misma cookie. La sesión se valida contra el servidor (jti): una cookie revocada por logout o por cambio de credenciales responde 401.",
+        "operationId": "AuthController_refrescarSesion",
+        "parameters": [],
+        "responses": {
+          "201": {
+            "description": "Sesión refrescada: nuevo access token y cookie de refresco rotada.",
+            "headers": {
+              "Set-Cookie": {
+                "description": "Nueva cookie httpOnly refresh_token (rotación del refresh token)."
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SesionRespuestaDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Sin cookie de refresco, expirada o revocada en el servidor.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorRespuestaDto"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limit: 5 refrescos por minuto por IP.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorRespuestaDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookie-refresh": []
+          }
+        ],
+        "summary": "Refrescar la sesión",
+        "tags": [
+          "Auth"
+        ]
+      }
+    },
+    "/api/v1/auth/logout": {
+      "post": {
+        "description": "PÚBLICO e idempotente. Revoca la sesión del refresh EN EL SERVIDOR (consume el jti de la cookie) y expira la cookie en el navegador. Sin cookie válida no hay nada que revocar y responde 204 igual.",
+        "operationId": "AuthController_cerrarSesion",
+        "parameters": [],
+        "responses": {
+          "204": {
+            "description": "Sesión cerrada (o no había sesión activa).",
+            "headers": {
+              "Set-Cookie": {
+                "description": "Expira la cookie httpOnly refresh_token (Max-Age=0)."
+              }
+            }
+          }
+        },
+        "summary": "Cerrar sesión",
+        "tags": [
+          "Auth"
+        ]
+      }
+    },
+    "/api/v1/auth/perfil": {
+      "get": {
+        "description": "Datos de la cuenta dueña del access token. Sirve para hidratar la sesión del frontend tras el login; `debeCambiarContrasena=true` exige el cambio de contraseña inicial (PATCH /users/me).",
+        "operationId": "AuthController_obtenerPerfil",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Datos del usuario autenticado.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SesionUsuarioDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Sin access token, expirado o sesión cerrada en el servidor.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorRespuestaDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Perfil del usuario autenticado",
+        "tags": [
+          "Auth"
+        ]
+      }
+    },
+    "/api/v1/classes": {
+      "get": {
+        "description": "Busca clases por similitud de nombre (pg_trgm), paginado { data, meta }. Sin @Roles: los tres roles pueden buscar; el rol cambia el FILTRO (teacher → solo sus clases; student/admin → clases activas de su organización). Las filas NO traen el código de unión: verlo en una búsqueda permitiría auto-inscribirse.",
+        "operationId": "ClassesController_buscar",
+        "parameters": [
+          {
+            "name": "q",
+            "required": true,
+            "in": "query",
+            "description": "Texto a buscar: coincide por similitud trigram o por subcadena.",
+            "schema": {
+              "minLength": 3,
+              "maxLength": 150,
+              "type": "string"
+            }
+          },
+          {
+            "name": "page",
+            "required": false,
+            "in": "query",
+            "description": "Página 1-indexada para la paginación { data, meta }.",
+            "schema": {
+              "minimum": 1,
+              "type": "number"
+            }
+          },
+          {
+            "name": "limit",
+            "required": false,
+            "in": "query",
+            "description": "Filas por página (tope 50 para evitar listados gigantes).",
+            "schema": {
+              "minimum": 1,
+              "maximum": 50,
+              "type": "number"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Clases coincidentes (sin código de unión).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ListadoClasesDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Falta q o tiene menos de 3 caracteres (mínimo del índice trigram).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorRespuestaDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Sin access token o sesión expirada.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorRespuestaDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Buscar clases por nombre",
+        "tags": [
+          "Classes"
+        ]
+      },
+      "post": {
+        "description": "Solo teacher. La clase nace activa y la BD genera el código de unión de 8 caracteres, que la respuesta destaca para que el profesor lo comparta con sus estudiantes. El profesor sale del token: no viaja en el cuerpo.",
+        "operationId": "ClassesController_crear",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CrearClaseDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Clase creada con su código de unión.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ClaseCreadaRespuestaDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Nombre inválido (8-150 caracteres).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorRespuestaDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Sin access token o sesión expirada.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorRespuestaDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "El rol del token no es teacher.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorRespuestaDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Crear una clase",
+        "tags": [
+          "Classes"
+        ]
+      }
+    },
+    "/api/v1/classes/{id}/estudiantes": {
+      "get": {
+        "description": "Solo teacher, y solo de UNA CLASE PROPIA: una clase ajena o inexistente responde el 404 estándar anti-enumeración. Filas de resumen (username, nombre, estado de la inscripción): sin monedas ni correo.",
+        "operationId": "ClassesController_listarEstudiantes",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "Id numérico de la clase (BigInt como string).",
+            "schema": {
+              "example": "5",
+              "type": "string"
+            }
+          },
+          {
+            "name": "page",
+            "required": false,
+            "in": "query",
+            "description": "Página 1-indexada.",
+            "schema": {
+              "minimum": 1,
+              "type": "number"
+            }
+          },
+          {
+            "name": "limit",
+            "required": false,
+            "in": "query",
+            "description": "Filas por página (tope 50 para evitar listados gigantes).",
+            "schema": {
+              "minimum": 1,
+              "maximum": 50,
+              "type": "number"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Estudiantes inscritos en la clase.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ListadoEstudiantesDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Parámetros de paginación inválidos.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorRespuestaDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Sin access token o sesión expirada.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorRespuestaDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "El rol del token no es teacher.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorRespuestaDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Clase inexistente o ajena al profesor del token.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorRespuestaDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Listar los estudiantes de una clase propia",
+        "tags": [
+          "Classes"
+        ]
+      }
+    },
+    "/api/v1/classes/{id}": {
+      "patch": {
+        "description": "Solo teacher dueño de la clase (ajena/inexistente → 404 anti-enumeración). Edición parcial de nombre y/o estado: estado=archived archiva y estado=active reactiva. Debe llegar AL MENOS un campo: cuerpo vacío responde 400. El código de unión no es editable (lo posee la BD).",
+        "operationId": "ClassesController_actualizar",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "Id numérico de la clase (BigInt como string).",
+            "schema": {
+              "example": "5",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ActualizarClaseDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "La clase tal como quedó.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ClaseRespuestaDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Cuerpo vacío o campos inválidos.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorRespuestaDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Sin access token o sesión expirada.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorRespuestaDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "El rol del token no es teacher.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorRespuestaDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Clase inexistente o ajena al profesor del token.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorRespuestaDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Editar una clase propia",
+        "tags": [
+          "Classes"
+        ]
+      }
+    },
+    "/api/v1/classes/{claseId}/activities": {
+      "post": {
+        "description": "Solo teacher, y solo dentro de UNA CLASE PROPIA (ajena/inexistente → 404 anti-enumeración). La actividad nace 'draft': los estudiantes solo ven publicadas. Las preguntas JSONB se validan en profundidad con zod (posiciones secuenciales, una única opción correcta por test, expected_answer en completion…).",
+        "operationId": "ActivitiesController_crear",
+        "parameters": [
+          {
+            "name": "claseId",
+            "required": true,
+            "in": "path",
+            "description": "Id numérico de la clase (BigInt como string).",
+            "schema": {
+              "example": "5",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CrearActividadDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Actividad creada como borrador (draft).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ActividadCreadaRespuestaDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "DTO inválido o preguntas JSONB que no pasan la validación zod.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorRespuestaDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Sin access token o sesión expirada.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorRespuestaDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "El rol del token no es teacher.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorRespuestaDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Clase inexistente o ajena al profesor del token.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorRespuestaDto"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "La operación infringe una regla de la BD (p. ej. closes_at en el pasado).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorRespuestaDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Crear una actividad en una clase propia",
+        "tags": [
+          "Activities"
+        ]
+      },
+      "get": {
+        "description": "Solo teacher dueño de la clase. Listado paginado { data, meta } con filtro opcional ?estado (draft/published/deleted). Filas de resumen SIN preguntas: el JSONB completo está en GET /activities/:id.",
+        "operationId": "ActivitiesController_listar",
+        "parameters": [
+          {
+            "name": "claseId",
+            "required": true,
+            "in": "path",
+            "description": "Id numérico de la clase (BigInt como string).",
+            "schema": {
+              "example": "5",
+              "type": "string"
+            }
+          },
+          {
+            "name": "estado",
+            "required": false,
+            "in": "query",
+            "description": "Filtro opcional por estado: draft, published o deleted.",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "draft",
+                "published",
+                "deleted"
+              ]
+            }
+          },
+          {
+            "name": "page",
+            "required": false,
+            "in": "query",
+            "description": "Página 1-indexada.",
+            "schema": {
+              "minimum": 1,
+              "type": "number"
+            }
+          },
+          {
+            "name": "limit",
+            "required": false,
+            "in": "query",
+            "description": "Filas por página (tope 50 para evitar listados gigantes).",
+            "schema": {
+              "minimum": 1,
+              "maximum": 50,
+              "type": "number"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Actividades de la clase (filas de resumen).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ListadoActividadesDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Parámetros de consulta inválidos (paginación/estado).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorRespuestaDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Sin access token o sesión expirada.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorRespuestaDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "El rol del token no es teacher.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorRespuestaDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Clase inexistente o ajena al profesor del token.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorRespuestaDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Listar las actividades de una clase propia",
+        "tags": [
+          "Activities"
+        ]
+      }
+    },
+    "/api/v1/activities/{id}": {
+      "get": {
+        "description": "Misma ruta, DTO POR ROL: el teacher dueño recibe el JSONB completo (con opciones correctas y expected_answer); el estudiante inscrito recibe la vista sanitizada SIN nada de lo correcto (AGENTS.md §9.5). Actividad ajena/borrador sin inscripción/inexistente → 404 anti-enumeración.",
+        "operationId": "ActivitiesController_detalle",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "Id numérico de la actividad (BigInt como string).",
+            "schema": {
+              "example": "7",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Vista del profesor dueño (completa) o del estudiante inscrito (sanitizada), según el rol del token.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/ActividadRespuestaDto"
+                    },
+                    {
+                      "$ref": "#/components/schemas/ActividadEstudianteRespuestaDto"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Sin access token o sesión expirada.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorRespuestaDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "El rol del token no es teacher ni student.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorRespuestaDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Actividad inexistente, no publicada o sin inscripción activa del estudiante.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorRespuestaDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Detalle de una actividad (DTO por rol)",
+        "tags": [
+          "Activities"
+        ]
+      },
+      "patch": {
+        "description": "Solo teacher dueño de la actividad. Edición parcial: en un borrador se toca todo; en una PUBLICADA solo cierraEn (lo demás responde 409). Las preguntas, si viajan, REEMPLAZAN el JSONB completo. Cuerpo vacío responde 400.",
+        "operationId": "ActivitiesController_actualizar",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "Id numérico de la actividad (BigInt como string).",
+            "schema": {
+              "example": "7",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ActualizarActividadDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "La actividad tal como quedó.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ActividadRespuestaDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Cuerpo vacío o preguntas JSONB que no pasan la validación zod.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorRespuestaDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Sin access token o sesión expirada.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorRespuestaDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "El rol del token no es teacher.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorRespuestaDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Actividad inexistente o ajena al profesor del token.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorRespuestaDto"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "La actividad ya está publicada: solo cierraEn es editable.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorRespuestaDto"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "La operación infringe una regla de la BD (p. ej. fechas).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorRespuestaDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Editar una actividad propia",
+        "tags": [
+          "Activities"
+        ]
+      },
+      "delete": {
+        "description": "Solo teacher dueño. Borrado LÓGICO: pone status='deleted' y deleted_at (nunca hay DELETE físico). Los estudiantes dejan de verla y las entregas existentes conservan su historial.",
+        "operationId": "ActivitiesController_eliminar",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "Id numérico de la actividad (BigInt como string).",
+            "schema": {
+              "example": "7",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Actividad eliminada (deleted)."
+          },
+          "401": {
+            "description": "Sin access token o sesión expirada.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorRespuestaDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "El rol del token no es teacher.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorRespuestaDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Actividad inexistente o ajena al profesor del token.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorRespuestaDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Eliminar una actividad propia (borrado lógico)",
+        "tags": [
+          "Activities"
+        ]
+      }
+    },
+    "/api/v1/enrollments/{inscripcionId}/activities": {
+      "get": {
+        "description": "Solo student, y solo de UNA INSCRIPCIÓN PROPIA y activa (ajena/inexistente → 404 anti-enumeración). Listado paginado { data, meta } de las actividades published; sin filtro ?estado a propósito. Filas SIN preguntas: el detalle sanitizado está en GET /activities/:id.",
+        "operationId": "ActivitiesController_listarPublicadas",
+        "parameters": [
+          {
+            "name": "inscripcionId",
+            "required": true,
+            "in": "path",
+            "description": "Id numérico de la inscripción (BigInt como string).",
+            "schema": {
+              "example": "12",
+              "type": "string"
+            }
+          },
+          {
+            "name": "page",
+            "required": false,
+            "in": "query",
+            "description": "Página 1-indexada.",
+            "schema": {
+              "minimum": 1,
+              "type": "number"
+            }
+          },
+          {
+            "name": "limit",
+            "required": false,
+            "in": "query",
+            "description": "Filas por página (tope 50 para evitar listados gigantes).",
+            "schema": {
+              "minimum": 1,
+              "maximum": 50,
+              "type": "number"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Actividades publicadas de la clase.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ListadoActividadesDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Parámetros de paginación inválidos.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorRespuestaDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Sin access token o sesión expirada.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorRespuestaDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "El rol del token no es student.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorRespuestaDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Inscripción inexistente, ajena o no activa.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorRespuestaDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Actividades publicadas de la clase de mi inscripción",
+        "tags": [
+          "Activities"
+        ]
+      }
+    },
+    "/api/v1/activities/{id}/publicar": {
+      "post": {
+        "description": "Solo teacher dueño. Transición definitiva draft → published: setea published_at, la fecha a partir de la cual los estudiantes inscritos la ven. El cuerpo es opcional (solo cierraEn). No hay despublicar: una actividad publicada ya no vuelve a draft.",
+        "operationId": "ActivitiesController_publicar",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "Id numérico de la actividad (BigInt como string).",
+            "schema": {
+              "example": "7",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PublicarActividadDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "La actividad ya publicada.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ActividadRespuestaDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "cierraEn con formato inválido o no posterior a la publicación.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorRespuestaDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Sin access token o sesión expirada.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorRespuestaDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "El rol del token no es teacher.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorRespuestaDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Actividad inexistente o ajena al profesor del token.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorRespuestaDto"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "La actividad ya está publicada (o eliminada).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorRespuestaDto"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "La operación infringe una regla de la BD (p. ej. closes_at ≤ published_at).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorRespuestaDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Publicar una actividad propia",
+        "tags": [
+          "Activities"
+        ]
+      }
+    },
+    "/api/v1/activities/{id}/submissions": {
+      "get": {
+        "description": "Solo student inscrito. Devuelve el BORRADOR tal cual para retomarlo ('in_progress', respuestas sin veredicto) o, si ya fue enviada, la entrega con su resultado (veredicto por respuesta, monedas y feedback si ya calificó). Sin ninguna entrega todavía responde 404.",
+        "operationId": "SubmissionsController_miEntrega",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "Id numérico de la actividad (BigInt como string).",
+            "schema": {
+              "example": "7",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "El borrador ('in_progress') o la entrega enviada ('submitted'/'graded'/'rejected'), según el estado de la entrega del estudiante.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/EntregaBorradorRespuestaDto"
+                    },
+                    {
+                      "$ref": "#/components/schemas/EntregaRespuestaDto"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Sin access token o sesión expirada.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorRespuestaDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "El rol del token no es student.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorRespuestaDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Actividad inexistente/no publicada, sin inscripción activa, o el estudiante aún no tiene entrega.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorRespuestaDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Mi entrega de la actividad",
+        "tags": [
+          "Submissions"
+        ]
+      },
+      "put": {
+        "description": "Solo student inscrito. Guarda/actualiza el BORRADOR en cada cambio: las respuestas pueden ser parciales o venir vacías (is_correct/score jamás se aceptan). Si no existe, crea la entrega en 'in_progress' y registra started_at. Una entrega ya ENVIADA no baja a borrador: responde 409.",
+        "operationId": "SubmissionsController_guardarBorrador",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "Id numérico de la actividad (BigInt como string).",
+            "schema": {
+              "example": "7",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GuardarBorradorDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Borrador guardado (creado o actualizado).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BorradorGuardadoRespuestaDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Respuestas que no pasan la validación zod contra las preguntas reales de la actividad.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorRespuestaDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Sin access token o sesión expirada.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorRespuestaDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "El rol del token no es student.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorRespuestaDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Actividad inexistente/no publicada o sin inscripción activa.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorRespuestaDto"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "La entrega ya fue enviada: nunca se vuelve a borrador.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorRespuestaDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Guardar el borrador de mi entrega (autosave)",
+        "tags": [
+          "Submissions"
+        ]
+      },
+      "post": {
+        "description": "Solo student inscrito. Cierra el borrador (o crea la entrega de una vez): exige COMPLETITUD (toda la actividad respondida, excepto preguntas file). La auto-calificación decide: al umbral del 80% pasa a 'graded' y el trigger fn_award_coins acredita las monedas; si no, queda 'submitted' esperando al profesor. La entrega es ÚNICA por actividad (uq_submission): ya enviada responde 409.",
+        "operationId": "SubmissionsController_entregar",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "Id numérico de la actividad (BigInt como string).",
+            "schema": {
+              "example": "7",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CrearEntregaDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Entrega enviada, con su resultado inmediato.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EntregaCreadaRespuestaDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Respuestas inválidas o incompletas (zod exige toda la actividad respondida, menos file).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorRespuestaDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Sin access token o sesión expirada.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorRespuestaDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "El rol del token no es student.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorRespuestaDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Actividad inexistente/no publicada o sin inscripción activa.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorRespuestaDto"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Ya existe una entrega enviada para esta actividad.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorRespuestaDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Enviar mi entrega definitiva",
+        "tags": [
+          "Submissions"
+        ]
+      }
+    },
+    "/api/v1/activities/{id}/submissions/archivos": {
+      "post": {
+        "description": "Solo student inscrito. Multipart/form-data con la posición de la pregunta y los archivos en el campo `archivos` (hasta 3). Valida el MIME REAL por contenido (magic bytes: solo PDF, JPG y PNG) y el tamaño; guarda con nombre INTERNO uuid y deja en answers[].files[] solo la metadata { path, mime, bytes } — el nombre original jamás se persiste. Puede crear el borrador si aún no existe.",
+        "operationId": "SubmissionsController_adjuntarArchivos",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "Id numérico de la actividad (BigInt como string).",
+            "schema": {
+              "example": "7",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "description": "Campo de texto question_position + archivos en el campo archivos (multipart; los archivos no van en el JSON).",
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "question_position",
+                  "archivos"
+                ],
+                "properties": {
+                  "question_position": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "description": "Posición de la pregunta de tipo file que recibe los archivos.",
+                    "example": 3
+                  },
+                  "archivos": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "format": "binary"
+                    },
+                    "maxItems": 3,
+                    "description": "Archivos PDF, JPG o PNG (el tipo se valida por contenido, no por nombre)."
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Archivos adjuntados al borrador de la entrega.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BorradorGuardadoRespuestaDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Sin archivos, question_position inválida, o la pregunta no es de tipo file.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorRespuestaDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Sin access token o sesión expirada.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorRespuestaDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "El rol del token no es student.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorRespuestaDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Actividad inexistente/no publicada o sin inscripción activa.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorRespuestaDto"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "La entrega ya fue enviada.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorRespuestaDto"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Algún archivo supera el tamaño máximo de la plataforma.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorRespuestaDto"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "Contenido no permitido: solo PDF, JPG y PNG (magic bytes).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorRespuestaDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Subir archivos para una pregunta file de mi borrador",
+        "tags": [
+          "Submissions"
+        ]
+      }
+    },
+    "/api/v1/activities/{id}/submissions/queue": {
+      "get": {
+        "description": "Solo teacher dueño de la actividad (ajena/inexistente → 404 anti-enumeración). TODAS las entregas, paginado { data, meta } con filtro ?estado opcional — el caso principal es ?estado=submitted: las que esperan calificación. Filas de resumen con los datos del estudiante, SIN answers: el detalle está en GET .../submissions/:entregaId.",
+        "operationId": "SubmissionsController_cola",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "Id numérico de la actividad (BigInt como string).",
+            "schema": {
+              "example": "7",
+              "type": "string"
+            }
+          },
+          {
+            "name": "estado",
+            "required": false,
+            "in": "query",
+            "description": "Filtro opcional por estado: in_progress, submitted, graded o rejected. El caso principal de la cola es ?estado=submitted.",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "in_progress",
+                "submitted",
+                "graded",
+                "rejected"
+              ]
+            }
+          },
+          {
+            "name": "page",
+            "required": false,
+            "in": "query",
+            "description": "Página 1-indexada.",
+            "schema": {
+              "minimum": 1,
+              "type": "number"
+            }
+          },
+          {
+            "name": "limit",
+            "required": false,
+            "in": "query",
+            "description": "Filas por página (tope 50 para evitar listados gigantes).",
+            "schema": {
+              "minimum": 1,
+              "maximum": 50,
+              "type": "number"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Entregas de la actividad (filas de resumen).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ListadoEntregasDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Parámetros de consulta inválidos (paginación/estado).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorRespuestaDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Sin access token o sesión expirada.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorRespuestaDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "El rol del token no es teacher.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorRespuestaDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Actividad inexistente o ajena al profesor del token.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorRespuestaDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Cola de calificación de mi actividad",
+        "tags": [
+          "Submissions"
+        ]
+      }
+    },
+    "/api/v1/activities/{id}/submissions/{entregaId}": {
+      "get": {
+        "description": "Solo teacher dueño de la actividad. La fila de la cola MÁS lo que hace falta para calificar: las respuestas del estudiante con su veredicto (answers JSONB), el estudiante dueño y el feedback si ya fue calificada. Una entrega de OTRA actividad responde el mismo 404.",
+        "operationId": "SubmissionsController_detalle",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "Id numérico de la actividad (BigInt como string).",
+            "schema": {
+              "example": "7",
+              "type": "string"
+            }
+          },
+          {
+            "name": "entregaId",
+            "required": true,
+            "in": "path",
+            "description": "Id numérico de la entrega (BigInt como string).",
+            "schema": {
+              "example": "23",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "La entrega con sus respuestas y veredictos.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EntregaDetalleProfesorDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Sin access token o sesión expirada.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorRespuestaDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "El rol del token no es teacher.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorRespuestaDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Actividad o entrega inexistente, o la entrega es de otra actividad.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorRespuestaDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Vista de revisión de una entrega",
+        "tags": [
+          "Submissions"
+        ]
+      }
+    },
+    "/api/v1/activities/{id}/submissions/{entregaId}/archivos/{posicion}/{indice}": {
+      "get": {
+        "description": "El estudiante dueño de la entrega o el profesor de la clase (ajeno/inexistente → 404 anti-enumeración). El archivo se referencia por POSICIÓN de pregunta e índice: la ruta del disco sale de la BD, nunca del cliente. La respuesta es el archivo con su MIME real y el nombre INTERNO (uuid.ext) en Content-Disposition.",
+        "operationId": "SubmissionsController_descargarArchivo",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "Id numérico de la actividad (BigInt como string).",
+            "schema": {
+              "example": "7",
+              "type": "string"
+            }
+          },
+          {
+            "name": "entregaId",
+            "required": true,
+            "in": "path",
+            "description": "Id numérico de la entrega (BigInt como string).",
+            "schema": {
+              "example": "23",
+              "type": "string"
+            }
+          },
+          {
+            "name": "posicion",
+            "required": true,
+            "in": "path",
+            "description": "Posición de la pregunta file dentro de la actividad (desde 1).",
+            "schema": {
+              "example": 3,
+              "type": "string"
+            }
+          },
+          {
+            "name": "indice",
+            "required": true,
+            "in": "path",
+            "description": "Índice del archivo dentro de los adjuntos de esa pregunta (desde 0).",
+            "schema": {
+              "example": 0,
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "El archivo (PDF, JPG o PNG) con Content-Disposition attachment.",
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Sin access token o sesión expirada.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorRespuestaDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "El rol del token no es student ni teacher.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorRespuestaDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Entrega inexistente/ajena, o la posición/índice no corresponden a un archivo adjunto.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorRespuestaDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Descargar un archivo adjunto de una entrega",
+        "tags": [
+          "Submissions"
+        ]
+      }
+    },
+    "/api/v1/activities/{id}/submissions/{entregaId}/calificar": {
+      "post": {
+        "description": "Solo teacher dueño. Transición ATÓMICA desde 'submitted': decision='graded' exige puntaje (0..total de la actividad) y dispara fn_award_coins (monedas + graded_at, escritos por la BD); decision='rejected' rechaza con feedback y PROHÍBE puntaje. Una entrega ya calificada (o un borrador) responde 409 — el trigger no paga dos veces.",
+        "operationId": "SubmissionsController_calificar",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "Id numérico de la actividad (BigInt como string).",
+            "schema": {
+              "example": "7",
+              "type": "string"
+            }
+          },
+          {
+            "name": "entregaId",
+            "required": true,
+            "in": "path",
+            "description": "Id numérico de la entrega (BigInt como string).",
+            "schema": {
+              "example": "23",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CalificarEntregaDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "La entrega calificada (graded) o rechazada (rejected), tal como quedó.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CalificacionRespuestaDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Puntaje ausente con 'graded' o enviado con 'rejected' (máx. 2 decimales).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorRespuestaDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Sin access token o sesión expirada.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorRespuestaDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "El rol del token no es teacher.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorRespuestaDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Actividad o entrega inexistente, o la entrega es de otra actividad.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorRespuestaDto"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "La entrega ya no está pendiente (no se recalifica).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorRespuestaDto"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "El puntaje está fuera del rango 0..total de la actividad.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorRespuestaDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Calificar una entrega pendiente",
+        "tags": [
+          "Submissions"
+        ]
+      }
+    },
+    "/api/v1/organizations": {
+      "post": {
+        "description": "Solo admin. Nace activa (is_active es DEFAULT TRUE de la BD: no se acepta del cliente). El nombre es único en la BD.",
+        "operationId": "OrganizationsController_crear",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CrearOrganizacionDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Organización creada.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OrganizacionCreadaRespuestaDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "DTO inválido (nombre 3-200, tipo del enum).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorRespuestaDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Sin access token o sesión expirada.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorRespuestaDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "El rol del token no es admin.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorRespuestaDto"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Ya existe una organización con ese nombre.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorRespuestaDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Crear una organización",
+        "tags": [
+          "Organizations"
+        ]
+      },
+      "get": {
+        "description": "Solo admin. Listado paginado { data, meta } con filtros opcionales de nombre (contains insensible), tipo y estado activo.",
+        "operationId": "OrganizationsController_listar",
+        "parameters": [
+          {
+            "name": "tipo",
+            "required": false,
+            "in": "query",
+            "description": "Filtro opcional por tipo: school, university u other.",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "school",
+                "university",
+                "other"
+              ]
+            }
+          },
+          {
+            "name": "q",
+            "required": false,
+            "in": "query",
+            "description": "Filtra por nombre: contiene, sin distinguir mayúsculas.",
+            "schema": {
+              "minLength": 1,
+              "maxLength": 200,
+              "type": "string"
+            }
+          },
+          {
+            "name": "activa",
+            "required": false,
+            "in": "query",
+            "description": "true → solo activas; false → solo desactivadas.",
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
+            "name": "page",
+            "required": false,
+            "in": "query",
+            "description": "Página 1-indexada para la paginación { data, meta }.",
+            "schema": {
+              "minimum": 1,
+              "type": "number"
+            }
+          },
+          {
+            "name": "limit",
+            "required": false,
+            "in": "query",
+            "description": "Filas por página (tope 50 para evitar listados gigantes).",
+            "schema": {
+              "minimum": 1,
+              "maximum": 50,
+              "type": "number"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Listado paginado.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ListadoOrganizacionesDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Parámetros de consulta inválidos (paginación/filtros).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorRespuestaDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Sin access token o sesión expirada.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorRespuestaDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "El rol del token no es admin.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorRespuestaDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Listar organizaciones",
+        "tags": [
+          "Organizations"
+        ]
+      }
+    },
+    "/api/v1/organizations/{id}": {
+      "get": {
+        "description": "Solo admin.",
+        "operationId": "OrganizationsController_buscarPorId",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "Id numérico de la organización (BigInt como string).",
+            "schema": {
+              "example": "1",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "La organización.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OrganizacionRespuestaDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Sin access token o sesión expirada.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorRespuestaDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "El rol del token no es admin.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorRespuestaDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Organización inexistente o desactivada.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorRespuestaDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Detalle de una organización",
+        "tags": [
+          "Organizations"
+        ]
+      },
+      "patch": {
+        "description": "Solo admin. Edición parcial: nombre, tipo, ciudad (null la limpia) y/o estado activo. Debe llegar AL MENOS un campo: un cuerpo vacío responde 400. activa=false es el borrado lógico del recurso.",
+        "operationId": "OrganizationsController_actualizar",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "Id numérico de la organización (BigInt como string).",
+            "schema": {
+              "example": "1",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ActualizarOrganizacionDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "La organización tal como quedó.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OrganizacionRespuestaDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Cuerpo vacío o campos inválidos.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorRespuestaDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Sin access token o sesión expirada.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorRespuestaDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "El rol del token no es admin.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorRespuestaDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Organización inexistente.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorRespuestaDto"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "El nombre nuevo ya existe.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorRespuestaDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Editar una organización",
+        "tags": [
+          "Organizations"
+        ]
+      },
+      "delete": {
+        "description": "Solo admin. Pone is_active=false (nunca hay DELETE físico). La reactivación es con PATCH /organizations/:id { activa: true }.",
+        "operationId": "OrganizationsController_eliminar",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "Id numérico de la organización (BigInt como string).",
+            "schema": {
+              "example": "1",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Organización desactivada."
+          },
+          "401": {
+            "description": "Sin access token o sesión expirada.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorRespuestaDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "El rol del token no es admin.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorRespuestaDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Organización inexistente.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorRespuestaDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Desactivar una organización (borrado lógico)",
+        "tags": [
+          "Organizations"
+        ]
+      }
+    },
+    "/api/v1/users": {
+      "post": {
+        "description": "Solo admin. La contraseña inicial la GENERA el servidor y se devuelve UNA sola vez en la respuesta (viaja en el hash argon2; el usuario nace con debeCambiarContrasena=true y debe cambiarla en su primer inicio). Solo se crean roles 'teacher' y 'student' — la especialidad es exclusiva de teachers.",
+        "operationId": "UsersController_crear",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CrearUsuarioDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Cuenta creada: comparte contrasenaInicial con su dueño UNA sola vez.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UsuarioCreadoRespuestaDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "DTO inválido o especialidad con rol student (la especialidad es solo de profesores).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorRespuestaDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Sin access token o sesión expirada.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorRespuestaDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "El rol del token no es admin.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorRespuestaDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "La organización indicada no existe.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorRespuestaDto"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Usuario o correo ya registrados (la BD los exige únicos).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorRespuestaDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Crear una cuenta teacher/student",
+        "tags": [
+          "Users"
+        ]
+      },
+      "get": {
+        "description": "Solo admin. Listado paginado { data, meta } con filtros opcionales de texto (busca en usuario, correo, nombre y apellido), rol, organización y estado activo.",
+        "operationId": "UsersController_listar",
+        "parameters": [
+          {
+            "name": "rol",
+            "required": false,
+            "in": "query",
+            "description": "Filtro opcional por rol: admin, teacher o student.",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "admin",
+                "teacher",
+                "student"
+              ]
+            }
+          },
+          {
+            "name": "q",
+            "required": false,
+            "in": "query",
+            "description": "Busca en usuario, correo, nombre y apellido: contains insensible.",
+            "schema": {
+              "maxLength": 200,
+              "type": "string"
+            }
+          },
+          {
+            "name": "organizacionId",
+            "required": false,
+            "in": "query",
+            "description": "Filtra por organización (id numérico como string).",
+            "schema": {
+              "maxLength": 20,
+              "pattern": "^\\d+$",
+              "type": "string"
+            }
+          },
+          {
+            "name": "activa",
+            "required": false,
+            "in": "query",
+            "description": "true → solo activos; false → solo desactivados.",
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
+            "name": "page",
+            "required": false,
+            "in": "query",
+            "description": "Página 1-indexada para la paginación { data, meta }.",
+            "schema": {
+              "minimum": 1,
+              "type": "number"
+            }
+          },
+          {
+            "name": "limit",
+            "required": false,
+            "in": "query",
+            "description": "Filas por página (tope 50 para evitar listados gigantes).",
+            "schema": {
+              "minimum": 1,
+              "maximum": 50,
+              "type": "number"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Listado paginado.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ListadoUsuariosDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Parámetros de consulta inválidos (paginación/filtros).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorRespuestaDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Sin access token o sesión expirada.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorRespuestaDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "El rol del token no es admin.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorRespuestaDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Listar usuarios",
+        "tags": [
+          "Users"
+        ]
+      }
+    },
+    "/api/v1/users/me": {
+      "patch": {
+        "description": "El usuario edita SU cuenta: el objetivo sale del token, nunca de la petición. Los campos genéricos (nombre/apellido/especialidad) exigen la contraseña actual; las credenciales (usuario/correo/contrasenaNueva) exigen además correoActual y un access token reciente. Cambiar credenciales cierra TODAS las sesiones del usuario (sesionCerrada=true) y expira la cookie del refresh. rol y organizacionId son rechazados (solo el admin los gestiona).",
+        "operationId": "UsersController_actualizarPerfil",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ActualizarPerfilDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Perfil actualizado. Con sesionCerrada=true el cliente debe descartar sus tokens y volver al login.",
+            "headers": {
+              "Set-Cookie": {
+                "description": "Solo cuando cambian credenciales (sesionCerrada=true): expira la cookie httpOnly refresh_token (Max-Age=0)."
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PerfilActualizadoRespuestaDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "DTO inválido, cuerpo vacío, correoActual ausente al cambiar credenciales, o especialidad con rol student/admin.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorRespuestaDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Sin access token, expirado, cerrado en el servidor, o token NO reciente al cambiar credenciales.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorRespuestaDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "La contraseña actual o el correoActual no coinciden.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorRespuestaDto"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Usuario o correo ya registrados.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorRespuestaDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Editar el propio perfil",
+        "tags": [
+          "Users"
+        ]
+      }
+    },
+    "/api/v1/users/{id}": {
+      "delete": {
+        "description": "Solo admin, y solo sobre cuentas teacher/student. Pone is_active=false (nunca hay DELETE físico); responde 204 y es idempotente. La cuenta se reactiva con PATCH /users/:id { activa: true }.",
+        "operationId": "UsersController_eliminar",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "Id numérico de la cuenta teacher/student (BigInt como string).",
+            "schema": {
+              "example": "3",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Cuenta desactivada."
+          },
+          "401": {
+            "description": "Sin access token o sesión expirada.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorRespuestaDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "El rol del token no es admin.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorRespuestaDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Cuenta inexistente (un admin o un id ajeno reciben el mismo 404 anti-enumeración).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorRespuestaDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Desactivar una cuenta (borrado lógico)",
+        "tags": [
+          "Users"
+        ]
+      },
+      "patch": {
+        "description": "Solo admin. { activa: true } reactiva la cuenta y { activa: false } la desactiva (mismo borrado lógico que DELETE, pero devolviendo la fila). Hoy es el único campo editable de la cuenta; un cuerpo vacío responde 400.",
+        "operationId": "UsersController_actualizar",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "description": "Id numérico de la cuenta teacher/student (BigInt como string).",
+            "schema": {
+              "example": "3",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ActualizarUsuarioDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "La cuenta tal como quedó.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UsuarioRespuestaDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Cuerpo vacío o campos inválidos.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorRespuestaDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Sin access token o sesión expirada.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorRespuestaDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "El rol del token no es admin.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorRespuestaDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Cuenta inexistente (o admin: no son objetivos válidos).",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorRespuestaDto"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "bearer": []
+          }
+        ],
+        "summary": "Activar/desactivar una cuenta",
+        "tags": [
+          "Users"
+        ]
+      }
+    }
+  },
+  "info": {
+    "title": "Educoin API",
+    "description": "\nAPI de **Educoin**, la plataforma educativa de monedas: los estudiantes\nresuelven actividades de sus clases, acumulan monedas al calificarse y\nlas gastan en la tienda de recompensas del aula.\n\n### Autenticación (doble token)\n\n* **Access token** (JWT corto): sale en el cuerpo de `POST /auth/login`\n  y viaja en cada petición como `Authorization: Bearer …`. Pulsa el\n  botón **Authorize** de esta UI para probar los endpoints protegidos.\n* **Refresh token** (JWT largo): NUNCA viaja en el cuerpo; el login lo\n  establece como cookie **httpOnly** `refresh_token` (Path=/api/v1/auth,\n  SameSite=Lax) y `POST /auth/refresh` la canjea por una sesión nueva.\n  `POST /auth/logout` la revoca en el servidor y expira la cookie.\n\n### Convenciones de la API\n\n* Prefijo global: todas las rutas viven bajo `/api/v1`.\n* Paginación estándar de listados: `{ data, meta }` con\n  `meta = { total, page, limit }` (page 1-indexada; limit ≤ 50).\n* Los IDs BigInt viajan como **string** (BigInt no se serializa a JSON).\n* Errores con la forma `{ statusCode, message, error }`; los 404 son\n  deliberadamente idénticos para recursos ajenos o inexistentes\n  (anti-enumeración).\n* Los JSONB complejos (`questions` de actividades, `answers` de\n  entregas) se validan en profundidad con zod en el backend; su\n  estructura documentada está en los esquemas de cada endpoint.",
+    "version": "0.0.1",
+    "contact": {}
+  },
+  "tags": [
+    {
+      "name": "Sistema",
+      "description": "Healthcheck de la API."
+    },
+    {
+      "name": "Auth",
+      "description": "Sesión: login, refresh y logout públicos, y perfil del usuario autenticado."
+    },
+    {
+      "name": "Users",
+      "description": "Cuentas de usuario: alta/listado/gestión por el admin y edición del propio perfil (PATCH /users/me)."
+    },
+    {
+      "name": "Organizations",
+      "description": "Organizaciones (colegio/universidad/otra): CRUD exclusivo del admin con borrado lógico."
+    },
+    {
+      "name": "Classes",
+      "description": "Clases del profesor: creación, edición, búsqueda por nombre e inscripción por código."
+    },
+    {
+      "name": "Activities",
+      "description": "Actividades de las clases: borrador y publicación del profesor, consulta del estudiante inscrito."
+    },
+    {
+      "name": "Submissions",
+      "description": "Entregas: borrador/autosave y envío del estudiante; cola de calificación y revisión del profesor."
+    }
+  ],
+  "servers": [
+    {
+      "url": "/",
+      "description": "Servidor local (http://localhost:3000)"
+    }
+  ],
+  "components": {
+    "securitySchemes": {
+      "bearer": {
+        "scheme": "bearer",
+        "bearerFormat": "JWT",
+        "type": "http",
+        "description": "Access token JWT devuelto por POST /api/v1/auth/login. Vigencia corta (JWT_ACCESS_EXPIRES_IN)."
+      },
+      "cookie-refresh": {
+        "type": "apiKey",
+        "in": "cookie",
+        "name": "refresh_token",
+        "description": "Cookie httpOnly establecida por POST /api/v1/auth/login. El navegador la envía automáticamente en /api/v1/auth/*; la exige POST /auth/refresh."
+      }
+    },
+    "schemas": {
+      "IniciarSesionDto": {
+        "type": "object",
+        "properties": {
+          "usuarioOEmail": {
+            "type": "string",
+            "minLength": 3,
+            "maxLength": 255
+          },
+          "contrasena": {
+            "type": "string",
+            "minLength": 8,
+            "maxLength": 128
+          }
+        },
+        "required": [
+          "usuarioOEmail",
+          "contrasena"
+        ]
+      },
+      "SesionUsuarioDto": {
+        "type": "object",
+        "properties": {
+          "role": {
+            "description": "Rol de la cuenta: admin, teacher o student.",
+            "enum": [
+              "admin",
+              "teacher",
+              "student"
+            ],
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "username": {
+            "type": "string"
+          },
+          "email": {
+            "type": "string"
+          },
+          "nombre": {
+            "type": "string"
+          },
+          "apellido": {
+            "type": "string"
+          },
+          "organizacionId": {
+            "type": "string",
+            "nullable": true
+          },
+          "debeCambiarContrasena": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "role",
+          "id",
+          "username",
+          "email",
+          "nombre",
+          "apellido",
+          "organizacionId",
+          "debeCambiarContrasena"
+        ]
+      },
+      "SesionRespuestaDto": {
+        "type": "object",
+        "properties": {
+          "tipoToken": {
+            "description": "Tipo del access token (fijo): enviarlo como \"Authorization: Bearer <token>\".",
+            "enum": [
+              "Bearer"
+            ],
+            "type": "string",
+            "example": "Bearer"
+          },
+          "expiraEn": {
+            "type": "string",
+            "example": "2026-10-20T12:00:00.000Z",
+            "description": "Momento ISO 8601 en que el access token expira."
+          },
+          "accessToken": {
+            "type": "string"
+          },
+          "usuario": {
+            "$ref": "#/components/schemas/SesionUsuarioDto"
+          }
+        },
+        "required": [
+          "tipoToken",
+          "expiraEn",
+          "accessToken",
+          "usuario"
+        ]
+      },
+      "ErrorRespuestaDto": {
+        "type": "object",
+        "properties": {
+          "statusCode": {
+            "type": "number",
+            "example": 404,
+            "description": "Código HTTP del error."
+          },
+          "message": {
+            "type": "string",
+            "example": "El recurso solicitado no fue encontrado.",
+            "description": "Mensaje del error en español. En los 400 del ValidationPipe llega un ARREGLO de strings (un mensaje por campo inválido); en el resto es un string único."
+          },
+          "error": {
+            "type": "string",
+            "example": "Not Found",
+            "description": "Título corto del error (la frase estándar del código HTTP)."
+          }
+        },
+        "required": [
+          "statusCode",
+          "message",
+          "error"
+        ]
+      },
+      "ClaseListadoDto": {
+        "type": "object",
+        "properties": {
+          "estado": {
+            "description": "Estado de la clase: active o archived.",
+            "enum": [
+              "active",
+              "archived"
+            ],
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "nombre": {
+            "type": "string"
+          },
+          "profesorNombre": {
+            "type": "string"
+          },
+          "creadoEn": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "estado",
+          "id",
+          "nombre",
+          "profesorNombre",
+          "creadoEn"
+        ]
+      },
+      "ListadoClasesMetaDto": {
+        "type": "object",
+        "properties": {
+          "total": {
+            "type": "number"
+          },
+          "page": {
+            "type": "number"
+          },
+          "limit": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "total",
+          "page",
+          "limit"
+        ]
+      },
+      "ListadoClasesDto": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ClaseListadoDto"
+            }
+          },
+          "meta": {
+            "$ref": "#/components/schemas/ListadoClasesMetaDto"
+          }
+        },
+        "required": [
+          "data",
+          "meta"
+        ]
+      },
+      "EstudianteInscritoDto": {
+        "type": "object",
+        "properties": {
+          "estado": {
+            "description": "Estado de la inscripción: active, withdrawn o blocked.",
+            "enum": [
+              "active",
+              "withdrawn",
+              "blocked"
+            ],
+            "type": "string"
+          },
+          "id": {
+            "type": "string",
+            "description": "Id de la INSCRIPCIÓN (enrollments.id)."
+          },
+          "estudianteId": {
+            "type": "string",
+            "description": "Id del usuario estudiante (users.id)."
+          },
+          "username": {
+            "type": "string"
+          },
+          "nombre": {
+            "type": "string"
+          },
+          "inscritoEn": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "estado",
+          "id",
+          "estudianteId",
+          "username",
+          "nombre",
+          "inscritoEn"
+        ]
+      },
+      "ListadoEstudiantesDto": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/EstudianteInscritoDto"
+            }
+          },
+          "meta": {
+            "$ref": "#/components/schemas/ListadoClasesMetaDto"
+          }
+        },
+        "required": [
+          "data",
+          "meta"
+        ]
+      },
+      "CrearClaseDto": {
+        "type": "object",
+        "properties": {
+          "nombre": {
+            "type": "string",
+            "description": "Nombre visible de la clase (la BD exige VARCHAR(150) NOT NULL).",
+            "minLength": 8,
+            "maxLength": 150
+          }
+        },
+        "required": [
+          "nombre"
+        ]
+      },
+      "ClaseRespuestaDto": {
+        "type": "object",
+        "properties": {
+          "estado": {
+            "description": "Estado de la clase: active o archived.",
+            "enum": [
+              "active",
+              "archived"
+            ],
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "profesorId": {
+            "type": "string"
+          },
+          "nombre": {
+            "type": "string"
+          },
+          "codigo": {
+            "type": "string",
+            "description": "Código de unión generado por la BD (8 caracteres)."
+          },
+          "creadoEn": {
+            "type": "string"
+          },
+          "actualizadoEn": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "estado",
+          "id",
+          "profesorId",
+          "nombre",
+          "codigo",
+          "creadoEn",
+          "actualizadoEn"
+        ]
+      },
+      "ClaseCreadaRespuestaDto": {
+        "type": "object",
+        "properties": {
+          "mensaje": {
+            "type": "string"
+          },
+          "clase": {
+            "$ref": "#/components/schemas/ClaseRespuestaDto"
+          }
+        },
+        "required": [
+          "mensaje",
+          "clase"
+        ]
+      },
+      "ActualizarClaseDto": {
+        "type": "object",
+        "properties": {
+          "estado": {
+            "description": "Nuevo estado de la clase: active (reactivar) o archived (archivar).",
+            "enum": [
+              "active",
+              "archived"
+            ],
+            "type": "string"
+          },
+          "nombre": {
+            "type": "string",
+            "description": "Nombre visible de la clase (misma regla que al crear: VARCHAR(150)).",
+            "minLength": 8,
+            "maxLength": 150
+          }
+        }
+      },
+      "OpcionDocDto": {
+        "type": "object",
+        "properties": {
+          "text": {
+            "type": "string",
+            "example": "3",
+            "description": "Texto de la opción que ve el estudiante."
+          },
+          "is_correct": {
+            "type": "boolean",
+            "example": true,
+            "description": "Marca la opción correcta. Cada pregunta test exige EXACTAMENTE una opción con is_correct=true. Solo viaja en las vistas del PROFESOR: jamás llega al estudiante (AGENTS.md §9.5)."
+          }
+        },
+        "required": [
+          "text",
+          "is_correct"
+        ]
+      },
+      "PreguntaDocDto": {
+        "type": "object",
+        "properties": {
+          "position": {
+            "type": "number",
+            "example": 1,
+            "description": "Posición de la pregunta: secuencial desde 1 (1, 2, 3…). Las entregas la referencian como question_position."
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "test",
+              "completion",
+              "file",
+              "minigame"
+            ],
+            "description": "Tipo de la pregunta: decide cómo se responde y cómo se califica."
+          },
+          "prompt": {
+            "type": "string",
+            "example": "¿Cuánto es 2 + 2?",
+            "description": "Enunciado visible de la pregunta."
+          },
+          "score": {
+            "type": "number",
+            "example": 5,
+            "description": "Puntaje de la pregunta (mayor que 0). El puntaje total de la actividad es la suma."
+          },
+          "options": {
+            "description": "SOLO type=test (mínimo 2 opciones): las opciones de la pregunta.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/OpcionDocDto"
+            }
+          },
+          "expected_answer": {
+            "type": "string",
+            "description": "SOLO type=completion: la respuesta esperada contra la que auto-califica el backend al enviar la entrega. Nunca viaja al estudiante."
+          }
+        },
+        "required": [
+          "position",
+          "type",
+          "prompt",
+          "score"
+        ]
+      },
+      "CrearActividadDto": {
+        "type": "object",
+        "properties": {
+          "preguntas": {
+            "description": "Preguntas de la actividad (JSONB, validadas con zod en el backend): cada una con position secuencial desde 1, type, prompt y score; las test con options (exactamente una is_correct=true) y las completion con expected_answer.",
+            "minItems": 1,
+            "example": [
+              {
+                "position": 1,
+                "type": "test",
+                "prompt": "¿Cuánto es 2 + 2?",
+                "score": 5,
+                "options": [
+                  {
+                    "text": "3",
+                    "is_correct": false
+                  },
+                  {
+                    "text": "4",
+                    "is_correct": true
+                  }
+                ]
+              },
+              {
+                "position": 2,
+                "type": "completion",
+                "prompt": "Escribe el resultado de 2×2",
+                "score": 5,
+                "expected_answer": "4"
+              }
+            ],
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PreguntaDocDto"
+            }
+          },
+          "titulo": {
+            "type": "string",
+            "description": "Título visible (la BD exige VARCHAR(200) NOT NULL).",
+            "maxLength": 200
+          },
+          "descripcion": {
+            "type": "string",
+            "description": "Enunciado general de la actividad (TEXT, opcional)."
+          },
+          "recompensaMonedas": {
+            "type": "number",
+            "description": "Recompensa en monedas al calificar la entrega (CHECK >= 0).",
+            "minimum": 0
+          },
+          "cierraEn": {
+            "type": "string",
+            "description": "Fecha opcional de cierre (closes_at, TIMESTAMPTZ ISO 8601)."
+          }
+        },
+        "required": [
+          "preguntas",
+          "titulo"
+        ]
+      },
+      "ActividadRespuestaDto": {
+        "type": "object",
+        "properties": {
+          "estado": {
+            "description": "Estado de la actividad: draft, published o deleted.",
+            "enum": [
+              "draft",
+              "published",
+              "deleted"
+            ],
+            "type": "string"
+          },
+          "preguntas": {
+            "description": "questions JSONB tal como quedó guardado, CON las respuestas correctas (options[].is_correct y expected_answer).",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PreguntaDocDto"
+            }
+          },
+          "id": {
+            "type": "string"
+          },
+          "claseId": {
+            "type": "string"
+          },
+          "titulo": {
+            "type": "string"
+          },
+          "descripcion": {
+            "type": "string",
+            "nullable": true
+          },
+          "recompensaMonedas": {
+            "type": "number"
+          },
+          "publicadaEn": {
+            "type": "string",
+            "nullable": true
+          },
+          "cierraEn": {
+            "type": "string",
+            "nullable": true
+          },
+          "creadoEn": {
+            "type": "string"
+          },
+          "actualizadoEn": {
+            "type": "string"
+          },
+          "eliminadaEn": {
+            "type": "string",
+            "nullable": true
+          }
+        },
+        "required": [
+          "estado",
+          "preguntas",
+          "id",
+          "claseId",
+          "titulo",
+          "descripcion",
+          "recompensaMonedas",
+          "publicadaEn",
+          "cierraEn",
+          "creadoEn",
+          "actualizadoEn",
+          "eliminadaEn"
+        ]
+      },
+      "ActividadCreadaRespuestaDto": {
+        "type": "object",
+        "properties": {
+          "mensaje": {
+            "type": "string"
+          },
+          "actividad": {
+            "$ref": "#/components/schemas/ActividadRespuestaDto"
+          }
+        },
+        "required": [
+          "mensaje",
+          "actividad"
+        ]
+      },
+      "ActividadListadoDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "titulo": {
+            "type": "string"
+          },
+          "estado": {
+            "type": "string",
+            "enum": [
+              "draft",
+              "published",
+              "deleted"
+            ]
+          },
+          "recompensaMonedas": {
+            "type": "number"
+          },
+          "publicadaEn": {
+            "type": "string",
+            "nullable": true
+          },
+          "cierraEn": {
+            "type": "string",
+            "nullable": true
+          },
+          "creadoEn": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "titulo",
+          "estado",
+          "recompensaMonedas",
+          "publicadaEn",
+          "cierraEn",
+          "creadoEn"
+        ]
+      },
+      "ListadoActividadesMetaDto": {
+        "type": "object",
+        "properties": {
+          "total": {
+            "type": "number"
+          },
+          "page": {
+            "type": "number"
+          },
+          "limit": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "total",
+          "page",
+          "limit"
+        ]
+      },
+      "ListadoActividadesDto": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ActividadListadoDto"
+            }
+          },
+          "meta": {
+            "$ref": "#/components/schemas/ListadoActividadesMetaDto"
+          }
+        },
+        "required": [
+          "data",
+          "meta"
+        ]
+      },
+      "OpcionEstudianteDocDto": {
+        "type": "object",
+        "properties": {
+          "text": {
+            "type": "string",
+            "example": "3",
+            "description": "Texto de la opción que ve el estudiante."
+          }
+        },
+        "required": [
+          "text"
+        ]
+      },
+      "PreguntaEstudianteDocDto": {
+        "type": "object",
+        "properties": {
+          "position": {
+            "type": "number",
+            "example": 1,
+            "description": "Posición de la pregunta (secuencial desde 1)."
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "test",
+              "completion",
+              "file",
+              "minigame"
+            ],
+            "description": "Tipo de la pregunta: decide cómo se responde."
+          },
+          "prompt": {
+            "type": "string",
+            "example": "¿Cuánto es 2 + 2?",
+            "description": "Enunciado visible de la pregunta."
+          },
+          "score": {
+            "type": "number",
+            "example": 5,
+            "description": "Puntaje de la pregunta (mayor que 0)."
+          },
+          "options": {
+            "description": "SOLO type=test: las opciones visibles (sin is_correct).",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/OpcionEstudianteDocDto"
+            }
+          }
+        },
+        "required": [
+          "position",
+          "type",
+          "prompt",
+          "score"
+        ]
+      },
+      "ActividadEstudianteRespuestaDto": {
+        "type": "object",
+        "properties": {
+          "estado": {
+            "description": "Estado de la actividad (el estudiante solo ve published).",
+            "enum": [
+              "draft",
+              "published",
+              "deleted"
+            ],
+            "type": "string"
+          },
+          "preguntas": {
+            "description": "questions JSONB SANITIZADO: sin options[].is_correct ni expected_answer (AGENTS.md §9.5).",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PreguntaEstudianteDocDto"
+            }
+          },
+          "id": {
+            "type": "string"
+          },
+          "claseId": {
+            "type": "string"
+          },
+          "titulo": {
+            "type": "string"
+          },
+          "descripcion": {
+            "type": "string",
+            "nullable": true
+          },
+          "recompensaMonedas": {
+            "type": "number"
+          },
+          "publicadaEn": {
+            "type": "string",
+            "nullable": true
+          },
+          "cierraEn": {
+            "type": "string",
+            "nullable": true
+          },
+          "creadoEn": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "estado",
+          "preguntas",
+          "id",
+          "claseId",
+          "titulo",
+          "descripcion",
+          "recompensaMonedas",
+          "publicadaEn",
+          "cierraEn",
+          "creadoEn"
+        ]
+      },
+      "ActualizarActividadDto": {
+        "type": "object",
+        "properties": {
+          "preguntas": {
+            "description": "Preguntas COMPLETAS: reemplazan el JSONB existente (misma estructura que al crear; validadas con zod en el backend).",
+            "minItems": 1,
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PreguntaDocDto"
+            }
+          },
+          "titulo": {
+            "type": "string",
+            "maxLength": 200
+          },
+          "descripcion": {
+            "type": "string"
+          },
+          "recompensaMonedas": {
+            "type": "number",
+            "minimum": 0
+          },
+          "cierraEn": {
+            "type": "string"
+          }
+        }
+      },
+      "PublicarActividadDto": {
+        "type": "object",
+        "properties": {
+          "cierraEn": {
+            "type": "string",
+            "description": "Fecha de cierre opcional (closes_at, TIMESTAMPTZ ISO 8601)."
+          }
+        }
+      },
+      "ArchivoRespuestaDocDto": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "example": "7/1/3f2504e0-4f89-11d3-9a0c-0305e82c3301.pdf",
+            "description": "Ruta INTERNA generada por el servidor al subir el archivo (POST .../archivos): {actividadId}/{inscripcionId}/{uuid}.{ext}. No es el nombre original del estudiante: ese jamás se persiste."
+          },
+          "mime": {
+            "type": "string",
+            "enum": [
+              "application/pdf",
+              "image/jpeg",
+              "image/png"
+            ],
+            "description": "Tipo real del archivo (validado por magic bytes al subirlo)."
+          },
+          "bytes": {
+            "type": "number",
+            "example": 12345,
+            "description": "Tamaño en bytes, tal como lo reportó el endpoint de subida."
+          }
+        },
+        "required": [
+          "path",
+          "mime",
+          "bytes"
+        ]
+      },
+      "RespuestaDocDto": {
+        "type": "object",
+        "properties": {
+          "question_position": {
+            "type": "number",
+            "example": 1,
+            "description": "Posición de la pregunta que responde (activities.questions[].position). Una respuesta por pregunta, sin repetir."
+          },
+          "option": {
+            "type": "string",
+            "description": "SOLO preguntas test: el TEXTO de la opción elegida."
+          },
+          "text": {
+            "type": "string",
+            "description": "SOLO preguntas completion/minigame: la respuesta abierta (o el resultado del minijuego alcanzado)."
+          },
+          "files": {
+            "description": "SOLO preguntas file: referencias a archivos YA SUBIDOS con el endpoint de subida (máximo 3); un arreglo vacío desadjunta lo subido. Nunca lleva is_correct/score.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ArchivoRespuestaDocDto"
+            }
+          }
+        },
+        "required": [
+          "question_position"
+        ]
+      },
+      "EntregaBorradorRespuestaDto": {
+        "type": "object",
+        "properties": {
+          "estado": {
+            "description": "Siempre 'in_progress': el borrador aún no se envía.",
+            "enum": [
+              "in_progress"
+            ],
+            "type": "string",
+            "example": "in_progress"
+          },
+          "entregadoEn": {
+            "description": "null mientras es borrador: la fecha de envío se registra al ENVIAR (POST).",
+            "type": "string",
+            "nullable": true,
+            "example": null
+          },
+          "puntaje": {
+            "description": "null mientras es borrador: todavía no hay calificación.",
+            "type": "number",
+            "nullable": true,
+            "example": null
+          },
+          "respuestas": {
+            "description": "answers JSONB tal como quedó guardado, SIN veredicto (nunca lleva is_correct/score).",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RespuestaDocDto"
+            }
+          },
+          "id": {
+            "type": "string"
+          },
+          "actividadId": {
+            "type": "string"
+          },
+          "monedasOtorgadas": {
+            "type": "number",
+            "description": "0 mientras es borrador: las monedas llegan solo al calificarse."
+          }
+        },
+        "required": [
+          "estado",
+          "entregadoEn",
+          "puntaje",
+          "respuestas",
+          "id",
+          "actividadId",
+          "monedasOtorgadas"
+        ]
+      },
+      "RespuestaCalificadaDocDto": {
+        "type": "object",
+        "properties": {
+          "question_position": {
+            "type": "number",
+            "example": 1,
+            "description": "Posición de la pregunta que responde (activities.questions[].position). Una respuesta por pregunta, sin repetir."
+          },
+          "option": {
+            "type": "string",
+            "description": "SOLO preguntas test: el TEXTO de la opción elegida."
+          },
+          "text": {
+            "type": "string",
+            "description": "SOLO preguntas completion/minigame: la respuesta abierta (o el resultado del minijuego alcanzado)."
+          },
+          "files": {
+            "description": "SOLO preguntas file: referencias a archivos YA SUBIDOS con el endpoint de subida (máximo 3); un arreglo vacío desadjunta lo subido. Nunca lleva is_correct/score.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ArchivoRespuestaDocDto"
+            }
+          },
+          "is_correct": {
+            "type": "boolean",
+            "nullable": true,
+            "description": "Veredicto de la auto-calificación de la pregunta; null = pendiente de calificación manual (file/minigame)."
+          },
+          "score": {
+            "type": "number",
+            "nullable": true,
+            "description": "Puntaje obtenido en la pregunta (0 al fallar); null = pendiente de calificar."
+          }
+        },
+        "required": [
+          "question_position",
+          "is_correct",
+          "score"
+        ]
+      },
+      "EntregaRespuestaDto": {
+        "type": "object",
+        "properties": {
+          "estado": {
+            "description": "Estado de la entrega: submitted, graded o rejected.",
+            "enum": [
+              "in_progress",
+              "submitted",
+              "graded",
+              "rejected"
+            ],
+            "type": "string"
+          },
+          "respuestas": {
+            "description": "answers JSONB: lo que el estudiante envió MÁS el veredicto por respuesta (is_correct/score).",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RespuestaCalificadaDocDto"
+            }
+          },
+          "id": {
+            "type": "string"
+          },
+          "actividadId": {
+            "type": "string"
+          },
+          "entregadoEn": {
+            "type": "string",
+            "description": "Momento del envío (submissions.submitted_at, ISO 8601)."
+          },
+          "puntaje": {
+            "type": "number",
+            "nullable": true,
+            "description": "Puntaje total al calificarse; null mientras espera al profesor."
+          },
+          "monedasOtorgadas": {
+            "type": "number",
+            "description": "Monedas otorgadas por fn_award_coins al pasar a 'graded' (0 antes)."
+          },
+          "feedback": {
+            "type": "string",
+            "nullable": true,
+            "description": "Retroalimentación del profesor (submissions.feedback): null hasta\nque la califique; con él ve el motivo de un 'rejected' o los\ncomentarios de un 'graded'."
+          }
+        },
+        "required": [
+          "estado",
+          "respuestas",
+          "id",
+          "actividadId",
+          "entregadoEn",
+          "puntaje",
+          "monedasOtorgadas",
+          "feedback"
+        ]
+      },
+      "GuardarBorradorDto": {
+        "type": "object",
+        "properties": {
+          "respuestas": {
+            "description": "Respuestas parciales del borrador (JSONB, validadas con zod contra las preguntas reales de la actividad): pueden faltar preguntas e incluso llegar vacías. Las preguntas file referencian archivos YA SUBIDOS con POST .../archivos.",
+            "example": [
+              {
+                "question_position": 1,
+                "option": "4"
+              }
+            ],
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RespuestaDocDto"
+            }
+          }
+        },
+        "required": [
+          "respuestas"
+        ]
+      },
+      "BorradorGuardadoRespuestaDto": {
+        "type": "object",
+        "properties": {
+          "mensaje": {
+            "type": "string"
+          },
+          "entrega": {
+            "$ref": "#/components/schemas/EntregaBorradorRespuestaDto"
+          }
+        },
+        "required": [
+          "mensaje",
+          "entrega"
+        ]
+      },
+      "CrearEntregaDto": {
+        "type": "object",
+        "properties": {
+          "respuestas": {
+            "description": "Respuestas FINALES (JSONB): zod exige COMPLETITUD contra las preguntas reales — toda la actividad respondida (excepto preguntas file, que hoy el profesor las califica).",
+            "example": [
+              {
+                "question_position": 1,
+                "option": "4"
+              },
+              {
+                "question_position": 2,
+                "text": "4"
+              }
+            ],
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RespuestaDocDto"
+            }
+          }
+        },
+        "required": [
+          "respuestas"
+        ]
+      },
+      "EntregaCreadaRespuestaDto": {
+        "type": "object",
+        "properties": {
+          "mensaje": {
+            "type": "string"
+          },
+          "entrega": {
+            "$ref": "#/components/schemas/EntregaRespuestaDto"
+          }
+        },
+        "required": [
+          "mensaje",
+          "entrega"
+        ]
+      },
+      "EstudianteColaDto": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "usuario": {
+            "type": "string"
+          },
+          "nombre": {
+            "type": "string"
+          },
+          "apellido": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "usuario",
+          "nombre",
+          "apellido"
+        ]
+      },
+      "EntregaColaDto": {
+        "type": "object",
+        "properties": {
+          "estado": {
+            "description": "Estado de la entrega: in_progress, submitted, graded o rejected.",
+            "enum": [
+              "in_progress",
+              "submitted",
+              "graded",
+              "rejected"
+            ],
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "estudiante": {
+            "$ref": "#/components/schemas/EstudianteColaDto"
+          },
+          "entregadoEn": {
+            "type": "string",
+            "nullable": true,
+            "description": "Momento del envío (submissions.submitted_at, ISO 8601); null en borrador."
+          },
+          "puntaje": {
+            "type": "number",
+            "nullable": true,
+            "description": "Puntaje total al calificarse; null mientras espera al profesor."
+          },
+          "monedasOtorgadas": {
+            "type": "number",
+            "description": "Monedas otorgadas por fn_award_coins al pasar a 'graded' (0 antes)."
+          }
+        },
+        "required": [
+          "estado",
+          "id",
+          "estudiante",
+          "entregadoEn",
+          "puntaje",
+          "monedasOtorgadas"
+        ]
+      },
+      "ListadoEntregasMetaDto": {
+        "type": "object",
+        "properties": {
+          "total": {
+            "type": "number"
+          },
+          "page": {
+            "type": "number"
+          },
+          "limit": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "total",
+          "page",
+          "limit"
+        ]
+      },
+      "ListadoEntregasDto": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/EntregaColaDto"
+            }
+          },
+          "meta": {
+            "$ref": "#/components/schemas/ListadoEntregasMetaDto"
+          }
+        },
+        "required": [
+          "data",
+          "meta"
+        ]
+      },
+      "EntregaDetalleProfesorDto": {
+        "type": "object",
+        "properties": {
+          "estado": {
+            "description": "Estado de la entrega: in_progress, submitted, graded o rejected.",
+            "enum": [
+              "in_progress",
+              "submitted",
+              "graded",
+              "rejected"
+            ],
+            "type": "string"
+          },
+          "respuestas": {
+            "description": "answers JSONB: lo que el estudiante envió MÁS el veredicto por respuesta (is_correct/score).",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RespuestaCalificadaDocDto"
+            }
+          },
+          "id": {
+            "type": "string"
+          },
+          "estudiante": {
+            "$ref": "#/components/schemas/EstudianteColaDto"
+          },
+          "entregadoEn": {
+            "type": "string",
+            "nullable": true
+          },
+          "calificadoEn": {
+            "type": "string",
+            "nullable": true,
+            "description": "Momento de la calificación (graded_at, ISO 8601); null sin calificar."
+          },
+          "puntaje": {
+            "type": "number",
+            "nullable": true
+          },
+          "monedasOtorgadas": {
+            "type": "number"
+          },
+          "feedback": {
+            "type": "string",
+            "nullable": true,
+            "description": "Retroalimentación escrita al calificar; null si no hay."
+          }
+        },
+        "required": [
+          "estado",
+          "respuestas",
+          "id",
+          "estudiante",
+          "entregadoEn",
+          "calificadoEn",
+          "puntaje",
+          "monedasOtorgadas",
+          "feedback"
+        ]
+      },
+      "CalificarEntregaDto": {
+        "type": "object",
+        "properties": {
+          "decision": {
+            "description": "Transición a aplicar: 'graded' (aprobar) o 'rejected' (rechazar).",
+            "enum": [
+              "graded",
+              "rejected"
+            ],
+            "type": "string",
+            "example": "graded"
+          },
+          "puntaje": {
+            "type": "number",
+            "description": "Puntaje total de la actividad (NUMERIC(6,2), hasta 2 decimales).\nObligatorio SOLO con decision='graded' (la condicional la aplica el\nService con mensajes claros); con 'rejected' se rechaza.",
+            "minimum": 0,
+            "maximum": 9999.99
+          },
+          "feedback": {
+            "type": "string",
+            "description": "Retroalimentación para el estudiante (TEXT; opcional en ambas decisiones).",
+            "maxLength": 2000
+          }
+        },
+        "required": [
+          "decision"
+        ]
+      },
+      "CalificacionRespuestaDto": {
+        "type": "object",
+        "properties": {
+          "mensaje": {
+            "type": "string"
+          },
+          "entrega": {
+            "$ref": "#/components/schemas/EntregaDetalleProfesorDto"
+          }
+        },
+        "required": [
+          "mensaje",
+          "entrega"
+        ]
+      },
+      "CrearOrganizacionDto": {
+        "type": "object",
+        "properties": {
+          "tipo": {
+            "description": "Tipo de organización: school, university u other.",
+            "enum": [
+              "school",
+              "university",
+              "other"
+            ],
+            "type": "string",
+            "example": "school"
+          },
+          "nombre": {
+            "type": "string",
+            "description": "Nombre visible, único en la BD (organizations.name UNIQUE → P2002,\nque el filtro global traduce a 409). VARCHAR(200) NOT NULL.",
+            "minLength": 3,
+            "maxLength": 200
+          },
+          "ciudad": {
+            "type": "string",
+            "nullable": true,
+            "description": "Ciudad opcional (VARCHAR(100) nullable).",
+            "maxLength": 100
+          }
+        },
+        "required": [
+          "tipo",
+          "nombre"
+        ]
+      },
+      "OrganizacionRespuestaDto": {
+        "type": "object",
+        "properties": {
+          "tipo": {
+            "description": "Tipo de organización: school, university u other.",
+            "enum": [
+              "school",
+              "university",
+              "other"
+            ],
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "nombre": {
+            "type": "string"
+          },
+          "ciudad": {
+            "type": "string",
+            "nullable": true
+          },
+          "activa": {
+            "type": "boolean"
+          },
+          "creadoEn": {
+            "type": "string"
+          },
+          "actualizadoEn": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "tipo",
+          "id",
+          "nombre",
+          "ciudad",
+          "activa",
+          "creadoEn",
+          "actualizadoEn"
+        ]
+      },
+      "OrganizacionCreadaRespuestaDto": {
+        "type": "object",
+        "properties": {
+          "mensaje": {
+            "type": "string"
+          },
+          "organizacion": {
+            "$ref": "#/components/schemas/OrganizacionRespuestaDto"
+          }
+        },
+        "required": [
+          "mensaje",
+          "organizacion"
+        ]
+      },
+      "ListadoOrganizacionesMetaDto": {
+        "type": "object",
+        "properties": {
+          "total": {
+            "type": "number"
+          },
+          "page": {
+            "type": "number"
+          },
+          "limit": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "total",
+          "page",
+          "limit"
+        ]
+      },
+      "ListadoOrganizacionesDto": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/OrganizacionRespuestaDto"
+            }
+          },
+          "meta": {
+            "$ref": "#/components/schemas/ListadoOrganizacionesMetaDto"
+          }
+        },
+        "required": [
+          "data",
+          "meta"
+        ]
+      },
+      "ActualizarOrganizacionDto": {
+        "type": "object",
+        "properties": {
+          "tipo": {
+            "description": "Tipo de organización: school, university u other.",
+            "enum": [
+              "school",
+              "university",
+              "other"
+            ],
+            "type": "string"
+          },
+          "nombre": {
+            "type": "string",
+            "description": "Nombre visible (misma regla que al crear: VARCHAR(200) único).",
+            "minLength": 3,
+            "maxLength": 200
+          },
+          "ciudad": {
+            "type": "string",
+            "nullable": true,
+            "description": "null limpia la ciudad; la cadena vacía se rechaza (VARCHAR(100)).",
+            "maxLength": 100
+          },
+          "activa": {
+            "type": "boolean",
+            "description": "Activa o desactiva la organización (organizations.is_active)."
+          }
+        }
+      },
+      "CrearUsuarioDto": {
+        "type": "object",
+        "properties": {
+          "rol": {
+            "type": "string",
+            "description": "Rol de la cuenta nueva: 'teacher' | 'student' (nunca 'admin').",
+            "enum": [
+              "teacher",
+              "student"
+            ]
+          },
+          "usuario": {
+            "type": "string",
+            "description": "Nombre de usuario único (users.username CITEXT UNIQUE → el\nduplicado insensible a mayúsculas responde 409)."
+          },
+          "correo": {
+            "type": "string",
+            "description": "Correo único (users.email CITEXT UNIQUE): duplicado → 409 con\nmensaje claro; el dominio de la BD (CITEXT) no distingue\nmayúsculas.",
+            "maxLength": 254,
+            "format": "email"
+          },
+          "nombre": {
+            "type": "string",
+            "description": "Nombre propio (VARCHAR(100) NOT NULL).",
+            "maxLength": 100
+          },
+          "apellido": {
+            "type": "string",
+            "description": "Apellido (VARCHAR(150) NOT NULL).",
+            "maxLength": 150
+          },
+          "organizacionId": {
+            "type": "string",
+            "description": "Organización de la cuenta (obligatoria): el CHECK ck_users_org exige\nque todo teacher/student pertenezca a una organización. Viaja como\nstring porque los IDs BigInt no se serializan a JSON (AGENTS.md §7).",
+            "maxLength": 20,
+            "pattern": "^\\d+$"
+          },
+          "especialidad": {
+            "type": "string",
+            "nullable": true,
+            "description": "Especialidad del profesor (VARCHAR(150), nullable). Solo tiene\nsentido para teachers: si llega con rol 'student' el service\nresponde 400 (MENSAJE_ESPECIALIDAD_SOLO_PROFESOR).",
+            "maxLength": 150
+          }
+        },
+        "required": [
+          "rol",
+          "usuario",
+          "correo",
+          "nombre",
+          "apellido",
+          "organizacionId"
+        ]
+      },
+      "UsuarioRespuestaDto": {
+        "type": "object",
+        "properties": {
+          "rol": {
+            "description": "Rol de la cuenta: admin, teacher o student.",
+            "enum": [
+              "admin",
+              "teacher",
+              "student"
+            ],
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "usuario": {
+            "type": "string"
+          },
+          "correo": {
+            "type": "string"
+          },
+          "nombre": {
+            "type": "string"
+          },
+          "apellido": {
+            "type": "string"
+          },
+          "especialidad": {
+            "type": "string",
+            "nullable": true
+          },
+          "organizacionId": {
+            "type": "string",
+            "nullable": true
+          },
+          "debeCambiarContrasena": {
+            "type": "boolean"
+          },
+          "activo": {
+            "type": "boolean"
+          },
+          "creadoEn": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "rol",
+          "id",
+          "usuario",
+          "correo",
+          "nombre",
+          "apellido",
+          "especialidad",
+          "organizacionId",
+          "debeCambiarContrasena",
+          "activo",
+          "creadoEn"
+        ]
+      },
+      "UsuarioCreadoRespuestaDto": {
+        "type": "object",
+        "properties": {
+          "mensaje": {
+            "type": "string"
+          },
+          "contrasenaInicial": {
+            "type": "string"
+          },
+          "usuario": {
+            "$ref": "#/components/schemas/UsuarioRespuestaDto"
+          }
+        },
+        "required": [
+          "mensaje",
+          "contrasenaInicial",
+          "usuario"
+        ]
+      },
+      "ListadoUsuariosMetaDto": {
+        "type": "object",
+        "properties": {
+          "total": {
+            "type": "number"
+          },
+          "page": {
+            "type": "number"
+          },
+          "limit": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "total",
+          "page",
+          "limit"
+        ]
+      },
+      "ListadoUsuariosDto": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/UsuarioRespuestaDto"
+            }
+          },
+          "meta": {
+            "$ref": "#/components/schemas/ListadoUsuariosMetaDto"
+          }
+        },
+        "required": [
+          "data",
+          "meta"
+        ]
+      },
+      "ActualizarPerfilDto": {
+        "type": "object",
+        "properties": {
+          "contrasena": {
+            "type": "string",
+            "description": "Contraseña ACTUAL del usuario: requerida SIEMPRE, en todos los\ncambios. Se verifica con argon2 contra users.password_hash en el\nservice; jamás se persiste ni se devuelve (AGENTS.md §9.3).",
+            "minLength": 8,
+            "maxLength": 128
+          },
+          "nombre": {
+            "type": "string",
+            "description": "Nombre propio (users.first_name VARCHAR(100) NOT NULL).",
+            "maxLength": 100
+          },
+          "apellido": {
+            "type": "string",
+            "description": "Apellido (users.last_name VARCHAR(150) NOT NULL).",
+            "maxLength": 150
+          },
+          "especialidad": {
+            "type": "string",
+            "nullable": true,
+            "description": "Especialidad (users.specialty, solo profesores): un string la\ncambia y `null` la LIMPIA; ausente = no se toca. Si llega con rol\nstudent/admin el service responde 400 (MENSAJE_ESPECIALIDAD_SOLO_PROFESOR).",
+            "maxLength": 150
+          },
+          "correoActual": {
+            "type": "string",
+            "description": "Correo ACTUAL: identificación completa para cambiar credenciales.\nObligatorio solo si viaja usuario/correo/contrasenaNueva; el\nservice lo exige y compara (insensible a mayúsculas, CITEXT).",
+            "maxLength": 254,
+            "format": "email"
+          },
+          "usuario": {
+            "type": "string",
+            "description": "Nuevo username (users.username CITEXT UNIQUE → duplicado = 409)."
+          },
+          "correo": {
+            "type": "string",
+            "description": "Nuevo correo (users.email CITEXT UNIQUE → duplicado = 409).",
+            "maxLength": 254,
+            "format": "email"
+          },
+          "contrasenaNueva": {
+            "type": "string",
+            "description": "Nueva contraseña (rango 8–128, el mismo que exige el login): se\nhashea con argon2 y además baja must_change_password a false — es\nel cierre del flujo del primer inicio que exige la BD.",
+            "minLength": 8,
+            "maxLength": 128
+          },
+          "rol": {
+            "type": "object",
+            "description": "PROHIBIDO: users.role es exclusivo del admin (PATCH /users/:id)."
+          },
+          "organizacionId": {
+            "type": "object",
+            "description": "PROHIBIDO: users.organization_id es exclusivo del admin."
+          }
+        },
+        "required": [
+          "contrasena"
+        ]
+      },
+      "PerfilActualizadoRespuestaDto": {
+        "type": "object",
+        "properties": {
+          "mensaje": {
+            "type": "string"
+          },
+          "sesionCerrada": {
+            "type": "boolean"
+          },
+          "usuario": {
+            "$ref": "#/components/schemas/UsuarioRespuestaDto"
+          }
+        },
+        "required": [
+          "mensaje",
+          "sesionCerrada",
+          "usuario"
+        ]
+      },
+      "ActualizarUsuarioDto": {
+        "type": "object",
+        "properties": {
+          "activa": {
+            "type": "boolean",
+            "description": "Activa o desactiva la cuenta (users.is_active)."
+          }
+        }
+      }
+    }
+  }
+}

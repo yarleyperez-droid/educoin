@@ -1,4 +1,6 @@
 import { IsArray } from 'class-validator';
+import { ApiProperty } from '@nestjs/swagger';
+import { RespuestaDocDto } from './respuestas-doc.dto';
 
 /**
  * Datos para guardar el BORRADOR de una entrega
@@ -25,6 +27,12 @@ export class GuardarBorradorDto {
    * correcto se filtra); en preguntas file, `files` referencia
    * archivos ya subidos (la metadata que devolvió el servidor).
    */
+  @ApiProperty({
+    type: [RespuestaDocDto],
+    description:
+      'Respuestas parciales del borrador (JSONB, validadas con zod contra las preguntas reales de la actividad): pueden faltar preguntas e incluso llegar vacías. Las preguntas file referencian archivos YA SUBIDOS con POST .../archivos.',
+    example: [{ question_position: 1, option: '4' }],
+  })
   @IsArray()
   respuestas!: unknown[];
 }

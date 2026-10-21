@@ -1,4 +1,5 @@
-import type { user_role } from '../../../generated/prisma/client';
+import { ApiProperty } from '@nestjs/swagger';
+import { user_role } from '../../../generated/prisma/client';
 
 /**
  * Datos del usuario que SALEN hacia el cliente (AGENTS.md §8: nunca se
@@ -12,7 +13,14 @@ export class UsuarioRespuestaDto {
   id!: string;
   usuario!: string;
   correo!: string;
+
+  /** El plugin CLI no infiere los enums-objeto de Prisma: explícito. */
+  @ApiProperty({
+    enum: user_role,
+    description: 'Rol de la cuenta: admin, teacher o student.',
+  })
   rol!: user_role;
+
   nombre!: string;
   apellido!: string;
   especialidad!: string | null;

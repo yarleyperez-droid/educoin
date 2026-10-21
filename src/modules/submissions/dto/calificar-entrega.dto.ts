@@ -8,6 +8,7 @@ import {
   MaxLength,
   Min,
 } from 'class-validator';
+import { ApiProperty } from '@nestjs/swagger';
 
 /**
  * Decisiones de calificación del profesor sobre una entrega 'submitted':
@@ -40,6 +41,12 @@ export type DecisionCalificacion = (typeof DECISIONES_CALIFICACION)[number];
  */
 export class CalificarEntregaDto {
   /** Transición a aplicar: 'graded' (aprobar) o 'rejected' (rechazar). */
+  @ApiProperty({
+    enum: DECISIONES_CALIFICACION,
+    description:
+      "Transición a aplicar: 'graded' (aprobar) o 'rejected' (rechazar).",
+    example: 'graded',
+  })
   @IsIn(DECISIONES_CALIFICACION)
   decision!: DecisionCalificacion;
 

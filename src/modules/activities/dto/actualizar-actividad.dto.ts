@@ -9,6 +9,8 @@ import {
   MaxLength,
   Min,
 } from 'class-validator';
+import { ApiProperty } from '@nestjs/swagger';
+import { PreguntaDocDto } from './preguntas-doc.dto';
 
 /**
  * Edición parcial de una actividad (solo borradores; una actividad
@@ -38,6 +40,11 @@ export class ActualizarActividadDto {
   recompensaMonedas?: number;
 
   /** Preguntas completas: reemplazan el JSONB existente (validadas con zod). */
+  @ApiProperty({
+    type: [PreguntaDocDto],
+    description:
+      'Preguntas COMPLETAS: reemplazan el JSONB existente (misma estructura que al crear; validadas con zod en el backend).',
+  })
   @IsOptional()
   @IsArray()
   @ArrayMinSize(1)

@@ -9,6 +9,8 @@ import {
   MaxLength,
   Min,
 } from 'class-validator';
+import { ApiProperty } from '@nestjs/swagger';
+import { PreguntaDocDto } from './preguntas-doc.dto';
 
 /**
  * Datos para crear una actividad en una clase del profesor autenticado.
@@ -49,6 +51,30 @@ export class CrearActividadDto {
    * Preguntas embebidas (activities.questions, JSONB): estructura de la
    * seed. Se recibe como arreglo sin tipar y lo valida zod en el Service.
    */
+  @ApiProperty({
+    type: [PreguntaDocDto],
+    description:
+      'Preguntas de la actividad (JSONB, validadas con zod en el backend): cada una con position secuencial desde 1, type, prompt y score; las test con options (exactamente una is_correct=true) y las completion con expected_answer.',
+    example: [
+      {
+        position: 1,
+        type: 'test',
+        prompt: '¿Cuánto es 2 + 2?',
+        score: 5,
+        options: [
+          { text: '3', is_correct: false },
+          { text: '4', is_correct: true },
+        ],
+      },
+      {
+        position: 2,
+        type: 'completion',
+        prompt: 'Escribe el resultado de 2×2',
+        score: 5,
+        expected_answer: '4',
+      },
+    ],
+  })
   @IsArray()
   @ArrayMinSize(1)
   preguntas!: unknown[];

@@ -1,5 +1,7 @@
-import type { activity_status } from '../../../generated/prisma/client';
+import { ApiProperty } from '@nestjs/swagger';
+import { activity_status } from '../../../generated/prisma/client';
 import type { Pregunta, PreguntaSinRespuestas } from './preguntas.schema';
+import { PreguntaDocDto, PreguntaEstudianteDocDto } from './preguntas-doc.dto';
 
 /**
  * Datos de la actividad que SALEN hacia el cliente (AGENTS.md §8: nunca
@@ -17,9 +19,25 @@ export class ActividadRespuestaDto {
   titulo!: string;
   descripcion!: string | null;
   recompensaMonedas!: number;
+
+  /** El plugin CLI no infiere los enums-objeto de Prisma: explícito. */
+  @ApiProperty({
+    enum: activity_status,
+    description: 'Estado de la actividad: draft, published o deleted.',
+  })
   estado!: activity_status;
-  /** questions JSONB tal como quedó guardado (estructura de la seed). */
+
+  /**
+   * questions JSONB tal como quedó guardado (estructura de la seed).
+   * Tipo zod-inferido que el plugin no puede reflejar: esquema doc.
+   */
+  @ApiProperty({
+    type: [PreguntaDocDto],
+    description:
+      'questions JSONB tal como quedó guardado, CON las respuestas correctas (options[].is_correct y expected_answer).',
+  })
   preguntas!: Pregunta[];
+
   publicadaEn!: string | null;
   cierraEn!: string | null;
   creadoEn!: string;
@@ -41,9 +59,25 @@ export class ActividadEstudianteRespuestaDto {
   titulo!: string;
   descripcion!: string | null;
   recompensaMonedas!: number;
+
+  /** El plugin CLI no infiere los enums-objeto de Prisma: explícito. */
+  @ApiProperty({
+    enum: activity_status,
+    description: 'Estado de la actividad (el estudiante solo ve published).',
+  })
   estado!: activity_status;
-  /** questions JSONB SANITIZADO: nunca incluye respuestas correctas. */
+
+  /**
+   * questions JSONB SANITIZADO: nunca incluye respuestas correctas.
+   * Tipo zod-inferido que el plugin no puede reflejar: esquema doc.
+   */
+  @ApiProperty({
+    type: [PreguntaEstudianteDocDto],
+    description:
+      'questions JSONB SANITIZADO: sin options[].is_correct ni expected_answer (AGENTS.md §9.5).',
+  })
   preguntas!: PreguntaSinRespuestas[];
+
   publicadaEn!: string | null;
   cierraEn!: string | null;
   creadoEn!: string;

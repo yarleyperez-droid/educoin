@@ -1,4 +1,5 @@
-import type { enrollment_status } from '../../../generated/prisma/client';
+import { ApiProperty } from '@nestjs/swagger';
+import { enrollment_status } from '../../../generated/prisma/client';
 import type { ListadoMetaDto } from './clase-respuesta.dto';
 
 /**
@@ -14,7 +15,14 @@ export class EstudianteInscritoDto {
   estudianteId!: string;
   username!: string;
   nombre!: string;
+
+  /** El plugin CLI no infiere los enums-objeto de Prisma: explícito. */
+  @ApiProperty({
+    enum: enrollment_status,
+    description: 'Estado de la inscripción: active, withdrawn o blocked.',
+  })
   estado!: enrollment_status;
+
   inscritoEn!: string;
 }
 

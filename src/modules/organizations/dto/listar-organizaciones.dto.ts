@@ -1,4 +1,5 @@
 import { Transform, Type } from 'class-transformer';
+import { ApiProperty } from '@nestjs/swagger';
 import {
   IsBoolean,
   IsIn,
@@ -47,6 +48,10 @@ export class ListarOrganizacionesQueryDto {
   q?: string;
 
   /** Filtra por tipo de organización (enum de la BD). */
+  @ApiProperty({
+    enum: organization_type,
+    description: 'Filtro opcional por tipo: school, university u other.',
+  })
   @IsOptional()
   @IsIn(Object.values(organization_type))
   tipo?: organization_type;

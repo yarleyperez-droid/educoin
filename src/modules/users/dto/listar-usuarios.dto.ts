@@ -1,4 +1,5 @@
 import { Transform, Type } from 'class-transformer';
+import { ApiProperty } from '@nestjs/swagger';
 import {
   IsBoolean,
   IsIn,
@@ -50,6 +51,10 @@ export class ListarUsuariosQueryDto {
    * Filtra por rol (enum user_role completo: listar es de solo lectura
    * y el admin también puede querer ver otros admins).
    */
+  @ApiProperty({
+    enum: user_role,
+    description: 'Filtro opcional por rol: admin, teacher o student.',
+  })
   @IsOptional()
   @IsIn(Object.values(user_role))
   rol?: user_role;

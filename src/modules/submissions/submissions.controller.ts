@@ -16,10 +16,31 @@ import {
 } from '@nestjs/common';
 import { FilesInterceptor } from '@nestjs/platform-express';
 import type { Response } from 'express';
+import {
+  ApiBadRequestResponse,
+  ApiBearerAuth,
+  ApiBody,
+  ApiConflictResponse,
+  ApiConsumes,
+  ApiCreatedResponse,
+  ApiExtraModels,
+  ApiForbiddenResponse,
+  ApiNotFoundResponse,
+  ApiOkResponse,
+  ApiOperation,
+  ApiParam,
+  ApiPayloadTooLargeResponse,
+  ApiTags,
+  ApiUnauthorizedResponse,
+  ApiUnprocessableEntityResponse,
+  ApiUnsupportedMediaTypeResponse,
+  getSchemaPath,
+} from '@nestjs/swagger';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { PerteneceA } from '../../common/decorators/pertenece-a.decorator';
 import { UsuarioActual } from '../../common/decorators/usuario-actual.decorator';
 import { ArchivoDemasiadoGrandeFilter } from '../../common/filters/archivo-demasiado-grande.filter';
+import { ErrorRespuestaDto } from '../../common/dto/error-respuesta.dto';
 import type { UsuarioAutenticado } from '../../common/interfaces/usuario-autenticado';
 import { SubmissionsService } from './submissions.service';
 import { CrearEntregaDto } from './dto/crear-entrega.dto';
@@ -33,7 +54,7 @@ import {
   MENSAJE_ARCHIVO_DEMASIADO_GRANDE,
   type ArchivoSubido,
 } from './validar-archivo';
-import type {
+import {
   BorradorGuardadoRespuestaDto,
   CalificacionRespuestaDto,
   EntregaBorradorRespuestaDto,
@@ -100,12 +121,49 @@ import type {
  * @PerteneceA('actividad', 'id')): la clase de la actividad es suya —
  * un profesor ajeno recibe el mismo 404 estándar anti-enumeración.
  */
+@ApiTags('Submissions')
+// Todas las rutas son protegidas: guards GLOBALES (JWT + roles).
+@ApiBearerAuth()
 @Controller()
 export class SubmissionsController {
   constructor(private readonly submissionsService: SubmissionsService) {}
 
   @Roles('student')
   @PerteneceA('actividadVisible', 'id')
+  @ApiExtraModels(EntregaBorradorRespuestaDto, EntregaRespuestaDto)
+  @ApiOperation({
+    summary: 'Mi entrega de la actividad',
+    description:
+      "Solo student inscrito. Devuelve el BORRADOR tal cual para retomarlo ('in_progress', respuestas sin veredicto) o, si ya fue enviada, la entrega con su resultado (veredicto por respuesta, monedas y feedback si ya calificó). Sin ninguna entrega todavía responde 404.",
+  })
+  @ApiParam({
+    name: 'id',
+    description: 'Id numérico de la actividad (BigInt como string).',
+    example: '7',
+  })
+  @ApiOkResponse({
+    description:
+      "El borrador ('in_progress') o la entrega enviada ('submitted'/'graded'/'rejected'), según el estado de la entrega del estudiante.",
+    schema: {
+      oneOf: [
+        { $ref: getSchemaPath(EntregaBorradorRespuestaDto) },
+        { $ref: getSchemaPath(EntregaRespuestaDto) },
+      ],
+    },
+  })
+  @ApiUnauthorizedResponse({
+    type: ErrorRespuestaDto,
+    description: 'Sin access token o sesión expirada.',
+  })
+  @ApiForbiddenResponse({
+    type: ErrorRespuestaDto,
+    description: 'El rol del token no es student.',
+  })
+  @ApiNotFoundResponse({
+    type: ErrorRespuestaDto,
+    description:
+      'Actividad inexistente/no publicada, sin inscripción activa, o el estudiante aún no tiene entrega.',
+  })
   @Get('activities/:id/submissions')
   miEntrega(
     @Param('id') id: string,
@@ -116,6 +174,41 @@ export class SubmissionsController {
 
   @Roles('student')
   @PerteneceA('actividadVisible', 'id')
+  @ApiOperation({
+    summary: 'Guardar el borrador de mi entrega (autosave)',
+    description:
+      "Solo student inscrito. Guarda/actualiza el BORRADOR en cada cambio: las respuestas pueden ser parciales o venir vacías (is_correct/score jamás se aceptan). Si no existe, crea la entrega en 'in_progress' y registra started_at. Una entrega ya ENVIADA no baja a borrador: responde 409.",
+  })
+  @ApiParam({
+    name: 'id',
+    description: 'Id numérico de la actividad (BigInt como string).',
+    example: '7',
+  })
+  @ApiOkResponse({
+    description: 'Borrador guardado (creado o actualizado).',
+    type: BorradorGuardadoRespuestaDto,
+  })
+  @ApiBadRequestResponse({
+    type: ErrorRespuestaDto,
+    description:
+      'Respuestas que no pasan la validación zod contra las preguntas reales de la actividad.',
+  })
+  @ApiUnauthorizedResponse({
+    type: ErrorRespuestaDto,
+    description: 'Sin access token o sesión expirada.',
+  })
+  @ApiForbiddenResponse({
+    type: ErrorRespuestaDto,
+    description: 'El rol del token no es student.',
+  })
+  @ApiNotFoundResponse({
+    type: ErrorRespuestaDto,
+    description: 'Actividad inexistente/no publicada o sin inscripción activa.',
+  })
+  @ApiConflictResponse({
+    type: ErrorRespuestaDto,
+    description: 'La entrega ya fue enviada: nunca se vuelve a borrador.',
+  })
   @Put('activities/:id/submissions')
   guardarBorrador(
     @Param('id') id: string,
@@ -127,6 +220,41 @@ export class SubmissionsController {
 
   @Roles('student')
   @PerteneceA('actividadVisible', 'id')
+  @ApiOperation({
+    summary: 'Enviar mi entrega definitiva',
+    description:
+      "Solo student inscrito. Cierra el borrador (o crea la entrega de una vez): exige COMPLETITUD (toda la actividad respondida, excepto preguntas file). La auto-calificación decide: al umbral del 80% pasa a 'graded' y el trigger fn_award_coins acredita las monedas; si no, queda 'submitted' esperando al profesor. La entrega es ÚNICA por actividad (uq_submission): ya enviada responde 409.",
+  })
+  @ApiParam({
+    name: 'id',
+    description: 'Id numérico de la actividad (BigInt como string).',
+    example: '7',
+  })
+  @ApiCreatedResponse({
+    description: 'Entrega enviada, con su resultado inmediato.',
+    type: EntregaCreadaRespuestaDto,
+  })
+  @ApiBadRequestResponse({
+    type: ErrorRespuestaDto,
+    description:
+      'Respuestas inválidas o incompletas (zod exige toda la actividad respondida, menos file).',
+  })
+  @ApiUnauthorizedResponse({
+    type: ErrorRespuestaDto,
+    description: 'Sin access token o sesión expirada.',
+  })
+  @ApiForbiddenResponse({
+    type: ErrorRespuestaDto,
+    description: 'El rol del token no es student.',
+  })
+  @ApiNotFoundResponse({
+    type: ErrorRespuestaDto,
+    description: 'Actividad inexistente/no publicada o sin inscripción activa.',
+  })
+  @ApiConflictResponse({
+    type: ErrorRespuestaDto,
+    description: 'Ya existe una entrega enviada para esta actividad.',
+  })
   @Post('activities/:id/submissions')
   entregar(
     @Param('id') id: string,
@@ -160,6 +288,74 @@ export class SubmissionsController {
     new ArchivoDemasiadoGrandeFilter(MENSAJE_ARCHIVO_DEMASIADO_GRANDE),
   )
   @UseInterceptors(FilesInterceptor(CAMPO_ARCHIVOS, MAX_ARCHIVOS_POR_PREGUNTA))
+  @ApiOperation({
+    summary: 'Subir archivos para una pregunta file de mi borrador',
+    description:
+      'Solo student inscrito. Multipart/form-data con la posición de la pregunta y los archivos en el campo `archivos` (hasta 3). Valida el MIME REAL por contenido (magic bytes: solo PDF, JPG y PNG) y el tamaño; guarda con nombre INTERNO uuid y deja en answers[].files[] solo la metadata { path, mime, bytes } — el nombre original jamás se persiste. Puede crear el borrador si aún no existe.',
+  })
+  @ApiParam({
+    name: 'id',
+    description: 'Id numérico de la actividad (BigInt como string).',
+    example: '7',
+  })
+  @ApiConsumes('multipart/form-data')
+  @ApiBody({
+    description:
+      'Campo de texto question_position + archivos en el campo archivos (multipart; los archivos no van en el JSON).',
+    schema: {
+      type: 'object',
+      required: ['question_position', CAMPO_ARCHIVOS],
+      properties: {
+        question_position: {
+          type: 'integer',
+          minimum: 1,
+          description:
+            'Posición de la pregunta de tipo file que recibe los archivos.',
+          example: 3,
+        },
+        [CAMPO_ARCHIVOS]: {
+          type: 'array',
+          items: { type: 'string', format: 'binary' },
+          maxItems: MAX_ARCHIVOS_POR_PREGUNTA,
+          description:
+            'Archivos PDF, JPG o PNG (el tipo se valida por contenido, no por nombre).',
+        },
+      },
+    },
+  })
+  @ApiCreatedResponse({
+    description: 'Archivos adjuntados al borrador de la entrega.',
+    type: BorradorGuardadoRespuestaDto,
+  })
+  @ApiBadRequestResponse({
+    type: ErrorRespuestaDto,
+    description:
+      'Sin archivos, question_position inválida, o la pregunta no es de tipo file.',
+  })
+  @ApiUnauthorizedResponse({
+    type: ErrorRespuestaDto,
+    description: 'Sin access token o sesión expirada.',
+  })
+  @ApiForbiddenResponse({
+    type: ErrorRespuestaDto,
+    description: 'El rol del token no es student.',
+  })
+  @ApiNotFoundResponse({
+    type: ErrorRespuestaDto,
+    description: 'Actividad inexistente/no publicada o sin inscripción activa.',
+  })
+  @ApiConflictResponse({
+    type: ErrorRespuestaDto,
+    description: 'La entrega ya fue enviada.',
+  })
+  @ApiPayloadTooLargeResponse({
+    type: ErrorRespuestaDto,
+    description: 'Algún archivo supera el tamaño máximo de la plataforma.',
+  })
+  @ApiUnsupportedMediaTypeResponse({
+    type: ErrorRespuestaDto,
+    description: 'Contenido no permitido: solo PDF, JPG y PNG (magic bytes).',
+  })
   @Post('activities/:id/submissions/archivos')
   adjuntarArchivos(
     @Param('id') id: string,
@@ -189,6 +385,36 @@ export class SubmissionsController {
    */
   @Roles('teacher')
   @PerteneceA('actividad', 'id')
+  @ApiOperation({
+    summary: 'Cola de calificación de mi actividad',
+    description:
+      'Solo teacher dueño de la actividad (ajena/inexistente → 404 anti-enumeración). TODAS las entregas, paginado { data, meta } con filtro ?estado opcional — el caso principal es ?estado=submitted: las que esperan calificación. Filas de resumen con los datos del estudiante, SIN answers: el detalle está en GET .../submissions/:entregaId.',
+  })
+  @ApiParam({
+    name: 'id',
+    description: 'Id numérico de la actividad (BigInt como string).',
+    example: '7',
+  })
+  @ApiOkResponse({
+    description: 'Entregas de la actividad (filas de resumen).',
+    type: ListadoEntregasDto,
+  })
+  @ApiBadRequestResponse({
+    type: ErrorRespuestaDto,
+    description: 'Parámetros de consulta inválidos (paginación/estado).',
+  })
+  @ApiUnauthorizedResponse({
+    type: ErrorRespuestaDto,
+    description: 'Sin access token o sesión expirada.',
+  })
+  @ApiForbiddenResponse({
+    type: ErrorRespuestaDto,
+    description: 'El rol del token no es teacher.',
+  })
+  @ApiNotFoundResponse({
+    type: ErrorRespuestaDto,
+    description: 'Actividad inexistente o ajena al profesor del token.',
+  })
   @Get('activities/:id/submissions/queue')
   cola(
     @Param('id') id: string,
@@ -214,6 +440,38 @@ export class SubmissionsController {
    */
   @Roles('teacher')
   @PerteneceA('actividad', 'id')
+  @ApiOperation({
+    summary: 'Vista de revisión de una entrega',
+    description:
+      'Solo teacher dueño de la actividad. La fila de la cola MÁS lo que hace falta para calificar: las respuestas del estudiante con su veredicto (answers JSONB), el estudiante dueño y el feedback si ya fue calificada. Una entrega de OTRA actividad responde el mismo 404.',
+  })
+  @ApiParam({
+    name: 'id',
+    description: 'Id numérico de la actividad (BigInt como string).',
+    example: '7',
+  })
+  @ApiParam({
+    name: 'entregaId',
+    description: 'Id numérico de la entrega (BigInt como string).',
+    example: '23',
+  })
+  @ApiOkResponse({
+    description: 'La entrega con sus respuestas y veredictos.',
+    type: EntregaDetalleProfesorDto,
+  })
+  @ApiUnauthorizedResponse({
+    type: ErrorRespuestaDto,
+    description: 'Sin access token o sesión expirada.',
+  })
+  @ApiForbiddenResponse({
+    type: ErrorRespuestaDto,
+    description: 'El rol del token no es teacher.',
+  })
+  @ApiNotFoundResponse({
+    type: ErrorRespuestaDto,
+    description:
+      'Actividad o entrega inexistente, o la entrega es de otra actividad.',
+  })
   @Get('activities/:id/submissions/:entregaId')
   detalle(
     @Param('id') id: string,
@@ -241,6 +499,55 @@ export class SubmissionsController {
    */
   @Roles('student', 'teacher')
   @PerteneceA('entrega', 'entregaId')
+  @ApiOperation({
+    summary: 'Descargar un archivo adjunto de una entrega',
+    description:
+      'El estudiante dueño de la entrega o el profesor de la clase (ajeno/inexistente → 404 anti-enumeración). El archivo se referencia por POSICIÓN de pregunta e índice: la ruta del disco sale de la BD, nunca del cliente. La respuesta es el archivo con su MIME real y el nombre INTERNO (uuid.ext) en Content-Disposition.',
+  })
+  @ApiParam({
+    name: 'id',
+    description: 'Id numérico de la actividad (BigInt como string).',
+    example: '7',
+  })
+  @ApiParam({
+    name: 'entregaId',
+    description: 'Id numérico de la entrega (BigInt como string).',
+    example: '23',
+  })
+  @ApiParam({
+    name: 'posicion',
+    description:
+      'Posición de la pregunta file dentro de la actividad (desde 1).',
+    example: 3,
+  })
+  @ApiParam({
+    name: 'indice',
+    description:
+      'Índice del archivo dentro de los adjuntos de esa pregunta (desde 0).',
+    example: 0,
+  })
+  @ApiOkResponse({
+    description:
+      'El archivo (PDF, JPG o PNG) con Content-Disposition attachment.',
+    content: {
+      'application/octet-stream': {
+        schema: { type: 'string', format: 'binary' },
+      },
+    },
+  })
+  @ApiUnauthorizedResponse({
+    type: ErrorRespuestaDto,
+    description: 'Sin access token o sesión expirada.',
+  })
+  @ApiForbiddenResponse({
+    type: ErrorRespuestaDto,
+    description: 'El rol del token no es student ni teacher.',
+  })
+  @ApiNotFoundResponse({
+    type: ErrorRespuestaDto,
+    description:
+      'Entrega inexistente/ajena, o la posición/índice no corresponden a un archivo adjunto.',
+  })
   @Get('activities/:id/submissions/:entregaId/archivos/:posicion/:indice')
   async descargarArchivo(
     @Param('id') id: string,
@@ -286,6 +593,52 @@ export class SubmissionsController {
   // 200 y no el 201 por defecto de POST: no crea un recurso nuevo,
   // transiciona uno existente y lo devuelve (mismo criterio que
   // POST /activities/:id/publicar).
+  @ApiOperation({
+    summary: 'Calificar una entrega pendiente',
+    description:
+      "Solo teacher dueño. Transición ATÓMICA desde 'submitted': decision='graded' exige puntaje (0..total de la actividad) y dispara fn_award_coins (monedas + graded_at, escritos por la BD); decision='rejected' rechaza con feedback y PROHÍBE puntaje. Una entrega ya calificada (o un borrador) responde 409 — el trigger no paga dos veces.",
+  })
+  @ApiParam({
+    name: 'id',
+    description: 'Id numérico de la actividad (BigInt como string).',
+    example: '7',
+  })
+  @ApiParam({
+    name: 'entregaId',
+    description: 'Id numérico de la entrega (BigInt como string).',
+    example: '23',
+  })
+  @ApiOkResponse({
+    description:
+      'La entrega calificada (graded) o rechazada (rejected), tal como quedó.',
+    type: CalificacionRespuestaDto,
+  })
+  @ApiBadRequestResponse({
+    type: ErrorRespuestaDto,
+    description:
+      "Puntaje ausente con 'graded' o enviado con 'rejected' (máx. 2 decimales).",
+  })
+  @ApiUnauthorizedResponse({
+    type: ErrorRespuestaDto,
+    description: 'Sin access token o sesión expirada.',
+  })
+  @ApiForbiddenResponse({
+    type: ErrorRespuestaDto,
+    description: 'El rol del token no es teacher.',
+  })
+  @ApiNotFoundResponse({
+    type: ErrorRespuestaDto,
+    description:
+      'Actividad o entrega inexistente, o la entrega es de otra actividad.',
+  })
+  @ApiConflictResponse({
+    type: ErrorRespuestaDto,
+    description: 'La entrega ya no está pendiente (no se recalifica).',
+  })
+  @ApiUnprocessableEntityResponse({
+    type: ErrorRespuestaDto,
+    description: 'El puntaje está fuera del rango 0..total de la actividad.',
+  })
   @HttpCode(HttpStatus.OK)
   @Post('activities/:id/submissions/:entregaId/calificar')
   calificar(
