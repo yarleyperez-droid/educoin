@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 
+import { leerSesionActual } from '@/features/auth/api/auth';
 import { BotonCerrarSesion } from '@/features/auth/components/boton-cerrar-sesion';
 import { obtenerSaldo } from '@/features/billetera/api/billetera';
 import {
@@ -14,6 +15,11 @@ import {
 export function StudentTopbar({ onMenuClick }: { onMenuClick: () => void }) {
   const [disponibles, setDisponibles] = useState<number | null>(null);
   const [ganadas, setGanadas] = useState<number | null>(null);
+
+  const sesion = leerSesionActual();
+  const nombreCompleto = sesion
+    ? `${sesion.nombre} ${sesion.apellido}`.trim()
+    : 'Estudiante';
 
   useEffect(() => {
     let vigente = true;
@@ -76,8 +82,8 @@ export function StudentTopbar({ onMenuClick }: { onMenuClick: () => void }) {
             <IconUser className='h-4 w-4' />
           </div>
           <div className='hidden text-sm leading-tight md:block'>
-            <p className='font-medium text-slate-900'>Valentina Ríos</p>
-            <p className='text-xs text-slate-500'>Estudiante · San Agustín</p>
+            <p className='font-medium text-slate-900'>{nombreCompleto}</p>
+            <p className='text-xs text-slate-500'>Estudiante</p>
           </div>
         </div>
 
