@@ -1,5 +1,46 @@
 @import "tailwindcss";
 
+/*
+ * Tokens de marca de EduCoins (landing pública y paneles).
+ *
+ * Fuente visual: `docs/prototipo-educoins.html` (la spec lo declara fuente de
+ * verdad del diseño). Se exponen en el namespace `--color-*` de Tailwind 4
+ * para que la landing y los paneles compartan la misma paleta sin repetir
+ * valores hex en cada className.
+ *
+ * Accesibilidad (AA):
+ * - `--color-muted` conserva el valor oscurecido `#6b6a63` de la auditoría
+ *   T5.2.3 (el `#7a7971` del prototipo da 4.37:1 sobre blanco y no llega a
+ *   4.5:1).
+ * - `--color-gold-ink` (`#8a6500`, 5.3:1 sobre blanco) es el dorado de
+ *   texto; el dorado de marca `#c8930a` (2.8:1 sobre blanco) solo se usa en
+ *   fondos, iconos, bordes y números grandes, nunca en texto de cuerpo.
+ */
+@theme {
+  --color-gold: #c8930a;
+  --color-gold-bg: #fdf4dc;
+  --color-gold-border: #f0c84a;
+  --color-gold-ink: #8a6500;
+  --color-ink: #1c1b18;
+  --color-ink2: #3d3c38;
+  --color-muted: #6b6a63;
+  --color-surface: #ffffff;
+  --color-page: #f5f4f0;
+  --color-edge: #e8e6e0;
+  --color-accent: #1860a5;
+  --color-accent-bg: #e6f1fb;
+  --color-accent-strong: #134f8a;
+  --color-success: #2d7a2d;
+  --color-success-bg: #eaf3de;
+  --color-danger: #a32d2d;
+  --color-danger-bg: #fcebeb;
+
+  /* Radios y sombra del prototipo (`--radius`, `--radius-lg`, `--shadow`). */
+  --radius-card: 10px;
+  --radius-panel: 16px;
+  --shadow-suave: 0 1px 3px rgba(0, 0, 0, 0.08), 0 1px 2px rgba(0, 0, 0, 0.04);
+}
+
 :root {
   --background: #ffffff;
   --foreground: #171717;
@@ -22,4 +63,14 @@ body {
   background: var(--background);
   color: var(--foreground);
   font-family: var(--font-geist-sans), system-ui, sans-serif;
+}
+
+/*
+ * Anclas del nav de la landing (`#como-funciona`, `#ecosistema`, …):
+ * scroll suave, respetando `prefers-reduced-motion`.
+ */
+@media (prefers-reduced-motion: no-preference) {
+  html {
+    scroll-behavior: smooth;
+  }
 }
