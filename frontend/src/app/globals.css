@@ -39,6 +39,44 @@
   --radius-card: 10px;
   --radius-panel: 16px;
   --shadow-suave: 0 1px 3px rgba(0, 0, 0, 0.08), 0 1px 2px rgba(0, 0, 0, 0.04);
+
+  /*
+   * Tokens M3 del mockup admin (docs/prototipo admin).
+   * Paleta índigo/lavanda exclusiva del panel `/admin`; NO reemplaza al
+   * oro de marca (landing y paneles teacher/student siguen con `gold`).
+   * Prefijo `md-` para no colisionar con los tokens existentes.
+   */
+  --color-md-primary: #3525cd;
+  --color-md-primary-container: #4f46e5;
+  --color-md-on-primary: #ffffff;
+  --color-md-on-primary-container: #dad7ff;
+  --color-md-surface: #faf8ff;
+  --color-md-surface-dim: #d2d9f4;
+  --color-md-surface-container-lowest: #ffffff;
+  --color-md-surface-container-low: #f2f3ff;
+  --color-md-surface-container: #eaedff;
+  --color-md-surface-container-high: #e2e7ff;
+  --color-md-surface-container-highest: #dae2fd;
+  --color-md-on-surface: #131b2e;
+  --color-md-on-surface-variant: #464555;
+  --color-md-outline: #777587;
+  --color-md-outline-variant: #c7c4d8;
+  --color-md-secondary: #855300;
+  --color-md-secondary-container: #fea619;
+  --color-md-on-secondary: #ffffff;
+  --color-md-on-secondary-fixed: #2a1700;
+  --color-md-secondary-fixed: #ffddb8;
+  --color-md-tertiary: #005338;
+  --color-md-tertiary-container: #006e4b;
+  --color-md-tertiary-fixed: #6ffbbe;
+  --color-md-on-tertiary: #ffffff;
+  --color-md-on-tertiary-container: #67f4b7;
+  --color-md-error: #ba1a1a;
+  --color-md-error-container: #ffdad6;
+  --color-md-on-error: #ffffff;
+  --color-md-inverse-surface: #283044;
+  --color-md-inverse-on-surface: #eef0ff;
+  --color-md-inverse-primary: #c3c0ff;
 }
 
 :root {
