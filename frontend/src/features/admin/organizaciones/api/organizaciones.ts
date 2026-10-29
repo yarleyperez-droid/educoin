@@ -6,9 +6,8 @@
  *
  * ## Contrato con H2.4 (verificado en `organizations.controller.ts`)
  *
- * - `GET /api/v1/organizations?page&limit` → `{ data, meta }` (envoltura
- *   → `api.get`); defaults `page=1`, `limit=20` (tope50). Los filtros
- *   `q`/`tipo`/`activa` existen pero están fuera de alcance (PRO-380).
+ * - `GET /api/v1/organizations?page&limit&q&tipo&activa` → `{ data, meta }`
+ *   (envoltura → `api.get`); defaults `page=1`, `limit=20` (tope50).
  * - `POST /api/v1/organizations` → **201** `{ mensaje, organizacion }`
  *   objeto plano (→ `apiPlano.post`). Un nombre repetido da `409` con el
  *   mensaje del backend.
@@ -27,6 +26,7 @@ import {
   OrganizacionCreadaSchema,
   mensajeDeErroresZod,
   type CrearOrganizacionInput,
+  type FiltrosOrganizaciones,
   type ListadoOrganizaciones,
   type OrganizacionCreada,
 } from "../contrato/organizaciones";
@@ -37,19 +37,27 @@ export const LIMITE_ORGANIZACIONES = 20;
 /**
  * Lista una página de organizaciones (`GET /organizations`).
  *
- * @param page Página (default1).
- * @param limit Filas por página (default {@link LIMITE_ORGANIZACIONES}).
+ * @param filtros Página, límite y filtros opcionales `q`/`tipo`/`activa`.
  * @returns La página con su meta.
  * @throws {ApiError} 422 (contrato) o el error del backend (401/403).
  */
 export async function listarOrganizaciones(
-  page = 1,
-  limit = LIMITE_ORGANIZACIONES,
+  filtros: FiltrosOrganizaciones = {},
 ): Promise<ListadoOrganizaciones> {
   const parametros = new URLSearchParams({
-    page: String(page),
-    limit: String(limit),
+    page: String(filtros.page ?? 1),
+    limit: String(filtros.limit ?? LIMITE_ORGANIZACIONES),
   });
+
+  if (filtros.q !== undefined && filtros.q.trim() !== "") {
+    parametros.set("q", filtros.q.trim());
+  }
+  if (filtros.tipo !== undefined) {
+    parametros.set("tipo", filtros.tipo);
+  }
+  if (filtros.activa !== undefined) {
+    parametros.set("activa", String(filtros.activa));
+  }
 
   const respuesta = await api.get<unknown>(
     `organizations?${parametros.toString()}`,
