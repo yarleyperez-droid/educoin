@@ -108,7 +108,8 @@ const MENSAJE_CONFIRMACION_DIFIERE =
  * evitar el hydration mismatch: el servidor prerenderiza sin `document`, pero
  * el middleware ya redirige a `/login` cuando no hay sesión.
  *
- * @returns Formulario de cambio centrado sobre el fondo neutro del layout.
+ * @returns Formulario de cambio centrado sobre el fondo slate de las vistas
+ * de autenticación (mismo shell que `/login`).
  */
 export default function CambiarContrasenaPage() {
   const router = useRouter();
@@ -207,96 +208,117 @@ export default function CambiarContrasenaPage() {
   }
 
   return (
-    <main className="flex min-h-screen flex-col items-center justify-center bg-neutral-50 p-4 sm:p-8">
-      <div className="w-full max-w-sm rounded-lg border border-neutral-200 bg-white p-6 shadow-sm sm:p-8">
-        <h1 className="text-center text-2xl font-bold text-neutral-900">
-          EduCoins
-        </h1>
-        <p className="mt-1 text-center text-sm text-neutral-500">
-          Cambia tu contraseña para continuar.
-        </p>
-
-        <form onSubmit={manejarEnvio} noValidate className="mt-6 space-y-4">
-          <div>
-            <label
-              htmlFor="contrasena-actual"
-              className="block text-sm font-medium text-neutral-700"
-            >
-              Contraseña actual
-            </label>
-            <input
-              id="contrasena-actual"
-              name="contrasena-actual"
-              type="password"
-              autoComplete="current-password"
-              value={contrasenaActual}
-              onChange={(e) => setContrasenaActual(e.target.value)}
-              disabled={cargando}
-              aria-invalid={errorCampo !== null}
-              aria-describedby={errorCampo !== null ? "error-campo" : undefined}
-              className="mt-1 w-full rounded-md border border-neutral-500 px-3 py-2 text-sm text-neutral-900 placeholder-neutral-500 focus:border-neutral-700 focus:outline-none focus:ring-2 focus:ring-neutral-700 disabled:cursor-not-allowed disabled:opacity-60"
-            />
+    <main className="flex min-h-screen flex-col items-center justify-center bg-slate-50 p-4 sm:p-8">
+      <div className="w-full max-w-md">
+        {/* Marca (mismo bloque que la vista de login). */}
+        <div className="mb-6 flex items-center justify-center gap-2">
+          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-indigo-600 text-lg font-bold text-white">
+            E
           </div>
+          <span className="text-xl font-bold text-slate-900">EduCoins</span>
+          <span className="rounded-full bg-indigo-50 px-2 py-0.5 text-xs font-semibold text-indigo-700">
+            Campus Beta
+          </span>
+        </div>
 
-          <div>
-            <label
-              htmlFor="contrasena-nueva"
-              className="block text-sm font-medium text-neutral-700"
-            >
-              Nueva contraseña
-            </label>
-            <input
-              id="contrasena-nueva"
-              name="contrasena-nueva"
-              type="password"
-              autoComplete="new-password"
-              value={contrasenaNueva}
-              onChange={(e) => setContrasenaNueva(e.target.value)}
-              disabled={cargando}
-              aria-invalid={errorCampo !== null}
-              aria-describedby={errorCampo !== null ? "error-campo" : undefined}
-              className="mt-1 w-full rounded-md border border-neutral-500 px-3 py-2 text-sm text-neutral-900 placeholder-neutral-500 focus:border-neutral-700 focus:outline-none focus:ring-2 focus:ring-neutral-700 disabled:cursor-not-allowed disabled:opacity-60"
-            />
-          </div>
+        <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm sm:p-8">
+          <h1 className="text-2xl font-bold text-slate-900">
+            Renueva tu contraseña
+          </h1>
+          <p className="mt-1 text-sm text-slate-500">
+            Es tu primer ingreso. Elige una contraseña nueva de al menos 8
+            caracteres para entrar a tu panel.
+          </p>
 
-          <div>
-            <label
-              htmlFor="confirmacion"
-              className="block text-sm font-medium text-neutral-700"
-            >
-              Confirmar la nueva contraseña
-            </label>
-            <input
-              id="confirmacion"
-              name="confirmacion"
-              type="password"
-              autoComplete="new-password"
-              value={confirmacion}
-              onChange={(e) => setConfirmacion(e.target.value)}
-              disabled={cargando}
-              aria-invalid={errorCampo !== null}
-              aria-describedby={errorCampo !== null ? "error-campo" : undefined}
-              className="mt-1 w-full rounded-md border border-neutral-500 px-3 py-2 text-sm text-neutral-900 placeholder-neutral-500 focus:border-neutral-700 focus:outline-none focus:ring-2 focus:ring-neutral-700 disabled:cursor-not-allowed disabled:opacity-60"
-            />
-          </div>
+          <form onSubmit={manejarEnvio} noValidate className="mt-6 space-y-4">
+            <div>
+              <label
+                htmlFor="contrasena-actual"
+                className="block text-sm font-medium text-slate-700"
+              >
+                Contraseña actual
+              </label>
+              <input
+                id="contrasena-actual"
+                name="contrasena-actual"
+                type="password"
+                autoComplete="current-password"
+                value={contrasenaActual}
+                onChange={(e) => setContrasenaActual(e.target.value)}
+                disabled={cargando}
+                aria-invalid={errorCampo !== null}
+                aria-describedby={
+                  errorCampo !== null ? "error-campo" : undefined
+                }
+                className="mt-1 w-full rounded-lg border border-slate-300 bg-slate-50 px-3 py-2 text-sm text-slate-900 placeholder-slate-400 focus:border-indigo-500 focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-200 disabled:cursor-not-allowed disabled:opacity-60"
+              />
+            </div>
 
-          {errorCampo !== null && (
-            <p id="error-campo" role="alert" className="text-sm text-red-700">
-              {errorCampo}
-            </p>
-          )}
+            <div>
+              <label
+                htmlFor="contrasena-nueva"
+                className="block text-sm font-medium text-slate-700"
+              >
+                Nueva contraseña
+              </label>
+              <input
+                id="contrasena-nueva"
+                name="contrasena-nueva"
+                type="password"
+                autoComplete="new-password"
+                value={contrasenaNueva}
+                onChange={(e) => setContrasenaNueva(e.target.value)}
+                disabled={cargando}
+                aria-invalid={errorCampo !== null}
+                aria-describedby={
+                  errorCampo !== null ? "error-campo" : undefined
+                }
+                className="mt-1 w-full rounded-lg border border-slate-300 bg-slate-50 px-3 py-2 text-sm text-slate-900 placeholder-slate-400 focus:border-indigo-500 focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-200 disabled:cursor-not-allowed disabled:opacity-60"
+              />
+              <p className="mt-1 text-xs text-slate-500">Mínimo 8 caracteres.</p>
+            </div>
 
-          {cargando ? (
-            <EstadoCarga mensaje="Guardando tu contraseña…" />
-          ) : (
-            <button
-              type="submit"
-              className="w-full rounded-md bg-neutral-900 px-4 py-2 text-sm font-medium text-white hover:bg-neutral-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-700 focus-visible:ring-offset-2"
-            >
-              Cambiar contraseña
-            </button>
-          )}
-        </form>
+            <div>
+              <label
+                htmlFor="confirmacion"
+                className="block text-sm font-medium text-slate-700"
+              >
+                Confirmar la nueva contraseña
+              </label>
+              <input
+                id="confirmacion"
+                name="confirmacion"
+                type="password"
+                autoComplete="new-password"
+                value={confirmacion}
+                onChange={(e) => setConfirmacion(e.target.value)}
+                disabled={cargando}
+                aria-invalid={errorCampo !== null}
+                aria-describedby={
+                  errorCampo !== null ? "error-campo" : undefined
+                }
+                className="mt-1 w-full rounded-lg border border-slate-300 bg-slate-50 px-3 py-2 text-sm text-slate-900 placeholder-slate-400 focus:border-indigo-500 focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-200 disabled:cursor-not-allowed disabled:opacity-60"
+              />
+            </div>
+
+            {errorCampo !== null && (
+              <p id="error-campo" role="alert" className="text-sm text-red-700">
+                {errorCampo}
+              </p>
+            )}
+
+            {cargando ? (
+              <EstadoCarga mensaje="Guardando tu contraseña…" />
+            ) : (
+              <button
+                type="submit"
+                className="w-full rounded-lg bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-indigo-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2"
+              >
+                Cambiar contraseña
+              </button>
+            )}
+          </form>
+        </div>
       </div>
     </main>
   );
