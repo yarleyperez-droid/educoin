@@ -184,151 +184,153 @@ export default function ColaEntregasPage() {
   const haySiguiente = meta.page * meta.limit < meta.total;
 
   return (
-    <div className="w-full max-w-4xl rounded-lg border border-neutral-200 bg-white p-6 shadow-sm sm:p-8">
-      <div className="flex flex-wrap items-center justify-between gap-3">
+    <div className="space-y-6">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div>
-          <h2 className="text-xl font-semibold text-neutral-900">
+          <h1 className="text-2xl font-bold text-slate-900 lg:text-3xl">
             Cola de entregas
-          </h2>
-          <p className="mt-1 text-sm text-neutral-500">
+          </h1>
+          <p className="mt-1 max-w-2xl text-sm text-slate-500">
             Entregas de la actividad, con su estado y calificación.
           </p>
         </div>
         <Link
           href={`/teacher/clases/${claseId}`}
-          className="rounded-md border border-neutral-300 px-3 py-1.5 text-sm font-medium text-neutral-700 hover:bg-neutral-100"
+          className="self-start rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-50"
         >
           Volver
         </Link>
       </div>
 
-      <div className="mt-4 flex items-center gap-2">
-        <label
-          htmlFor="filtro-estado"
-          className="text-sm font-medium text-neutral-700"
-        >
-          Estado
-        </label>
-        <select
-          id="filtro-estado"
-          value={filtro}
-          onChange={(evento) =>
-            cambiarFiltro(evento.target.value as FiltroEstado)
-          }
-          className="rounded-md border border-neutral-300 bg-white px-3 py-1.5 text-sm text-neutral-900 focus:outline-none focus:ring-2 focus:ring-neutral-500"
-        >
-          {OPCIONES_FILTRO.map((opcion) => (
-            <option key={opcion.valor} value={opcion.valor}>
-              {opcion.etiqueta}
-            </option>
-          ))}
-        </select>
-      </div>
-
-      {cargando && <EstadoCarga mensaje="Cargando entregas…" />}
-
-      {error !== null && !cargando && (
-        <div className="mt-4">
-          <EstadoError mensaje={error} alReintentar={reintentar} />
-        </div>
-      )}
-
-      {error === null && !cargando && filas.length === 0 && (
-        <div className="mt-4">
-          <EstadoVacio
-            titulo={TITULO_VACIO}
-            descripcion={DESCRIPCION_VACIO}
-          />
-        </div>
-      )}
-
-      {error === null && !cargando && filas.length > 0 && (
-        <>
-          <div className="mt-4 overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-neutral-200 text-left text-xs uppercase tracking-wide text-neutral-500">
-                  <th scope="col" className="py-2 pr-3 font-medium">
-                    Estudiante
-                  </th>
-                  <th scope="col" className="py-2 pr-3 font-medium">
-                    Estado
-                  </th>
-                  <th scope="col" className="py-2 pr-3 font-medium">
-                    Fecha de envío
-                  </th>
-                  <th scope="col" className="py-2 pr-3 font-medium">
-                    Puntaje
-                  </th>
-                  <th scope="col" className="py-2 font-medium">
-                    Monedas
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                {filas.map((fila) => (
-                  <tr
-                    key={fila.id}
-                    className="border-b border-neutral-100 last:border-b-0"
-                  >
-                    <td className="py-3 pr-3">
-                      <Link
-                        href={`/teacher/clases/${claseId}/actividades/${actividadId}/entregas/${fila.id}`}
-                        className="group rounded focus:outline-none focus-visible:ring-2 focus-visible:ring-neutral-500"
-                      >
-                        <p className="font-medium text-neutral-900 group-hover:underline">
-                          {fila.estudiante.nombre} {fila.estudiante.apellido}
-                        </p>
-                        <p className="text-xs text-neutral-500 group-hover:underline">
-                          {fila.estudiante.usuario}
-                        </p>
-                      </Link>
-                    </td>
-                    <td className="py-3 pr-3">
-                      <BadgeEstadoEntrega estado={fila.estado} />
-                    </td>
-                    <td className="py-3 pr-3 text-neutral-700">
-                      {formatearFecha(fila.entregadoEn)}
-                    </td>
-                    <td className="py-3 pr-3 text-neutral-900">
-                      {fila.puntaje === null ? "—" : fila.puntaje}
-                    </td>
-                    <td className="py-3 text-neutral-900">
-                      {fila.monedasOtorgadas}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-
-          <nav
-            className="mt-4 flex items-center justify-between text-sm"
-            aria-label="Paginación de la cola"
+      <div className="w-full rounded-2xl border border-slate-200 bg-white p-6 shadow-sm sm:p-8">
+        <div className="flex items-center gap-2">
+          <label
+            htmlFor="filtro-estado"
+            className="text-sm font-medium text-slate-700"
           >
-            <button
-              type="button"
-              onClick={() => cambiarPagina(pagina - 1)}
-              disabled={!hayAnterior}
-              className="rounded-md border border-neutral-300 px-3 py-1.5 font-medium text-neutral-700 enabled:hover:bg-neutral-50 disabled:opacity-40"
+            Estado
+          </label>
+          <select
+            id="filtro-estado"
+            value={filtro}
+            onChange={(evento) =>
+              cambiarFiltro(evento.target.value as FiltroEstado)
+            }
+            className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-200"
+          >
+            {OPCIONES_FILTRO.map((opcion) => (
+              <option key={opcion.valor} value={opcion.valor}>
+                {opcion.etiqueta}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        {cargando && <EstadoCarga mensaje="Cargando entregas…" />}
+
+        {error !== null && !cargando && (
+          <div className="mt-4">
+            <EstadoError mensaje={error} alReintentar={reintentar} />
+          </div>
+        )}
+
+        {error === null && !cargando && filas.length === 0 && (
+          <div className="mt-4">
+            <EstadoVacio
+              titulo={TITULO_VACIO}
+              descripcion={DESCRIPCION_VACIO}
+            />
+          </div>
+        )}
+
+        {error === null && !cargando && filas.length > 0 && (
+          <>
+            <div className="mt-4 overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-slate-200 text-left text-xs uppercase tracking-wide text-slate-500">
+                    <th scope="col" className="py-2 pr-3 font-medium">
+                      Estudiante
+                    </th>
+                    <th scope="col" className="py-2 pr-3 font-medium">
+                      Estado
+                    </th>
+                    <th scope="col" className="py-2 pr-3 font-medium">
+                      Fecha de envío
+                    </th>
+                    <th scope="col" className="py-2 pr-3 font-medium">
+                      Puntaje
+                    </th>
+                    <th scope="col" className="py-2 font-medium">
+                      Monedas
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filas.map((fila) => (
+                    <tr
+                      key={fila.id}
+                      className="border-b border-slate-100 last:border-b-0"
+                    >
+                      <td className="py-3 pr-3">
+                        <Link
+                          href={`/teacher/clases/${claseId}/actividades/${actividadId}/entregas/${fila.id}`}
+                          className="group rounded focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
+                        >
+                          <p className="font-medium text-slate-900 group-hover:underline">
+                            {fila.estudiante.nombre} {fila.estudiante.apellido}
+                          </p>
+                          <p className="text-xs text-slate-500 group-hover:underline">
+                            {fila.estudiante.usuario}
+                          </p>
+                        </Link>
+                      </td>
+                      <td className="py-3 pr-3">
+                        <BadgeEstadoEntrega estado={fila.estado} />
+                      </td>
+                      <td className="py-3 pr-3 text-slate-700">
+                        {formatearFecha(fila.entregadoEn)}
+                      </td>
+                      <td className="py-3 pr-3 text-slate-900">
+                        {fila.puntaje === null ? "—" : fila.puntaje}
+                      </td>
+                      <td className="py-3 text-slate-900">
+                        {fila.monedasOtorgadas}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            <nav
+              className="mt-4 flex items-center justify-between text-sm"
+              aria-label="Paginación de la cola"
             >
-              Anterior
-            </button>
-            <span className="text-neutral-500" role="status">
-              Página {meta.page} de{" "}
-              {Math.max(1, Math.ceil(meta.total / meta.limit))}
-            </span>
-            <button
-              type="button"
-              onClick={() => cambiarPagina(pagina + 1)}
-              disabled={!haySiguiente}
-              className="rounded-md border border-neutral-300 px-3 py-1.5 font-medium text-neutral-700 enabled:hover:bg-neutral-50 disabled:opacity-40"
-            >
-              Siguiente
-            </button>
-          </nav>
-        </>
-      )}
+              <button
+                type="button"
+                onClick={() => cambiarPagina(pagina - 1)}
+                disabled={!hayAnterior}
+                className="rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-600 enabled:hover:bg-slate-50 disabled:opacity-40"
+              >
+                Anterior
+              </button>
+              <span className="text-slate-500" role="status">
+                Página {meta.page} de{" "}
+                {Math.max(1, Math.ceil(meta.total / meta.limit))}
+              </span>
+              <button
+                type="button"
+                onClick={() => cambiarPagina(pagina + 1)}
+                disabled={!haySiguiente}
+                className="rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-600 enabled:hover:bg-slate-50 disabled:opacity-40"
+              >
+                Siguiente
+              </button>
+            </nav>
+          </>
+        )}
+      </div>
     </div>
   );
 }

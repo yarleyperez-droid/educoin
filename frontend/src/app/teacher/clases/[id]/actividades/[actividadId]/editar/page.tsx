@@ -21,6 +21,8 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useEffect, useState, type FormEvent } from "react";
 
+import { PanelLateral } from '@/components/features/panel-lateral';
+import { EstadoCarga, EstadoError } from '@/components/ui';
 import {
   actualizarActividad,
   obtenerActividad,
@@ -172,19 +174,13 @@ export default function EditarActividadPage() {
   }
 
   if (cargando) {
-    return (
-      <p className="text-sm text-slate-500" role="status">
-        Cargando…
-      </p>
-    );
+    return <EstadoCarga mensaje='Cargando actividad…' />;
   }
 
   if (actividad === null) {
     return (
       <div className="w-full max-w-2xl rounded-2xl border border-slate-200 bg-white p-6 text-center shadow-sm">
-        <p role="alert" className="text-sm text-red-700">
-          {errorCarga}
-        </p>
+        <EstadoError mensaje={errorCarga ?? MENSAJE_ERROR_GENERICO} />
         <Link
           href={`/teacher/clases/${claseId}`}
           className="mt-4 inline-block text-sm font-medium text-indigo-600 underline hover:text-indigo-700"
@@ -198,176 +194,208 @@ export default function EditarActividadPage() {
   const esSoloLectura = actividad.estado !== "draft";
 
   return (
-    <div className="w-full max-w-2xl rounded-2xl border border-slate-200 bg-white p-6 shadow-sm sm:p-8">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex items-center gap-2">
-          <h2 className="text-xl font-semibold text-slate-900">
-            {esSoloLectura ? "Actividad" : "Editar actividad"}
-          </h2>
-          <BadgeEstado estado={actividad.estado} />
+    <div className="space-y-6">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <div className="flex flex-wrap items-center gap-2">
+            <h1 className="text-2xl font-bold text-slate-900 lg:text-3xl">
+              {esSoloLectura ? 'Actividad' : 'Editar actividad'}
+            </h1>
+            <BadgeEstado estado={actividad.estado} />
+          </div>
+          <p className="mt-1 max-w-2xl text-sm text-slate-500">
+            {esSoloLectura
+              ? 'La actividad está publicada: esta vista es de solo lectura.'
+              : 'Ajusta el título, la recompensa y las preguntas antes de publicar.'}
+          </p>
         </div>
         <Link
           href={`/teacher/clases/${claseId}`}
-          className="text-sm font-medium text-slate-600 hover:text-slate-900"
+          className="self-start rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-50"
         >
           Volver a la clase
         </Link>
       </div>
 
-      {esSoloLectura ? (
-        <section className="mt-6 space-y-4">
-          <p
-            role="alert"
-            className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800"
-          >
-            Esta actividad ya está publicada y no se puede editar; tampoco
-            puede volver a borrador.
-          </p>
+      <div className='grid gap-6 lg:grid-cols-3'>
+        <div className='lg:col-span-2'>
+          <div className='w-full rounded-2xl border border-slate-200 bg-white p-6 shadow-sm sm:p-8'>
+            {esSoloLectura ? (
+              <section className='space-y-4'>
+                <p
+                  role='alert'
+                  className='rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800'
+                >
+                  Esta actividad ya está publicada y no se puede editar; tampoco
+                  puede volver a borrador.
+                </p>
 
-          <div className="rounded-xl border border-slate-200 bg-slate-50/60 p-4">
-            <p className="text-sm font-medium text-slate-900">
-              {actividad.titulo}
-            </p>
-            {actividad.descripcion !== null && (
-              <p className="mt-1 text-sm text-slate-600">
-                {actividad.descripcion}
-              </p>
-            )}
-            <p className="mt-2 text-xs text-slate-500">
-              {actividad.recompensaMonedas} monedas ·{" "}
-              {actividad.preguntas.length} pregunta
-              {actividad.preguntas.length === 1 ? "" : "s"}
-            </p>
-
-            <ol className="mt-3 space-y-2">
-              {actividad.preguntas.map((pregunta, indice) => (
-                <li key={indice} className="text-sm text-slate-700">
-                  <span className="font-medium">
-                    {indice + 1}. {pregunta.prompt}
-                  </span>{" "}
-                  <span className="text-xs text-slate-500">
-                    ({pregunta.score} ptos ·{" "}
-                    {pregunta.type === "test"
-                      ? "opción múltiple"
-                      : pregunta.type === "completion"
-                        ? "completar"
-                        : pregunta.type}
-                    )
-                  </span>
-                  {pregunta.type === "test" && (
-                    <ul className="ml-5 mt-1 list-disc text-xs text-slate-600">
-                      {pregunta.options.map((opcion, opcionIndice) => (
-                        <li key={opcionIndice}>
-                          {opcion.is_correct ? "✓ " : ""}
-                          {opcion.text}
-                        </li>
-                      ))}
-                    </ul>
+                <div className='rounded-xl border border-slate-200 bg-slate-50/60 p-4'>
+                  <p className='text-sm font-medium text-slate-900'>
+                    {actividad.titulo}
+                  </p>
+                  {actividad.descripcion !== null && (
+                    <p className='mt-1 text-sm text-slate-600'>
+                      {actividad.descripcion}
+                    </p>
                   )}
-                </li>
-              ))}
-            </ol>
+                  <p className='mt-2 text-xs text-slate-500'>
+                    {actividad.recompensaMonedas} monedas ·{' '}
+                    {actividad.preguntas.length} pregunta
+                    {actividad.preguntas.length === 1 ? '' : 's'}
+                  </p>
+
+                  <ol className='mt-3 space-y-2'>
+                    {actividad.preguntas.map((pregunta, indice) => (
+                      <li key={indice} className='text-sm text-slate-700'>
+                        <span className='font-medium'>
+                          {indice + 1}. {pregunta.prompt}
+                        </span>{' '}
+                        <span className='text-xs text-slate-500'>
+                          ({pregunta.score} ptos ·{' '}
+                          {pregunta.type === 'test'
+                            ? 'opción múltiple'
+                            : pregunta.type === 'completion'
+                              ? 'completar'
+                              : pregunta.type}
+                          )
+                        </span>
+                        {pregunta.type === 'test' && (
+                          <ul className='ml-5 mt-1 list-disc text-xs text-slate-600'>
+                            {pregunta.options.map((opcion, opcionIndice) => (
+                              <li key={opcionIndice}>
+                                {opcion.is_correct ? '✓ ' : ''}
+                                {opcion.text}
+                              </li>
+                            ))}
+                          </ul>
+                        )}
+                      </li>
+                    ))}
+                  </ol>
+                </div>
+              </section>
+            ) : (
+              <form
+                onSubmit={manejarGuardar}
+                noValidate
+                className='space-y-5'
+              >
+                <div>
+                  <label
+                    htmlFor='titulo-actividad'
+                    className='block text-sm font-medium text-slate-700'
+                  >
+                    Título
+                  </label>
+                  <input
+                    id='titulo-actividad'
+                    type='text'
+                    value={titulo}
+                    onChange={(e) => setTitulo(e.target.value)}
+                    disabled={guardando}
+                    className='mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-200 disabled:cursor-not-allowed disabled:opacity-60'
+                  />
+                </div>
+
+                <div>
+                  <label
+                    htmlFor='descripcion-actividad'
+                    className='block text-sm font-medium text-slate-700'
+                  >
+                    Descripción{' '}
+                    <span className='text-slate-400'>(opcional)</span>
+                  </label>
+                  <textarea
+                    id='descripcion-actividad'
+                    rows={2}
+                    value={descripcion}
+                    onChange={(e) => setDescripcion(e.target.value)}
+                    disabled={guardando}
+                    className='mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-200 disabled:cursor-not-allowed disabled:opacity-60'
+                  />
+                </div>
+
+                <div className='max-w-[14rem]'>
+                  <label
+                    htmlFor='recompensa-actividad'
+                    className='block text-sm font-medium text-slate-700'
+                  >
+                    Recompensa (monedas)
+                  </label>
+                  <input
+                    id='recompensa-actividad'
+                    type='number'
+                    min={0}
+                    step={1}
+                    value={recompensa}
+                    onChange={(e) => setRecompensa(e.target.value)}
+                    disabled={guardando}
+                    className='mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-200 disabled:cursor-not-allowed disabled:opacity-60'
+                  />
+                </div>
+
+                <EditorPreguntas
+                  preguntas={preguntas}
+                  cambiarPreguntas={setPreguntas}
+                  deshabilitado={guardando}
+                />
+
+                {errorResumen !== null && (
+                  <p
+                    role='alert'
+                    className='rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700'
+                  >
+                    {errorResumen}
+                  </p>
+                )}
+
+                {mensajeExito !== null && (
+                  <p
+                    role='status'
+                    className='rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800'
+                  >
+                    {mensajeExito}
+                  </p>
+                )}
+
+                <div className='flex items-center gap-3'>
+                  <button
+                    type='submit'
+                    disabled={guardando}
+                    aria-busy={guardando}
+                    className='rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60'
+                  >
+                    {guardando ? 'Guardando…' : 'Guardar cambios'}
+                  </button>
+                  <button
+                    type='button'
+                    onClick={manejarPublicar}
+                    disabled={guardando}
+                    className='rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60'
+                  >
+                    Publicar
+                  </button>
+                </div>
+              </form>
+            )}
           </div>
-        </section>
-      ) : (
-        <form onSubmit={manejarGuardar} noValidate className="mt-6 space-y-5">
-          <div>
-            <label
-              htmlFor="titulo-actividad"
-              className="block text-sm font-medium text-slate-700"
-            >
-              Título
-            </label>
-            <input
-              id="titulo-actividad"
-              type="text"
-              value={titulo}
-              onChange={(e) => setTitulo(e.target.value)}
-              disabled={guardando}
-              className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-200 disabled:cursor-not-allowed disabled:opacity-60"
-            />
-          </div>
+        </div>
 
-          <div>
-            <label
-              htmlFor="descripcion-actividad"
-              className="block text-sm font-medium text-slate-700"
-            >
-              Descripción <span className="text-slate-400">(opcional)</span>
-            </label>
-            <textarea
-              id="descripcion-actividad"
-              rows={2}
-              value={descripcion}
-              onChange={(e) => setDescripcion(e.target.value)}
-              disabled={guardando}
-              className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-200 disabled:cursor-not-allowed disabled:opacity-60"
-            />
-          </div>
-
-          <div className="max-w-[14rem]">
-            <label
-              htmlFor="recompensa-actividad"
-              className="block text-sm font-medium text-slate-700"
-            >
-              Recompensa (monedas)
-            </label>
-            <input
-              id="recompensa-actividad"
-              type="number"
-              min={0}
-              step={1}
-              value={recompensa}
-              onChange={(e) => setRecompensa(e.target.value)}
-              disabled={guardando}
-              className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-200 disabled:cursor-not-allowed disabled:opacity-60"
-            />
-          </div>
-
-          <EditorPreguntas
-            preguntas={preguntas}
-            cambiarPreguntas={setPreguntas}
-            deshabilitado={guardando}
-          />
-
-          {errorResumen !== null && (
-            <p
-              role="alert"
-              className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700"
-            >
-              {errorResumen}
-            </p>
-          )}
-
-          {mensajeExito !== null && (
-            <p
-              role="status"
-              className="rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800"
-            >
-              {mensajeExito}
-            </p>
-          )}
-
-          <div className="flex items-center gap-3">
-            <button
-              type="submit"
-              disabled={guardando}
-              aria-busy={guardando}
-              className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60"
-            >
-              {guardando ? "Guardando…" : "Guardar cambios"}
-            </button>
-            <button
-              type="button"
-              onClick={manejarPublicar}
-              disabled={guardando}
-              className="rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
-            >
-              Publicar
-            </button>
-          </div>
-        </form>
-      )}
+        <PanelLateral titulo='Estado de la actividad'>
+          <ul className='list-disc space-y-2 pl-5'>
+            <li>Borrador: puedes editarlo y publicarlo desde esta vista.</li>
+            <li>
+              Publicada: la vista pasa a solo lectura; no se puede editar ni
+              volver a borrador.
+            </li>
+            <li>
+              Si necesitas corregir el contenido publicado, crea una actividad
+              nueva.
+            </li>
+          </ul>
+        </PanelLateral>
+      </div>
     </div>
   );
 }

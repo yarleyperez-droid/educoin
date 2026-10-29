@@ -31,6 +31,8 @@ import { useEffect, useState, type FormEvent } from "react";
 
 import "katex/dist/katex.min.css";
 
+import { PanelLateral } from "@/components/features/panel-lateral";
+import { EstadoCarga, EstadoError } from "@/components/ui";
 import { obtenerParaEstudiante } from "@/features/estudiante/api/actividades-estudiante";
 import {
   consultarAutoCalificacion,
@@ -248,22 +250,16 @@ export default function CuestionarioPage() {
     actividad?.preguntas.reduce((total, pregunta) => total + pregunta.score, 0) ?? 0;
 
   if (cargando) {
-    return (
-      <p className="text-sm text-neutral-500" role="status">
-        Cargando…
-      </p>
-    );
+    return <EstadoCarga mensaje="Cargando la actividad…" />;
   }
 
   if (actividad === null) {
     return (
-      <div className="w-full max-w-2xl rounded-lg border border-neutral-200 bg-white p-6 text-center shadow-sm">
-        <p role="alert" className="text-sm text-red-700">
-          {error}
-        </p>
+      <div className="space-y-4">
+        <EstadoError mensaje={error ?? MENSAJE_ERROR_GENERICO} />
         <Link
           href="/student/actividades"
-          className="mt-4 inline-block text-sm font-medium text-neutral-700 underline hover:text-neutral-900"
+          className="inline-block text-sm font-medium text-indigo-600 hover:text-indigo-700"
         >
           Volver a mis actividades
         </Link>
@@ -271,191 +267,207 @@ export default function CuestionarioPage() {
     );
   }
 
+  const numeroPreguntas = actividad.preguntas.length;
+
   return (
-    <div className="w-full max-w-2xl rounded-lg border border-neutral-200 bg-white p-6 shadow-sm sm:p-8">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <div className="flex items-center gap-2">
-            <h2 className="text-xl font-semibold text-neutral-900">
-              {actividad.titulo}
-            </h2>
-            {entrega !== null && (
-              <span className="rounded-full bg-neutral-200 px-2 py-0.5 text-xs font-medium text-neutral-700">
-                {etiquetaEstadoEntrega(entrega.estado)}
-              </span>
-            )}
-          </div>
-          {actividad.descripcion !== null && (
-            <p className="mt-1 text-sm text-neutral-600">
-              {actividad.descripcion}
-            </p>
+    <div className="space-y-6">
+      <div>
+        <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+          Panel de Actividades
+        </p>
+        <div className="mt-1 flex flex-wrap items-center gap-2">
+          <h1 className="text-2xl font-bold text-slate-900 lg:text-3xl">
+            {actividad.titulo}
+          </h1>
+          {entrega !== null && (
+            <span className="rounded-full bg-indigo-50 px-2 py-0.5 text-xs font-medium text-indigo-700">
+              {etiquetaEstadoEntrega(entrega.estado)}
+            </span>
           )}
-          <p className="mt-2 text-xs text-neutral-500">
-            {actividad.recompensaMonedas} monedas al completar ·{" "}
-            {actividad.preguntas.length} pregunta
-            {actividad.preguntas.length === 1 ? "" : "s"}
-          </p>
         </div>
+        {actividad.descripcion !== null && (
+          <p className="mt-1 max-w-2xl text-sm text-slate-500">
+            {actividad.descripcion}
+          </p>
+        )}
         <Link
           href="/student/actividades"
-          className="text-sm text-neutral-600 hover:text-neutral-900"
+          className="mt-2 inline-block text-sm font-medium text-indigo-600 hover:text-indigo-700"
         >
           Mis actividades
         </Link>
       </div>
 
-      {entrega !== null ? (
-        <section aria-live="polite" className="mt-6 space-y-4">
-          <div className="rounded-md border border-green-200 bg-green-50 p-4">
-            <p className="text-sm font-medium text-green-800">
-              {MENSAJE_ENVIADO}
-            </p>
-            <p className="mt-1 text-xs text-green-700">{MENSAJE_SIN_REINTENTO}</p>
-          </div>
+      <div className="grid gap-6 lg:grid-cols-3">
+        <div className="lg:col-span-2">
+          <div className="w-full rounded-2xl border border-slate-200 bg-white p-6 shadow-sm sm:p-8">
+            {entrega !== null ? (
+              <section aria-live="polite" className="space-y-4">
+                <div className="rounded-lg border border-green-200 bg-green-100 p-4">
+                  <p className="text-sm font-semibold text-green-700">
+                    {MENSAJE_ENVIADO}
+                  </p>
+                  <p className="mt-1 text-xs text-green-700">
+                    {MENSAJE_SIN_REINTENTO}
+                  </p>
+                </div>
 
-          <p className="text-xs text-neutral-500">
-            Enviado el{" "}
-            {entrega.enviadaEn !== null
-              ? new Date(entrega.enviadaEn).toLocaleString("es-CO")
-              : "—"}
-            .
-          </p>
-
-          {entrega.estado === "submitted" && (
-            <p
-              role="status"
-              className="rounded-md border border-neutral-200 bg-neutral-50 p-3 text-sm text-neutral-600"
-            >
-              Esperando el resultado de la auto-calificación…
-            </p>
-          )}
-
-          {entrega.estado === "graded" && (
-            <>
-              <section
-                aria-labelledby="titulo-resultado"
-                className="rounded-md border border-neutral-200 p-4"
-              >
-                <h3
-                  id="titulo-resultado"
-                  className="text-sm font-semibold text-neutral-800"
-                >
-                  Resultado
-                </h3>
-                <p className="mt-1 text-sm text-neutral-700">
-                  {entrega.puntaje} / {totalPuntos} puntos ·{" "}
-                  {entrega.monedasOtorgadas} monedas
+                <p className="text-xs text-slate-500">
+                  Enviado el{" "}
+                  {entrega.enviadaEn !== null
+                    ? new Date(entrega.enviadaEn).toLocaleString("es-CO")
+                    : "—"}
                 </p>
 
-                <ul className="mt-3 space-y-1">
-                  {(entrega.resultado ?? []).map((item) => {
-                    const pregunta = actividad.preguntas.find(
-                      (p) => p.position === item.question_position,
-                    );
+                {entrega.estado === "submitted" && (
+                  <p
+                    role="status"
+                    className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800"
+                  >
+                    Esperando el resultado de la auto-calificación…
+                  </p>
+                )}
 
-                    return (
-                      <li
-                        key={item.question_position}
-                        className="flex items-start gap-2 text-sm text-neutral-700"
+                {entrega.estado === "graded" && (
+                  <>
+                    <section
+                      aria-labelledby="titulo-resultado"
+                      className="rounded-lg border border-slate-200 p-4"
+                    >
+                      <h3
+                        id="titulo-resultado"
+                        className="text-sm font-semibold text-slate-900"
                       >
-                        <span
-                          aria-hidden="true"
-                          className={
-                            item.correcta
-                              ? "font-semibold text-green-700"
-                              : "font-semibold text-red-700"
-                          }
-                        >
-                          {item.correcta ? "✓" : "✗"}
-                        </span>
-                        <span>
-                          Pregunta {item.question_position}:{" "}
-                          {pregunta?.prompt ?? ""} — {item.puntos} puntos
-                        </span>
-                      </li>
-                    );
-                  })}
-                </ul>
+                        Resultado
+                      </h3>
+                      <p className="mt-1 text-sm text-slate-700">
+                        {entrega.puntaje} / {totalPuntos} puntos ·{" "}
+                        {entrega.monedasOtorgadas} monedas
+                      </p>
 
-                <p className="mt-2 text-xs text-neutral-500">
-                  {MENSAJE_SIN_REINTENTO}
-                </p>
+                      <ul className="mt-3 space-y-1">
+                        {(entrega.resultado ?? []).map((item) => {
+                          const pregunta = actividad.preguntas.find(
+                            (p) => p.position === item.question_position,
+                          );
+
+                          return (
+                            <li
+                              key={item.question_position}
+                              className="flex items-start gap-2 text-sm text-slate-700"
+                            >
+                              <span
+                                aria-hidden="true"
+                                className={
+                                  item.correcta
+                                    ? "font-semibold text-green-700"
+                                    : "font-semibold text-red-700"
+                                }
+                              >
+                                {item.correcta ? "✓" : "✗"}
+                              </span>
+                              <span>
+                                Pregunta {item.question_position}:{" "}
+                                {pregunta?.prompt ?? ""} — {item.puntos} puntos
+                              </span>
+                            </li>
+                          );
+                        })}
+                      </ul>
+
+                      <p className="mt-2 text-xs text-slate-500">
+                        {MENSAJE_SIN_REINTENTO}
+                      </p>
+                    </section>
+
+                    <section
+                      aria-labelledby="titulo-feedback"
+                      className="rounded-lg border border-slate-200 bg-slate-50 p-4"
+                    >
+                      <h3
+                        id="titulo-feedback"
+                        className="text-sm font-semibold text-slate-900"
+                      >
+                        Feedback del profesor
+                      </h3>
+                      <p className="mt-1 text-sm text-slate-700">
+                        {entrega.retroalimentacion ?? MENSAJE_SIN_FEEDBACK}
+                      </p>
+                    </section>
+                  </>
+                )}
+
+                {entrega.estado === "rejected" && (
+                  <p
+                    role="alert"
+                    className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700"
+                  >
+                    Tu entrega fue rechazada por tu profesor. Revisa el feedback
+                    y consulta con él.
+                  </p>
+                )}
+
+                <div>
+                  <Link
+                    href="/student/actividades"
+                    className="inline-block rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2"
+                  >
+                    Volver a mis actividades
+                  </Link>
+                </div>
               </section>
+            ) : (
+              <form onSubmit={manejarEnvio} noValidate className="space-y-4">
+                <div className="space-y-4">
+                  {actividad.preguntas.map((pregunta) => (
+                    <PreguntaCuestionario
+                      key={pregunta.position}
+                      pregunta={pregunta}
+                      valor={respuestas[pregunta.position]}
+                      onChange={(valor) => responder(pregunta.position, valor)}
+                      deshabilitado={enviando}
+                    />
+                  ))}
+                </div>
 
-              <section
-                aria-labelledby="titulo-feedback"
-                className="rounded-md border border-neutral-200 bg-neutral-50 p-4"
-              >
-                <h3
-                  id="titulo-feedback"
-                  className="text-sm font-semibold text-neutral-800"
-                >
-                  Feedback del profesor
-                </h3>
-                <p className="mt-1 text-sm text-neutral-700">
-                  {entrega.retroalimentacion ?? MENSAJE_SIN_FEEDBACK}
-                </p>
-              </section>
-            </>
-          )}
+                {errorEnvio !== null && (
+                  <p
+                    role="alert"
+                    className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700"
+                  >
+                    {errorEnvio}
+                  </p>
+                )}
 
-          {entrega.estado === "rejected" && (
-            <p
-              role="alert"
-              className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700"
-            >
-              Tu entrega fue rechazada por tu profesor. Revisa el feedback y
-              consulta con él.
-            </p>
-          )}
-
-          <div>
-            <Link
-              href="/student/actividades"
-              className="rounded-md bg-neutral-900 px-4 py-2 text-sm font-medium text-white hover:bg-neutral-700 focus:outline-none focus:ring-2 focus:ring-neutral-500 focus:ring-offset-2"
-            >
-              Volver a mis actividades
-            </Link>
+                <div className="flex flex-wrap items-center gap-3">
+                  <button
+                    type="submit"
+                    disabled={enviando}
+                    aria-busy={enviando}
+                    className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    {enviando ? "Enviando…" : "Enviar respuestas"}
+                  </button>
+                  <span className="text-xs text-slate-500">
+                    Solo puedes enviar una vez.
+                  </span>
+                </div>
+              </form>
+            )}
           </div>
-        </section>
-      ) : (
-        <form onSubmit={manejarEnvio} noValidate className="mt-6 space-y-4">
-          <div className="space-y-4">
-            {actividad.preguntas.map((pregunta) => (
-              <PreguntaCuestionario
-                key={pregunta.position}
-                pregunta={pregunta}
-                valor={respuestas[pregunta.position]}
-                onChange={(valor) => responder(pregunta.position, valor)}
-                deshabilitado={enviando}
-              />
-            ))}
-          </div>
+        </div>
 
-          {errorEnvio !== null && (
-            <p
-              role="alert"
-              className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700"
-            >
-              {errorEnvio}
-            </p>
-          )}
-
-          <div className="flex items-center gap-3">
-            <button
-              type="submit"
-              disabled={enviando}
-              aria-busy={enviando}
-              className="rounded-md bg-neutral-900 px-4 py-2 text-sm font-medium text-white hover:bg-neutral-700 focus:outline-none focus:ring-2 focus:ring-neutral-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60"
-            >
-              {enviando ? "Enviando…" : "Enviar respuestas"}
-            </button>
-            <span className="text-xs text-neutral-500">
-              Solo puedes enviar una vez.
-            </span>
-          </div>
-        </form>
-      )}
+        <PanelLateral titulo="Sobre esta actividad">
+          <p>{actividad.recompensaMonedas} monedas al completar</p>
+          <p>
+            {numeroPreguntas} pregunta{numeroPreguntas === 1 ? "" : "s"}
+          </p>
+          <ul className="list-disc space-y-2 pl-5">
+            <li>Un único intento por actividad.</li>
+            <li>Debes responder todas las preguntas antes de enviar.</li>
+          </ul>
+        </PanelLateral>
+      </div>
     </div>
   );
 }

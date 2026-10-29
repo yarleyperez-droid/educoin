@@ -35,6 +35,7 @@
 import Link from "next/link";
 import { useCallback, useState, type FormEvent } from "react";
 
+import { PanelLateral } from '@/components/features/panel-lateral';
 import { Modal } from "@/components/ui";
 import {
   crearClase,
@@ -168,64 +169,87 @@ export default function NuevaClasePage() {
         </p>
       </div>
 
-      <div className="w-full max-w-xl rounded-2xl border border-slate-200 bg-white p-6 shadow-sm sm:p-8">
-        <form onSubmit={manejarEnvio} noValidate>
-          <div>
-            <label
-              htmlFor="nombre-clase"
-              className="block text-sm font-medium text-slate-700"
-            >
-              Nombre de la clase
-            </label>
-            <input
-              id="nombre-clase"
-              name="nombre"
-              type="text"
-              value={nombre}
-              onChange={(e) => setNombre(e.target.value)}
-              disabled={cargando}
-              placeholder="p. ej. Matemáticas 10A"
-              aria-invalid={errorCampo !== null}
-              aria-describedby={
-                errorCampo !== null ? "error-nombre" : "ayuda-nombre"
-              }
-              className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900 placeholder-slate-400 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-200 disabled:cursor-not-allowed disabled:opacity-60"
-            />
-            <p id="ayuda-nombre" className="mt-1 text-xs text-slate-500">
-              Entre {LONGITUD_MINIMA_NOMBRE} y {LONGITUD_MAXIMA_NOMBRE}{" "}
-              caracteres.
-            </p>
+      <div className='grid gap-6 lg:grid-cols-3'>
+        <div className='lg:col-span-2'>
+          <div className='w-full rounded-2xl border border-slate-200 bg-white p-6 shadow-sm sm:p-8'>
+            <form onSubmit={manejarEnvio} noValidate>
+              <div>
+                <label
+                  htmlFor='nombre-clase'
+                  className='block text-sm font-medium text-slate-700'
+                >
+                  Nombre de la clase
+                </label>
+                <input
+                  id='nombre-clase'
+                  name='nombre'
+                  type='text'
+                  value={nombre}
+                  onChange={(e) => setNombre(e.target.value)}
+                  disabled={cargando}
+                  placeholder='p. ej. Matemáticas 10A'
+                  aria-invalid={errorCampo !== null}
+                  aria-describedby={
+                    errorCampo !== null ? 'error-nombre' : 'ayuda-nombre'
+                  }
+                  className='mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900 placeholder-slate-400 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-200 disabled:cursor-not-allowed disabled:opacity-60'
+                />
+                <p id='ayuda-nombre' className='mt-1 text-xs text-slate-500'>
+                  Entre {LONGITUD_MINIMA_NOMBRE} y {LONGITUD_MAXIMA_NOMBRE}{' '}
+                  caracteres.
+                </p>
+              </div>
+
+              {errorCampo !== null && (
+                <p
+                  id='error-nombre'
+                  role='alert'
+                  className='mt-4 text-sm text-red-700'
+                >
+                  {errorCampo}
+                </p>
+              )}
+
+              {errorEnvio !== null && (
+                <p
+                  id='error-envio'
+                  role='alert'
+                  className='mt-4 text-sm text-red-700'
+                >
+                  {errorEnvio}
+                </p>
+              )}
+
+              <div className='mt-6 flex items-center gap-3'>
+                <button
+                  type='submit'
+                  disabled={cargando}
+                  aria-busy={cargando}
+                  className='rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60'
+                >
+                  {cargando ? 'Creando…' : 'Crear clase'}
+                </button>
+                <Link
+                  href='/teacher'
+                  className='text-sm font-medium text-slate-600 hover:text-slate-900'
+                >
+                  Volver al panel
+                </Link>
+              </div>
+            </form>
           </div>
+        </div>
 
-          {errorCampo !== null && (
-            <p id="error-nombre" role="alert" className="mt-4 text-sm text-red-700">
-              {errorCampo}
-            </p>
-          )}
-
-          {errorEnvio !== null && (
-            <p id="error-envio" role="alert" className="mt-4 text-sm text-red-700">
-              {errorEnvio}
-            </p>
-          )}
-
-          <div className="mt-6 flex items-center gap-3">
-            <button
-              type="submit"
-              disabled={cargando}
-              aria-busy={cargando}
-              className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60"
-            >
-              {cargando ? "Creando…" : "Crear clase"}
-            </button>
-            <Link
-              href="/teacher"
-              className="text-sm font-medium text-slate-600 hover:text-slate-900"
-            >
-              Volver al panel
-            </Link>
-          </div>
-        </form>
+        <PanelLateral titulo='Cómo compartir tu clase'>
+          <ol className='list-decimal space-y-2 pl-5'>
+            <li>1. Escribe el nombre de la clase.</li>
+            <li>2. Al crearla se genera un código de unión de 8 caracteres.</li>
+            <li>
+              3. Comparte el código: tus estudiantes podrán unirse desde su
+              panel.
+            </li>
+          </ol>
+        </PanelLateral>
       </div>
 
       {/* Confirmación de éxito: el formulario sigue montado detrás y el

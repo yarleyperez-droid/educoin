@@ -45,6 +45,7 @@ import {
   mensajeDeErrorApi,
   useToast,
 } from "@/components/ui";
+import { PanelLateral } from "@/components/features/panel-lateral";
 import { obtenerActividad } from "@/features/teacher/api/actividades";
 import {
   calificarEntrega,
@@ -371,17 +372,20 @@ export default function DetalleEntregaPage() {
 
   if (entrega === null) {
     return (
-      <div className="w-full max-w-2xl rounded-lg border border-neutral-200 bg-white p-6 text-center shadow-sm">
+      <div className="space-y-4">
         {errorCarga !== null ? (
           <EstadoError mensaje={errorCarga} alReintentar={recargar} />
         ) : (
-          <p role="alert" className="text-sm text-red-700">
+          <p
+            role="alert"
+            className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700"
+          >
             {noEncontrada ?? MENSAJE_ERROR_GENERICO}
           </p>
         )}
         <Link
           href={urlCola}
-          className="mt-4 inline-block text-sm font-medium text-neutral-700 underline hover:text-neutral-900"
+          className="inline-block text-sm font-medium text-indigo-600 hover:text-indigo-700"
         >
           Volver a la cola
         </Link>
@@ -392,235 +396,254 @@ export default function DetalleEntregaPage() {
   const formularioActivo = entrega.estado === "submitted" && total !== null;
 
   return (
-    <div className="w-full max-w-3xl rounded-lg border border-neutral-200 bg-white p-6 shadow-sm sm:p-8">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex items-center gap-2">
-          <h2 className="text-xl font-semibold text-neutral-900">
-            Revisión de la entrega
-          </h2>
-          <BadgeEstadoEntrega estado={entrega.estado} />
+    <div className="space-y-6">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <div className="flex flex-wrap items-center gap-2">
+            <h1 className="text-2xl font-bold text-slate-900 lg:text-3xl">
+              Revisión de la entrega
+            </h1>
+            <BadgeEstadoEntrega estado={entrega.estado} />
+          </div>
+          <p className="mt-1 max-w-2xl text-sm text-slate-500">
+            Respuestas del estudiante y calificación de la entrega.
+          </p>
         </div>
         <Link
           href={urlCola}
-          className="rounded-md border border-neutral-300 px-3 py-1.5 text-sm font-medium text-neutral-700 hover:bg-neutral-100"
+          className="self-start rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-50"
         >
           Volver a la cola
         </Link>
       </div>
 
-      {errorEnvio !== null && (
-        <p
-          role="alert"
-          className="mt-4 rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700"
-        >
-          {errorEnvio}
-        </p>
-      )}
+      <div className="grid gap-6 lg:grid-cols-3">
+        <div className="space-y-6 lg:col-span-2">
+          {errorEnvio !== null && (
+            <p
+              role="alert"
+              className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700"
+            >
+              {errorEnvio}
+            </p>
+          )}
 
-      <section className="mt-6 space-y-3">
-        <div>
-          <p className="text-xs uppercase tracking-wide text-neutral-500">
-            Estudiante
-          </p>
-          <p className="text-sm font-medium text-neutral-900">
-            {entrega.estudiante.nombre} {entrega.estudiante.apellido}
-          </p>
-          <p className="text-xs text-neutral-500">
-            {entrega.estudiante.usuario}
-          </p>
+          <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm sm:p-8">
+            <h2 className="text-base font-semibold text-slate-900">
+              Respuestas del estudiante
+            </h2>
+
+            {entrega.respuestas.length === 0 ? (
+              <div className="mt-3">
+                <EstadoVacio
+                  titulo={TITULO_VACIO_RESPUESTAS}
+                  descripcion={DESCRIPCION_VACIO_RESPUESTAS}
+                />
+              </div>
+            ) : (
+              <ol className="mt-3 space-y-3">
+                {entrega.respuestas.map((respuesta, indice) => {
+                  const veredicto = veredictoDe(respuesta);
+                  const puntos =
+                    respuesta.score === null || respuesta.score === undefined
+                      ? null
+                      : respuesta.score;
+
+                  return (
+                    <li
+                      key={`${respuesta.question_position}-${indice}`}
+                      className="rounded-lg border border-slate-200 p-3"
+                    >
+                      <p className="text-sm font-medium text-slate-900">
+                        Pregunta {respuesta.question_position}
+                      </p>
+
+                      {respuesta.option !== undefined && (
+                        <p className="mt-1 text-sm text-slate-700">
+                          Opción elegida: {respuesta.option}
+                        </p>
+                      )}
+
+                      {respuesta.text !== undefined && (
+                        <p className="mt-1 whitespace-pre-wrap text-sm text-slate-700">
+                          Respuesta: {respuesta.text}
+                        </p>
+                      )}
+
+                      {respuesta.files !== undefined &&
+                        respuesta.files.length > 0 && (
+                          <div className="mt-1">
+                            <p className="text-sm text-slate-700">
+                              Archivos adjuntos ({respuesta.files.length}):
+                            </p>
+                            <ul className="ml-4 list-disc text-sm text-slate-600">
+                              {respuesta.files.map((archivo) => (
+                                <li key={archivo.path}>
+                                  {nombreDeRuta(archivo.path)} ({archivo.mime},{" "}
+                                  {archivo.bytes} bytes)
+                                </li>
+                              ))}
+                            </ul>
+                          </div>
+                        )}
+
+                      <p className="mt-2 text-sm">
+                        <span className="font-medium text-slate-700">
+                          Veredicto:
+                        </span>{" "}
+                        <span className={veredicto.clases}>
+                          {veredicto.texto}
+                        </span>
+                        {puntos !== null && (
+                          <span className="text-slate-600">
+                            {" "}
+                            · {puntos} puntos
+                          </span>
+                        )}
+                      </p>
+                    </li>
+                  );
+                })}
+              </ol>
+            )}
+          </section>
+
+          {formularioActivo ? (
+            <form
+              onSubmit={manejarAprobar}
+              noValidate
+              className="space-y-5 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm sm:p-8"
+            >
+              <h2 className="text-base font-semibold text-slate-900">
+                Calificar entrega
+              </h2>
+
+              <div className="max-w-[14rem]">
+                <label
+                  htmlFor="puntaje-entrega"
+                  className="block text-sm font-medium text-slate-700"
+                >
+                  Puntaje
+                </label>
+                <input
+                  id="puntaje-entrega"
+                  type="number"
+                  min={0}
+                  max={total}
+                  step={0.01}
+                  value={puntaje}
+                  onChange={(e) => setPuntaje(e.target.value)}
+                  disabled={enviando}
+                  className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-200 disabled:cursor-not-allowed disabled:opacity-60"
+                />
+                <p className="mt-1 text-xs text-slate-500">0 a {total}</p>
+              </div>
+
+              <div>
+                <label
+                  htmlFor="feedback-entrega"
+                  className="block text-sm font-medium text-slate-700"
+                >
+                  Feedback <span className="text-slate-400">(opcional)</span>
+                </label>
+                <textarea
+                  id="feedback-entrega"
+                  rows={3}
+                  maxLength={MAX_FEEDBACK}
+                  value={feedback}
+                  onChange={(e) => setFeedback(e.target.value)}
+                  disabled={enviando}
+                  className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-200 disabled:cursor-not-allowed disabled:opacity-60"
+                />
+                <p className="mt-1 text-xs text-slate-500">
+                  {feedback.length} / {MAX_FEEDBACK}
+                </p>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-3">
+                <button
+                  type="submit"
+                  disabled={enviando}
+                  aria-busy={enviando}
+                  className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {enviando ? "Enviando…" : "Aprobar (graded)"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void manejarCalificar("rejected")}
+                  disabled={enviando}
+                  className="rounded-lg border border-red-300 bg-white px-4 py-2 text-sm font-semibold text-red-700 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  Rechazar (rejected)
+                </button>
+              </div>
+            </form>
+          ) : (
+            <p className="rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-600">
+              Esta entrega ya no está pendiente de calificación: la vista es de
+              solo lectura y no se puede volver a calificar.
+            </p>
+          )}
         </div>
 
-        <dl className="grid gap-3 sm:grid-cols-2">
+        <PanelLateral titulo="Resumen de la entrega">
           <div>
-            <dt className="text-xs uppercase tracking-wide text-neutral-500">
-              Fecha de envío
-            </dt>
-            <dd className="text-sm text-neutral-900">
-              {formatearFecha(entrega.entregadoEn)}
-            </dd>
-          </div>
-          <div>
-            <dt className="text-xs uppercase tracking-wide text-neutral-500">
-              Fecha de calificación
-            </dt>
-            <dd className="text-sm text-neutral-900">
-              {formatearFecha(entrega.calificadoEn)}
-            </dd>
-          </div>
-          <div>
-            <dt className="text-xs uppercase tracking-wide text-neutral-500">
-              Puntaje
-            </dt>
-            <dd className="text-sm text-neutral-900">
-              {entrega.puntaje === null ? "—" : entrega.puntaje}
-            </dd>
-          </div>
-          <div>
-            <dt className="text-xs uppercase tracking-wide text-neutral-500">
-              Monedas otorgadas
-            </dt>
-            <dd className="text-sm text-neutral-900">
-              {entrega.monedasOtorgadas}
-            </dd>
-          </div>
-          <div className="sm:col-span-2">
-            <dt className="text-xs uppercase tracking-wide text-neutral-500">
-              Retroalimentación
-            </dt>
-            <dd className="mt-1 whitespace-pre-wrap text-sm text-neutral-900">
-              {entrega.feedback ?? "—"}
-            </dd>
-          </div>
-        </dl>
-      </section>
-
-      <section className="mt-6">
-        <h3 className="text-base font-semibold text-neutral-900">
-          Respuestas del estudiante
-        </h3>
-
-        {entrega.respuestas.length === 0 ? (
-          <div className="mt-3">
-            <EstadoVacio
-              titulo={TITULO_VACIO_RESPUESTAS}
-              descripcion={DESCRIPCION_VACIO_RESPUESTAS}
-            />
-          </div>
-        ) : (
-          <ol className="mt-3 space-y-3">
-            {entrega.respuestas.map((respuesta, indice) => {
-              const veredicto = veredictoDe(respuesta);
-              const puntos =
-                respuesta.score === null || respuesta.score === undefined
-                  ? null
-                  : respuesta.score;
-
-              return (
-                <li
-                  key={`${respuesta.question_position}-${indice}`}
-                  className="rounded-md border border-neutral-200 p-3"
-                >
-                  <p className="text-sm font-medium text-neutral-900">
-                    Pregunta {respuesta.question_position}
-                  </p>
-
-                  {respuesta.option !== undefined && (
-                    <p className="mt-1 text-sm text-neutral-700">
-                      Opción elegida: {respuesta.option}
-                    </p>
-                  )}
-
-                  {respuesta.text !== undefined && (
-                    <p className="mt-1 whitespace-pre-wrap text-sm text-neutral-700">
-                      Respuesta: {respuesta.text}
-                    </p>
-                  )}
-
-                  {respuesta.files !== undefined && respuesta.files.length > 0 && (
-                    <div className="mt-1">
-                      <p className="text-sm text-neutral-700">
-                        Archivos adjuntos ({respuesta.files.length}):
-                      </p>
-                      <ul className="ml-4 list-disc text-sm text-neutral-600">
-                        {respuesta.files.map((archivo) => (
-                          <li key={archivo.path}>
-                            {nombreDeRuta(archivo.path)} ({archivo.mime},{" "}
-                            {archivo.bytes} bytes)
-                          </li>
-                        ))}
-                      </ul>
-                    </div>
-                  )}
-
-                  <p className="mt-2 text-sm">
-                    <span className="font-medium text-neutral-700">
-                      Veredicto:
-                    </span>{" "}
-                    <span className={veredicto.clases}>{veredicto.texto}</span>
-                    {puntos !== null && (
-                      <span className="text-neutral-600"> · {puntos} puntos</span>
-                    )}
-                  </p>
-                </li>
-              );
-            })}
-          </ol>
-        )}
-      </section>
-
-      {formularioActivo ? (
-        <form onSubmit={manejarAprobar} noValidate className="mt-6 space-y-5">
-          <h3 className="text-base font-semibold text-neutral-900">
-            Calificar entrega
-          </h3>
-
-          <div className="max-w-[14rem]">
-            <label
-              htmlFor="puntaje-entrega"
-              className="block text-sm font-medium text-neutral-700"
-            >
-              Puntaje
-            </label>
-            <input
-              id="puntaje-entrega"
-              type="number"
-              min={0}
-              max={total}
-              step={0.01}
-              value={puntaje}
-              onChange={(e) => setPuntaje(e.target.value)}
-              disabled={enviando}
-              className="mt-1 w-full rounded-md border border-neutral-300 px-3 py-2 text-sm text-neutral-900 focus:border-neutral-500 focus:outline-none focus:ring-2 focus:ring-neutral-300 disabled:cursor-not-allowed disabled:opacity-60"
-            />
-            <p className="mt-1 text-xs text-neutral-500">0 a {total}</p>
-          </div>
-
-          <div>
-            <label
-              htmlFor="feedback-entrega"
-              className="block text-sm font-medium text-neutral-700"
-            >
-              Feedback <span className="text-neutral-400">(opcional)</span>
-            </label>
-            <textarea
-              id="feedback-entrega"
-              rows={3}
-              maxLength={MAX_FEEDBACK}
-              value={feedback}
-              onChange={(e) => setFeedback(e.target.value)}
-              disabled={enviando}
-              className="mt-1 w-full rounded-md border border-neutral-300 px-3 py-2 text-sm text-neutral-900 focus:border-neutral-500 focus:outline-none focus:ring-2 focus:ring-neutral-300 disabled:cursor-not-allowed disabled:opacity-60"
-            />
-            <p className="mt-1 text-xs text-neutral-500">
-              {feedback.length} / {MAX_FEEDBACK}
+            <p className="text-xs font-medium uppercase tracking-wide text-slate-500">
+              Estudiante
+            </p>
+            <p className="text-sm font-medium text-slate-900">
+              {entrega.estudiante.nombre} {entrega.estudiante.apellido}
+            </p>
+            <p className="text-xs text-slate-500">
+              {entrega.estudiante.usuario}
             </p>
           </div>
 
-          <div className="flex flex-wrap items-center gap-3">
-            <button
-              type="submit"
-              disabled={enviando}
-              aria-busy={enviando}
-              className="rounded-md bg-neutral-900 px-4 py-2 text-sm font-medium text-white hover:bg-neutral-700 focus:outline-none focus:ring-2 focus:ring-neutral-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60"
-            >
-              {enviando ? "Enviando…" : "Aprobar (graded)"}
-            </button>
-            <button
-              type="button"
-              onClick={() => void manejarCalificar("rejected")}
-              disabled={enviando}
-              className="rounded-md border border-red-300 bg-white px-4 py-2 text-sm font-medium text-red-700 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-60"
-            >
-              Rechazar (rejected)
-            </button>
-          </div>
-        </form>
-      ) : (
-        <p className="mt-6 rounded-md border border-neutral-200 bg-neutral-50 p-3 text-sm text-neutral-600">
-          Esta entrega ya no está pendiente de calificación: la vista es de solo
-          lectura y no se puede volver a calificar.
-        </p>
-      )}
+          <dl className="space-y-3">
+            <div>
+              <dt className="text-xs font-medium uppercase tracking-wide text-slate-500">
+                Fecha de envío
+              </dt>
+              <dd className="text-sm text-slate-900">
+                {formatearFecha(entrega.entregadoEn)}
+              </dd>
+            </div>
+            <div>
+              <dt className="text-xs font-medium uppercase tracking-wide text-slate-500">
+                Fecha de calificación
+              </dt>
+              <dd className="text-sm text-slate-900">
+                {formatearFecha(entrega.calificadoEn)}
+              </dd>
+            </div>
+            <div>
+              <dt className="text-xs font-medium uppercase tracking-wide text-slate-500">
+                Puntaje
+              </dt>
+              <dd className="text-sm text-slate-900">
+                {entrega.puntaje === null ? "—" : entrega.puntaje}
+              </dd>
+            </div>
+            <div>
+              <dt className="text-xs font-medium uppercase tracking-wide text-slate-500">
+                Monedas otorgadas
+              </dt>
+              <dd className="text-sm text-slate-900">
+                {entrega.monedasOtorgadas}
+              </dd>
+            </div>
+            <div>
+              <dt className="text-xs font-medium uppercase tracking-wide text-slate-500">
+                Retroalimentación
+              </dt>
+              <dd className="mt-1 whitespace-pre-wrap text-sm text-slate-900">
+                {entrega.feedback ?? "—"}
+              </dd>
+            </div>
+          </dl>
+        </PanelLateral>
+      </div>
     </div>
   );
 }
