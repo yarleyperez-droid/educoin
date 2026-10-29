@@ -15,6 +15,7 @@ export {
   type PropsEstadoVacio,
 } from "./estado-vacio";
 export { EstadoError, type PropsEstadoError } from "./estado-error";
+export { Modal, type PropsModal } from "./modal";
 export {
   MENSAJE_ERROR_GENERICO,
   ProveedorToast,

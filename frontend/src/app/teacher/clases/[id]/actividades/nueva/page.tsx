@@ -155,183 +155,188 @@ export default function NuevaActividadPage() {
   }
 
   return (
-    <div className="w-full max-w-2xl rounded-lg border border-neutral-200 bg-white p-6 shadow-sm sm:p-8">
-      <h2 className="text-xl font-semibold text-neutral-900">
-        Nueva actividad
-      </h2>
-      <p className="mt-1 text-sm text-neutral-500">
-        Crea las preguntas de la actividad. Se guardará como{" "}
-        <strong>borrador</strong> y podrás publicarla después.
-      </p>
+    <div className="space-y-6">
+      {/* Header (mismo patrón que el listado "Mis Clases"). */}
+      <div>
+        <h1 className="text-2xl font-bold text-slate-900 lg:text-3xl">
+          Nueva actividad
+        </h1>
+        <p className="mt-1 max-w-2xl text-sm text-slate-500">
+          Crea las preguntas de la actividad. Se guardará como{" "}
+          <strong>borrador</strong> y podrás publicarla después.
+        </p>
+      </div>
 
-      {actividad === null ? (
-        <form onSubmit={manejarEnvio} noValidate className="mt-6 space-y-5">
-          <div>
-            <label
-              htmlFor="titulo-actividad"
-              className="block text-sm font-medium text-neutral-700"
-            >
-              Título
-            </label>
-            <input
-              id="titulo-actividad"
-              name="titulo"
-              type="text"
-              value={titulo}
-              onChange={(e) => setTitulo(e.target.value)}
-              disabled={cargando}
-              placeholder="p. ej. Repaso de la unidad 1"
-              className="mt-1 w-full rounded-md border border-neutral-300 px-3 py-2 text-sm text-neutral-900 placeholder-neutral-400 focus:border-neutral-500 focus:outline-none focus:ring-2 focus:ring-neutral-300 disabled:cursor-not-allowed disabled:opacity-60"
-            />
-          </div>
-
-          <div>
-            <label
-              htmlFor="descripcion-actividad"
-              className="block text-sm font-medium text-neutral-700"
-            >
-              Descripción <span className="text-neutral-400">(opcional)</span>
-            </label>
-            <textarea
-              id="descripcion-actividad"
-              name="descripcion"
-              rows={2}
-              value={descripcion}
-              onChange={(e) => setDescripcion(e.target.value)}
-              disabled={cargando}
-              placeholder="Indicaciones para tus estudiantes"
-              className="mt-1 w-full rounded-md border border-neutral-300 px-3 py-2 text-sm text-neutral-900 placeholder-neutral-400 focus:border-neutral-500 focus:outline-none focus:ring-2 focus:ring-neutral-300 disabled:cursor-not-allowed disabled:opacity-60"
-            />
-          </div>
-
-          <div className="max-w-[14rem]">
-            <label
-              htmlFor="recompensa-actividad"
-              className="block text-sm font-medium text-neutral-700"
-            >
-              Recompensa (monedas)
-            </label>
-            <input
-              id="recompensa-actividad"
-              type="number"
-              min={0}
-              step={1}
-              value={recompensa}
-              onChange={(e) => setRecompensa(e.target.value)}
-              disabled={cargando}
-              placeholder="120"
-              className="mt-1 w-full rounded-md border border-neutral-300 px-3 py-2 text-sm text-neutral-900 placeholder-neutral-400 focus:border-neutral-500 focus:outline-none focus:ring-2 focus:ring-neutral-300 disabled:cursor-not-allowed disabled:opacity-60"
-            />
-          </div>
-
-          <EditorPreguntas
-            preguntas={preguntas}
-            cambiarPreguntas={setPreguntas}
-            deshabilitado={cargando}
-          />
-
-          {errorResumen !== null && (
-            <p
-              id="error-resumen"
-              role="alert"
-              className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700"
-            >
-              {errorResumen}
-            </p>
-          )}
-
-          <div className="flex items-center gap-3">
-            <button
-              type="submit"
-              disabled={cargando}
-              aria-busy={cargando}
-              className="rounded-md bg-neutral-900 px-4 py-2 text-sm font-medium text-white hover:bg-neutral-700 focus:outline-none focus:ring-2 focus:ring-neutral-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60"
-            >
-              {cargando ? "Guardando…" : "Guardar borrador"}
-            </button>
-            <Link
-              href="/teacher"
-              className="text-sm text-neutral-600 hover:text-neutral-900"
-            >
-              Volver al panel
-            </Link>
-          </div>
-        </form>
-      ) : (
-        <section aria-live="polite" className="mt-6 space-y-4">
-          <div className="rounded-md border border-neutral-200 bg-neutral-50 p-4">
-            <div className="flex items-center justify-between gap-3">
-              <p className="text-sm font-medium text-neutral-800">
-                {actividad.titulo}
-              </p>
-              <span
-                className={`rounded-full px-2 py-0.5 text-xs font-medium ${
-                  actividad.estado === "published"
-                    ? "bg-green-100 text-green-800"
-                    : "bg-amber-100 text-amber-800"
-                }`}
+      <div className="w-full max-w-2xl rounded-2xl border border-slate-200 bg-white p-6 shadow-sm sm:p-8">
+        {actividad === null ? (
+          <form onSubmit={manejarEnvio} noValidate className="space-y-5">
+            <div>
+              <label
+                htmlFor="titulo-actividad"
+                className="block text-sm font-medium text-slate-700"
               >
-                {actividad.estado === "published"
-                  ? ETIQUETA_PUBLICADA
-                  : ETIQUETA_BORRADOR}
-              </span>
+                Título
+              </label>
+              <input
+                id="titulo-actividad"
+                name="titulo"
+                type="text"
+                value={titulo}
+                onChange={(e) => setTitulo(e.target.value)}
+                disabled={cargando}
+                placeholder="p. ej. Repaso de la unidad 1"
+                className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900 placeholder-slate-400 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-200 disabled:cursor-not-allowed disabled:opacity-60"
+              />
             </div>
 
-            <p className="mt-1 text-xs text-neutral-500">
-              {actividad.preguntas.length} pregunta
-              {actividad.preguntas.length === 1 ? "" : "s"} ·{" "}
-              {actividad.recompensaMonedas} monedas
-            </p>
-
-            {actividad.estado === "draft" && (
-              <button
-                type="button"
-                onClick={manejarPublicar}
-                disabled={cargando}
-                aria-busy={cargando}
-                className="mt-3 w-full rounded-md bg-neutral-900 px-4 py-2 text-sm font-medium text-white hover:bg-neutral-700 focus:outline-none focus:ring-2 focus:ring-neutral-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60"
+            <div>
+              <label
+                htmlFor="descripcion-actividad"
+                className="block text-sm font-medium text-slate-700"
               >
-                {cargando ? "Publicando…" : "Publicar"}
-              </button>
-            )}
+                Descripción <span className="text-slate-400">(opcional)</span>
+              </label>
+              <textarea
+                id="descripcion-actividad"
+                name="descripcion"
+                rows={2}
+                value={descripcion}
+                onChange={(e) => setDescripcion(e.target.value)}
+                disabled={cargando}
+                placeholder="Indicaciones para tus estudiantes"
+                className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900 placeholder-slate-400 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-200 disabled:cursor-not-allowed disabled:opacity-60"
+              />
+            </div>
 
-            {errorPublicacion !== null && (
-              <p role="alert" className="mt-2 text-sm text-red-700">
-                {errorPublicacion}
+            <div className="max-w-[14rem]">
+              <label
+                htmlFor="recompensa-actividad"
+                className="block text-sm font-medium text-slate-700"
+              >
+                Recompensa (monedas)
+              </label>
+              <input
+                id="recompensa-actividad"
+                type="number"
+                min={0}
+                step={1}
+                value={recompensa}
+                onChange={(e) => setRecompensa(e.target.value)}
+                disabled={cargando}
+                placeholder="120"
+                className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900 placeholder-slate-400 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-200 disabled:cursor-not-allowed disabled:opacity-60"
+              />
+            </div>
+
+            <EditorPreguntas
+              preguntas={preguntas}
+              cambiarPreguntas={setPreguntas}
+              deshabilitado={cargando}
+            />
+
+            {errorResumen !== null && (
+              <p
+                id="error-resumen"
+                role="alert"
+                className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700"
+              >
+                {errorResumen}
               </p>
             )}
-          </div>
 
-          <p className="text-sm text-neutral-500">
-            {actividad.estado === "published"
-              ? "La actividad ya está publicada y visible para tus estudiantes."
-              : "Puedes publicarla cuando estés lista (una vez publicada no vuelve a borrador)."}
-          </p>
+            <div className="flex items-center gap-3">
+              <button
+                type="submit"
+                disabled={cargando}
+                aria-busy={cargando}
+                className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {cargando ? "Guardando…" : "Guardar borrador"}
+              </button>
+              <Link
+                href="/teacher"
+                className="text-sm font-medium text-slate-600 hover:text-slate-900"
+              >
+                Volver al panel
+              </Link>
+            </div>
+          </form>
+        ) : (
+          <section aria-live="polite" className="space-y-4">
+            <div className="rounded-xl border border-slate-200 bg-slate-50/60 p-4">
+              <div className="flex items-center justify-between gap-3">
+                <p className="text-sm font-medium text-slate-900">
+                  {actividad.titulo}
+                </p>
+                <span
+                  className={`rounded-full px-2 py-0.5 text-xs font-medium ${
+                    actividad.estado === "published"
+                      ? "bg-emerald-50 text-emerald-700"
+                      : "bg-amber-50 text-amber-700"
+                  }`}
+                >
+                  {actividad.estado === "published"
+                    ? ETIQUETA_PUBLICADA
+                    : ETIQUETA_BORRADOR}
+                </span>
+              </div>
 
-          <div className="flex items-center gap-3">
-            <Link
-              href="/teacher"
-              className="rounded-md bg-neutral-900 px-4 py-2 text-sm font-medium text-white hover:bg-neutral-700 focus:outline-none focus:ring-2 focus:ring-neutral-500 focus:ring-offset-2"
-            >
-              Volver al panel
-            </Link>
-            <button
-              type="button"
-              onClick={() => {
-                setActividad(null);
-                setTitulo("");
-                setDescripcion("");
-                setRecompensa("");
-                setErrorResumen(null);
-                setErrorPublicacion(null);
-              }}
-              className="text-sm text-neutral-600 hover:text-neutral-900"
-            >
-              Crear otra actividad
-            </button>
-          </div>
-        </section>
-      )}
+              <p className="mt-1 text-xs text-slate-500">
+                {actividad.preguntas.length} pregunta
+                {actividad.preguntas.length === 1 ? "" : "s"} ·{" "}
+                {actividad.recompensaMonedas} monedas
+              </p>
+
+              {actividad.estado === "draft" && (
+                <button
+                  type="button"
+                  onClick={manejarPublicar}
+                  disabled={cargando}
+                  aria-busy={cargando}
+                  className="mt-3 w-full rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {cargando ? "Publicando…" : "Publicar"}
+                </button>
+              )}
+
+              {errorPublicacion !== null && (
+                <p role="alert" className="mt-2 text-sm text-red-700">
+                  {errorPublicacion}
+                </p>
+              )}
+            </div>
+
+            <p className="text-sm text-slate-500">
+              {actividad.estado === "published"
+                ? "La actividad ya está publicada y visible para tus estudiantes."
+                : "Puedes publicarla cuando estés lista (una vez publicada no vuelve a borrador)."}
+            </p>
+
+            <div className="flex items-center gap-3">
+              <Link
+                href="/teacher"
+                className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2"
+              >
+                Volver al panel
+              </Link>
+              <button
+                type="button"
+                onClick={() => {
+                  setActividad(null);
+                  setTitulo("");
+                  setDescripcion("");
+                  setRecompensa("");
+                  setErrorResumen(null);
+                  setErrorPublicacion(null);
+                }}
+                className="text-sm font-medium text-slate-600 hover:text-slate-900"
+              >
+                Crear otra actividad
+              </button>
+            </div>
+          </section>
+        )}
+      </div>
     </div>
   );
 }

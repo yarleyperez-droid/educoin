@@ -173,7 +173,7 @@ export default function EditarActividadPage() {
 
   if (cargando) {
     return (
-      <p className="text-sm text-neutral-500" role="status">
+      <p className="text-sm text-slate-500" role="status">
         Cargando…
       </p>
     );
@@ -181,13 +181,13 @@ export default function EditarActividadPage() {
 
   if (actividad === null) {
     return (
-      <div className="w-full max-w-2xl rounded-lg border border-neutral-200 bg-white p-6 text-center shadow-sm">
+      <div className="w-full max-w-2xl rounded-2xl border border-slate-200 bg-white p-6 text-center shadow-sm">
         <p role="alert" className="text-sm text-red-700">
           {errorCarga}
         </p>
         <Link
           href={`/teacher/clases/${claseId}`}
-          className="mt-4 inline-block text-sm font-medium text-neutral-700 underline hover:text-neutral-900"
+          className="mt-4 inline-block text-sm font-medium text-indigo-600 underline hover:text-indigo-700"
         >
           Volver al detalle de la clase
         </Link>
@@ -198,17 +198,17 @@ export default function EditarActividadPage() {
   const esSoloLectura = actividad.estado !== "draft";
 
   return (
-    <div className="w-full max-w-2xl rounded-lg border border-neutral-200 bg-white p-6 shadow-sm sm:p-8">
+    <div className="w-full max-w-2xl rounded-2xl border border-slate-200 bg-white p-6 shadow-sm sm:p-8">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-2">
-          <h2 className="text-xl font-semibold text-neutral-900">
+          <h2 className="text-xl font-semibold text-slate-900">
             {esSoloLectura ? "Actividad" : "Editar actividad"}
           </h2>
           <BadgeEstado estado={actividad.estado} />
         </div>
         <Link
           href={`/teacher/clases/${claseId}`}
-          className="text-sm text-neutral-600 hover:text-neutral-900"
+          className="text-sm font-medium text-slate-600 hover:text-slate-900"
         >
           Volver a la clase
         </Link>
@@ -218,22 +218,22 @@ export default function EditarActividadPage() {
         <section className="mt-6 space-y-4">
           <p
             role="alert"
-            className="rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800"
+            className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800"
           >
             Esta actividad ya está publicada y no se puede editar; tampoco
             puede volver a borrador.
           </p>
 
-          <div className="rounded-md border border-neutral-200 bg-neutral-50 p-4">
-            <p className="text-sm font-medium text-neutral-900">
+          <div className="rounded-xl border border-slate-200 bg-slate-50/60 p-4">
+            <p className="text-sm font-medium text-slate-900">
               {actividad.titulo}
             </p>
             {actividad.descripcion !== null && (
-              <p className="mt-1 text-sm text-neutral-600">
+              <p className="mt-1 text-sm text-slate-600">
                 {actividad.descripcion}
               </p>
             )}
-            <p className="mt-2 text-xs text-neutral-500">
+            <p className="mt-2 text-xs text-slate-500">
               {actividad.recompensaMonedas} monedas ·{" "}
               {actividad.preguntas.length} pregunta
               {actividad.preguntas.length === 1 ? "" : "s"}
@@ -241,11 +241,11 @@ export default function EditarActividadPage() {
 
             <ol className="mt-3 space-y-2">
               {actividad.preguntas.map((pregunta, indice) => (
-                <li key={indice} className="text-sm text-neutral-700">
+                <li key={indice} className="text-sm text-slate-700">
                   <span className="font-medium">
                     {indice + 1}. {pregunta.prompt}
                   </span>{" "}
-                  <span className="text-xs text-neutral-500">
+                  <span className="text-xs text-slate-500">
                     ({pregunta.score} ptos ·{" "}
                     {pregunta.type === "test"
                       ? "opción múltiple"
@@ -255,7 +255,7 @@ export default function EditarActividadPage() {
                     )
                   </span>
                   {pregunta.type === "test" && (
-                    <ul className="ml-5 mt-1 list-disc text-xs text-neutral-600">
+                    <ul className="ml-5 mt-1 list-disc text-xs text-slate-600">
                       {pregunta.options.map((opcion, opcionIndice) => (
                         <li key={opcionIndice}>
                           {opcion.is_correct ? "✓ " : ""}
@@ -274,7 +274,7 @@ export default function EditarActividadPage() {
           <div>
             <label
               htmlFor="titulo-actividad"
-              className="block text-sm font-medium text-neutral-700"
+              className="block text-sm font-medium text-slate-700"
             >
               Título
             </label>
@@ -284,16 +284,16 @@ export default function EditarActividadPage() {
               value={titulo}
               onChange={(e) => setTitulo(e.target.value)}
               disabled={guardando}
-              className="mt-1 w-full rounded-md border border-neutral-300 px-3 py-2 text-sm text-neutral-900 focus:border-neutral-500 focus:outline-none focus:ring-2 focus:ring-neutral-300 disabled:cursor-not-allowed disabled:opacity-60"
+              className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-200 disabled:cursor-not-allowed disabled:opacity-60"
             />
           </div>
 
           <div>
             <label
               htmlFor="descripcion-actividad"
-              className="block text-sm font-medium text-neutral-700"
+              className="block text-sm font-medium text-slate-700"
             >
-              Descripción <span className="text-neutral-400">(opcional)</span>
+              Descripción <span className="text-slate-400">(opcional)</span>
             </label>
             <textarea
               id="descripcion-actividad"
@@ -301,14 +301,14 @@ export default function EditarActividadPage() {
               value={descripcion}
               onChange={(e) => setDescripcion(e.target.value)}
               disabled={guardando}
-              className="mt-1 w-full rounded-md border border-neutral-300 px-3 py-2 text-sm text-neutral-900 focus:border-neutral-500 focus:outline-none focus:ring-2 focus:ring-neutral-300 disabled:cursor-not-allowed disabled:opacity-60"
+              className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-200 disabled:cursor-not-allowed disabled:opacity-60"
             />
           </div>
 
           <div className="max-w-[14rem]">
             <label
               htmlFor="recompensa-actividad"
-              className="block text-sm font-medium text-neutral-700"
+              className="block text-sm font-medium text-slate-700"
             >
               Recompensa (monedas)
             </label>
@@ -320,7 +320,7 @@ export default function EditarActividadPage() {
               value={recompensa}
               onChange={(e) => setRecompensa(e.target.value)}
               disabled={guardando}
-              className="mt-1 w-full rounded-md border border-neutral-300 px-3 py-2 text-sm text-neutral-900 focus:border-neutral-500 focus:outline-none focus:ring-2 focus:ring-neutral-300 disabled:cursor-not-allowed disabled:opacity-60"
+              className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-200 disabled:cursor-not-allowed disabled:opacity-60"
             />
           </div>
 
@@ -333,7 +333,7 @@ export default function EditarActividadPage() {
           {errorResumen !== null && (
             <p
               role="alert"
-              className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700"
+              className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700"
             >
               {errorResumen}
             </p>
@@ -342,7 +342,7 @@ export default function EditarActividadPage() {
           {mensajeExito !== null && (
             <p
               role="status"
-              className="rounded-md border border-green-200 bg-green-50 p-3 text-sm text-green-800"
+              className="rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800"
             >
               {mensajeExito}
             </p>
@@ -353,7 +353,7 @@ export default function EditarActividadPage() {
               type="submit"
               disabled={guardando}
               aria-busy={guardando}
-              className="rounded-md bg-neutral-900 px-4 py-2 text-sm font-medium text-white hover:bg-neutral-700 focus:outline-none focus:ring-2 focus:ring-neutral-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60"
+              className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60"
             >
               {guardando ? "Guardando…" : "Guardar cambios"}
             </button>
@@ -361,7 +361,7 @@ export default function EditarActividadPage() {
               type="button"
               onClick={manejarPublicar}
               disabled={guardando}
-              className="rounded-md border border-neutral-300 bg-white px-4 py-2 text-sm font-medium text-neutral-800 hover:bg-neutral-100 disabled:cursor-not-allowed disabled:opacity-60"
+              className="rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
             >
               Publicar
             </button>

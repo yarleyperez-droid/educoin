@@ -21,9 +21,15 @@
  *
  * `position` **no se edita a mano**: lo renumera `normalizarPosiciones`
  * en el envío (el orden de la lista es la posición).
+ *
+ * Fórmulas (rediseño H5.x): bajo el enunciado y cada opción se muestra
+ * un **preview en vivo** con KaTeX cuando el texto contiene `$…$` (ver
+ * `texto-matematico.tsx`); el campo editable sigue siendo el `textarea`/
+ * `input` (se guarda el texto crudo, no el HTML renderizado).
  */
 
 import type { Pregunta } from "../contrato/actividades";
+import { contieneFormulas, TextoMatematico } from "./texto-matematico";
 
 /** Tipos de pregunta ofrecidos por el editor (MVP auto-calificable). */
 type TipoEditable = "test" | "completion";
@@ -226,7 +232,7 @@ export function EditorPreguntas({
       <div className="flex items-center justify-between">
         <h3
           id="titulo-preguntas"
-          className="text-sm font-semibold text-neutral-800"
+          className="text-sm font-semibold text-slate-800"
         >
           Preguntas
         </h3>
@@ -235,7 +241,7 @@ export function EditorPreguntas({
             type="button"
             disabled={deshabilitado}
             onClick={() => agregar("test")}
-            className="rounded-md border border-neutral-300 bg-white px-3 py-1.5 text-xs font-medium text-neutral-800 hover:bg-neutral-100 disabled:cursor-not-allowed disabled:opacity-60"
+            className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
           >
             + Opción múltiple
           </button>
@@ -243,7 +249,7 @@ export function EditorPreguntas({
             type="button"
             disabled={deshabilitado}
             onClick={() => agregar("completion")}
-            className="rounded-md border border-neutral-300 bg-white px-3 py-1.5 text-xs font-medium text-neutral-800 hover:bg-neutral-100 disabled:cursor-not-allowed disabled:opacity-60"
+            className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
           >
             + Completar
           </button>
@@ -251,7 +257,7 @@ export function EditorPreguntas({
       </div>
 
       {preguntas.length === 0 && (
-        <p className="rounded-md border border-dashed border-neutral-300 p-4 text-center text-sm text-neutral-500">
+        <p className="rounded-xl border border-dashed border-slate-300 p-4 text-center text-sm text-slate-500">
           Aún no hay preguntas. Añade la primera con los botones de arriba.
         </p>
       )}
@@ -259,16 +265,16 @@ export function EditorPreguntas({
       {preguntas.map((pregunta, indice) => (
         <article
           key={indice}
-          className="rounded-md border border-neutral-200 bg-neutral-50 p-4"
+          className="rounded-xl border border-slate-200 bg-slate-50/60 p-4"
         >
           <div className="flex flex-wrap items-center justify-between gap-2">
-            <span className="text-xs font-semibold uppercase tracking-wide text-neutral-500">
+            <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">
               Pregunta {indice + 1}
             </span>
             <div className="flex items-center gap-2">
               <label
                 htmlFor={`tipo-${indice}`}
-                className="text-xs text-neutral-600"
+                className="text-xs text-slate-600"
               >
                 Tipo
               </label>
@@ -279,7 +285,7 @@ export function EditorPreguntas({
                 onChange={(e) =>
                   cambiarTipo(indice, e.target.value as TipoEditable)
                 }
-                className="rounded-md border border-neutral-300 bg-white px-2 py-1 text-xs text-neutral-900 focus:outline-none focus:ring-2 focus:ring-neutral-300 disabled:cursor-not-allowed disabled:opacity-60"
+                className="rounded-lg border border-slate-300 bg-white px-2 py-1 text-xs text-slate-900 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-200 disabled:cursor-not-allowed disabled:opacity-60"
               >
                 <option value="test">Opción múltiple</option>
                 <option value="completion">Completar</option>
@@ -289,7 +295,7 @@ export function EditorPreguntas({
                 disabled={deshabilitado}
                 onClick={() => eliminar(indice)}
                 aria-label={`Eliminar pregunta ${indice + 1}`}
-                className="rounded-md border border-neutral-300 bg-white px-2 py-1 text-xs text-red-700 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-60"
+                className="rounded-lg border border-slate-200 bg-white px-2 py-1 text-xs text-red-700 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-60"
               >
                 Eliminar
               </button>
@@ -299,7 +305,7 @@ export function EditorPreguntas({
           <div className="mt-3">
             <label
               htmlFor={`enunciado-${indice}`}
-              className="block text-xs font-medium text-neutral-700"
+              className="block text-xs font-medium text-slate-700"
             >
               Enunciado
             </label>
@@ -309,15 +315,23 @@ export function EditorPreguntas({
               disabled={deshabilitado}
               rows={2}
               onChange={(e) => cambiarPrompt(indice, e.target.value)}
-              className="mt-1 w-full rounded-md border border-neutral-300 bg-white px-3 py-2 text-sm text-neutral-900 placeholder-neutral-400 focus:border-neutral-500 focus:outline-none focus:ring-2 focus:ring-neutral-300 disabled:cursor-not-allowed disabled:opacity-60"
-              placeholder="Escribe la pregunta"
+              className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 placeholder-slate-400 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-200 disabled:cursor-not-allowed disabled:opacity-60"
+              placeholder="Escribe la pregunta (admite fórmulas con $…$)"
             />
+            {contieneFormulas(pregunta.prompt) && (
+              <div
+                aria-label="Vista previa del enunciado"
+                className="mt-1.5 rounded-lg border border-indigo-100 bg-indigo-50/50 px-3 py-2 text-sm text-slate-800"
+              >
+                <TextoMatematico texto={pregunta.prompt} />
+              </div>
+            )}
           </div>
 
           <div className="mt-3 max-w-[10rem]">
             <label
               htmlFor={`puntuacion-${indice}`}
-              className="block text-xs font-medium text-neutral-700"
+              className="block text-xs font-medium text-slate-700"
             >
               Puntuación
             </label>
@@ -329,7 +343,7 @@ export function EditorPreguntas({
               value={pregunta.score}
               disabled={deshabilitado}
               onChange={(e) => cambiarScore(indice, e.target.value)}
-              className="mt-1 w-full rounded-md border border-neutral-300 bg-white px-3 py-2 text-sm text-neutral-900 focus:border-neutral-500 focus:outline-none focus:ring-2 focus:ring-neutral-300 disabled:cursor-not-allowed disabled:opacity-60"
+              className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-200 disabled:cursor-not-allowed disabled:opacity-60"
             />
           </div>
 
@@ -337,7 +351,7 @@ export function EditorPreguntas({
             <div className="mt-3">
               <label
                 htmlFor={`respuesta-${indice}`}
-                className="block text-xs font-medium text-neutral-700"
+                className="block text-xs font-medium text-slate-700"
               >
                 Respuesta esperada
               </label>
@@ -347,7 +361,7 @@ export function EditorPreguntas({
                 value={pregunta.expected_answer ?? ""}
                 disabled={deshabilitado}
                 onChange={(e) => cambiarRespuesta(indice, e.target.value)}
-                className="mt-1 w-full rounded-md border border-neutral-300 bg-white px-3 py-2 text-sm text-neutral-900 placeholder-neutral-400 focus:border-neutral-500 focus:outline-none focus:ring-2 focus:ring-neutral-300 disabled:cursor-not-allowed disabled:opacity-60"
+                className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 placeholder-slate-400 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-200 disabled:cursor-not-allowed disabled:opacity-60"
                 placeholder="Texto que espera el correcto"
               />
             </div>
@@ -355,7 +369,7 @@ export function EditorPreguntas({
 
           {pregunta.type === "test" && (
             <fieldset className="mt-3">
-              <legend className="text-xs font-medium text-neutral-700">
+              <legend className="text-xs font-medium text-slate-700">
                 Opciones (marca la correcta)
               </legend>
               <ul className="mt-2 space-y-2">
@@ -368,25 +382,35 @@ export function EditorPreguntas({
                       disabled={deshabilitado}
                       onChange={() => marcarCorrecta(indice, opcionIndice)}
                       aria-label={`Marcar como correcta la opción ${opcionIndice + 1}`}
-                      className="h-4 w-4 accent-neutral-900"
+                      className="h-4 w-4 accent-indigo-600"
                     />
-                    <input
-                      type="text"
-                      value={opcion.text}
-                      disabled={deshabilitado}
-                      onChange={(e) =>
-                        cambiarTextoOpcion(indice, opcionIndice, e.target.value)
-                      }
-                      aria-label={`Texto de la opción ${opcionIndice + 1}`}
-                      placeholder={`Opción ${opcionIndice + 1}`}
-                      className="flex-1 rounded-md border border-neutral-300 bg-white px-3 py-1.5 text-sm text-neutral-900 placeholder-neutral-400 focus:border-neutral-500 focus:outline-none focus:ring-2 focus:ring-neutral-300 disabled:cursor-not-allowed disabled:opacity-60"
-                    />
+                    <div className="min-w-0 flex-1">
+                      <input
+                        type="text"
+                        value={opcion.text}
+                        disabled={deshabilitado}
+                        onChange={(e) =>
+                          cambiarTextoOpcion(indice, opcionIndice, e.target.value)
+                        }
+                        aria-label={`Texto de la opción ${opcionIndice + 1}`}
+                        placeholder={`Opción ${opcionIndice + 1}`}
+                        className="w-full rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm text-slate-900 placeholder-slate-400 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-200 disabled:cursor-not-allowed disabled:opacity-60"
+                      />
+                      {contieneFormulas(opcion.text) && (
+                        <div
+                          aria-label={`Vista previa de la opción ${opcionIndice + 1}`}
+                          className="mt-1 rounded-lg border border-indigo-100 bg-indigo-50/50 px-3 py-1.5 text-sm text-slate-800"
+                        >
+                          <TextoMatematico texto={opcion.text} />
+                        </div>
+                      )}
+                    </div>
                     <button
                       type="button"
                       disabled={deshabilitado}
                       onClick={() => eliminarOpcion(indice, opcionIndice)}
                       aria-label={`Quitar opción ${opcionIndice + 1}`}
-                      className="rounded-md border border-neutral-300 bg-white px-2 py-1 text-xs text-neutral-600 hover:bg-neutral-100 disabled:cursor-not-allowed disabled:opacity-60"
+                      className="rounded-lg border border-slate-200 bg-white px-2 py-1 text-xs text-slate-600 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
                     >
                       Quitar
                     </button>
@@ -397,7 +421,7 @@ export function EditorPreguntas({
                 type="button"
                 disabled={deshabilitado}
                 onClick={() => agregarOpcion(indice)}
-                className="mt-2 text-xs font-medium text-neutral-700 underline hover:text-neutral-900 disabled:cursor-not-allowed disabled:opacity-60"
+                className="mt-2 text-xs font-medium text-indigo-600 underline hover:text-indigo-700 disabled:cursor-not-allowed disabled:opacity-60"
               >
                 + Añadir opción
               </button>
