@@ -78,6 +78,18 @@ export interface CrearOrganizacionInput {
   ciudad?: string;
 }
 
+/** Filtros del listado (`q`, `tipo`, `activa` del backend). */
+export interface FiltrosOrganizaciones {
+  page?: number;
+  limit?: number;
+  /** Búsqueda por nombre (contains insensible). */
+  q?: string;
+  /** Filtro exacto de tipo. */
+  tipo?: TipoOrganizacion;
+  /** true → solo activas; false → solo desactivadas. */
+  activa?: boolean;
+}
+
 /**
  * Traduce los issues de zod a un mensaje único en español.
  *

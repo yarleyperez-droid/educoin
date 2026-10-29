@@ -54,6 +54,15 @@ export async function listarUsuarios(
   if (filtros.organizacionId !== undefined && filtros.organizacionId !== "") {
     parametros.set("organizacionId", filtros.organizacionId);
   }
+  if (filtros.q !== undefined && filtros.q.trim() !== "") {
+    parametros.set("q", filtros.q.trim());
+  }
+  if (filtros.rol !== undefined) {
+    parametros.set("rol", filtros.rol);
+  }
+  if (filtros.activa !== undefined) {
+    parametros.set("activa", String(filtros.activa));
+  }
 
   const respuesta = await api.get<unknown>(
     `users?${parametros.toString()}`,

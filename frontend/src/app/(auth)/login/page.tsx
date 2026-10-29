@@ -158,7 +158,7 @@ export default function LoginPage() {
           </div>
 
           <h1 className='mt-6 text-2xl font-bold text-slate-900'>
-            Bienvenido de nuevo
+            Hola de nuevo
           </h1>
           <p className='mt-1 text-sm text-slate-500'>
             Ingresa a tu cuenta de EduCoins para acceder a tu billetera y módulos.

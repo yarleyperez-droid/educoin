@@ -2,7 +2,9 @@
  * Detalle de clase y listado de sus actividades
  * (`/teacher/clases/[id]`) — T5.6.3 (PRO-387).
  *
- * Muestra la cabecera de la clase (nombre + estado) y su lista de
+ * Muestra la cabecera de la clase (nombre + estado), su **código de
+ * unión copiable** (vuelve a estar disponible aquí aunque ya no se esté
+ * en la tarjeta de éxito de creación) y su lista de
  * actividades con badge, las acciones de edición **solo en `draft`**
  * ("Editar" y "Publicar") y el enlace **"Ver entregas"** en `published`
  * (T5.9.1: entrada a la cola de calificación). No se ofrece la reversión
@@ -29,6 +31,7 @@ import {
 } from "@/features/teacher/api/actividades";
 import { obtenerClase } from "@/features/teacher/api/clases";
 import { BadgeEstado } from "@/features/teacher/componentes/badge-estado";
+import { CodigoUnion } from "@/features/teacher/componentes/codigo-union";
 import type { Actividad, Clase } from "@/features/teacher/tipos";
 import { ApiError } from "@/lib/api-client";
 
@@ -138,7 +141,7 @@ export default function DetalleClasePage() {
 
   if (cargando) {
     return (
-      <p className="text-sm text-neutral-500" role="status">
+      <p className="text-sm text-slate-500" role="status">
         Cargando…
       </p>
     );
@@ -146,13 +149,13 @@ export default function DetalleClasePage() {
 
   if (clase === null) {
     return (
-      <div className="w-full max-w-3xl rounded-lg border border-neutral-200 bg-white p-6 text-center shadow-sm">
+      <div className="w-full max-w-3xl rounded-2xl border border-slate-200 bg-white p-6 text-center shadow-sm">
         <p role="alert" className="text-sm text-red-700">
           {error}
         </p>
         <Link
           href="/teacher/clases"
-          className="mt-4 inline-block text-sm font-medium text-neutral-700 underline hover:text-neutral-900"
+          className="mt-4 inline-block text-sm font-medium text-indigo-600 underline hover:text-indigo-700"
         >
           Volver a mis clases
         </Link>
@@ -161,10 +164,10 @@ export default function DetalleClasePage() {
   }
 
   return (
-    <div className="w-full max-w-3xl rounded-lg border border-neutral-200 bg-white p-6 shadow-sm sm:p-8">
+    <div className="w-full max-w-3xl rounded-2xl border border-slate-200 bg-white p-6 shadow-sm sm:p-8">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-2">
-          <h2 className="text-xl font-semibold text-neutral-900">
+          <h2 className="text-xl font-semibold text-slate-900">
             {clase.nombre}
           </h2>
           <BadgeEstado estado={clase.estado} />
@@ -172,20 +175,33 @@ export default function DetalleClasePage() {
         <div className="flex items-center gap-3">
           <Link
             href={`/teacher/clases/${clase.id}/actividades/nueva`}
-            className="rounded-md bg-neutral-900 px-4 py-2 text-sm font-medium text-white hover:bg-neutral-700 focus:outline-none focus:ring-2 focus:ring-neutral-500 focus:ring-offset-2"
+            className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2"
           >
             Nueva actividad
           </Link>
           <Link
             href="/teacher/clases"
-            className="text-sm text-neutral-600 hover:text-neutral-900"
+            className="text-sm font-medium text-slate-600 hover:text-slate-900"
           >
             Mis clases
           </Link>
         </div>
       </div>
 
-      <h3 className="mt-6 text-sm font-semibold text-neutral-800">
+      {/* El código de unión lo trae `obtenerClase` (GET /classes/:id) y
+          aquí se vuelve a mostrar/copiar: al salir del diálogo de éxito
+          de creación el código ya no estaba disponible en ninguna vista. */}
+      <div className="mt-6 rounded-2xl border border-indigo-100 bg-indigo-50/60 p-5">
+        <p className="text-xs font-medium text-slate-600">
+          Comparte este código con tus estudiantes para que se unan a la
+          clase.
+        </p>
+        <div className="mt-3">
+          <CodigoUnion codigo={clase.codigo} />
+        </div>
+      </div>
+
+      <h3 className="mt-6 text-sm font-semibold text-slate-800">
         Actividades
       </h3>
 
@@ -202,7 +218,7 @@ export default function DetalleClasePage() {
       )}
 
       {actividades.length === 0 ? (
-        <p className="mt-3 rounded-md border border-dashed border-neutral-300 p-6 text-center text-sm text-neutral-500">
+        <p className="mt-3 rounded-xl border border-dashed border-slate-300 p-6 text-center text-sm text-slate-500">
           Esta clase aún no tiene actividades.
         </p>
       ) : (
@@ -210,11 +226,11 @@ export default function DetalleClasePage() {
           {actividades.map((actividad) => (
             <li
               key={actividad.id}
-              className="rounded-md border border-neutral-200 p-4"
+              className="rounded-xl border border-slate-200 p-4"
             >
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <div className="flex items-center gap-2">
-                  <span className="text-sm font-medium text-neutral-900">
+                  <span className="text-sm font-medium text-slate-900">
                     {actividad.titulo}
                   </span>
                   <BadgeEstado estado={actividad.estado} />
@@ -224,7 +240,7 @@ export default function DetalleClasePage() {
                   <div className="flex items-center gap-2">
                     <Link
                       href={`/teacher/clases/${clase.id}/actividades/${actividad.id}/editar`}
-                      className="rounded-md border border-neutral-300 px-3 py-1.5 text-xs font-medium text-neutral-700 hover:bg-neutral-100"
+                      className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-50"
                     >
                       Editar
                     </Link>
@@ -233,7 +249,7 @@ export default function DetalleClasePage() {
                       onClick={() => manejarPublicar(actividad.id)}
                       disabled={publicandoId === actividad.id}
                       aria-busy={publicandoId === actividad.id}
-                      className="rounded-md bg-neutral-900 px-3 py-1.5 text-xs font-medium text-white hover:bg-neutral-700 disabled:cursor-not-allowed disabled:opacity-60"
+                      className="rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-60"
                     >
                       {publicandoId === actividad.id
                         ? "Publicando…"
@@ -246,7 +262,7 @@ export default function DetalleClasePage() {
                   <div className="flex items-center gap-2">
                     <Link
                       href={`/teacher/clases/${clase.id}/actividades/${actividad.id}/entregas`}
-                      className="rounded-md border border-neutral-300 px-3 py-1.5 text-xs font-medium text-neutral-700 hover:bg-neutral-100"
+                      className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-50"
                     >
                       Ver entregas
                     </Link>
@@ -254,7 +270,7 @@ export default function DetalleClasePage() {
                 )}
               </div>
 
-              <p className="mt-1 text-xs text-neutral-500">
+              <p className="mt-1 text-xs text-slate-500">
                 {actividad.recompensaMonedas} monedas
                 {actividad.estado === "published" && actividad.publicadaEn
                   ? ` · Publicada el ${new Date(actividad.publicadaEn).toLocaleDateString("es-CO")}`

@@ -79,6 +79,12 @@ export interface FiltrosUsuarios {
   limit?: number;
   /** Filtro exacto `organizacionId` del backend. */
   organizacionId?: string;
+  /** Búsqueda en usuario, correo, nombre y apellido (ILIKE). */
+  q?: string;
+  /** Filtro exacto de rol (incluye admin en listados). */
+  rol?: RolListado;
+  /** true → solo activos; false → solo desactivados. */
+  activa?: boolean;
 }
 
 /** Datos del formulario de alta. */

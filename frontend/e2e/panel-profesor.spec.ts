@@ -13,7 +13,9 @@
  *   caracteres alfanuméricos** (el DEFAULT de `classes.code` en
  *   `prisma/schema.prisma` es `upper(substr(md5(...), 1, 8))`, así que el
  *   formato real es hexadecimal mayúscula; el assert acepta alfanumérico,
- *   que es el contrato del CA).
+ *   que es el contrato del CA). Además, el detalle de la clase vuelve a
+ *   mostrar **el mismo código** y permite copiarlo de nuevo (no
+ *   desaparece al salir de la tarjeta de éxito).
  * - **CA 2:** la actividad creada aparece en el listado del detalle con el
  *   badge **Borrador** (estado `draft`).
  * - **CA 3:** al publicar, el badge pasa a **Publicada** y la fila **ya no**
@@ -51,6 +53,11 @@ const PATRON_CODIGO_UNION = /^[A-Z0-9]{8}$/;
 test.beforeEach(async ({ context }) => {
   // Cada corrida arranca sin cookies de sesión (aislamiento, como en login.spec.ts).
   await limpiarSesion(context);
+  // Permiso de portapapeles para el aserto de "Copiar código" del detalle
+  // (Chromium headless no otorga clipboard-write por defecto).
+  await context.grantPermissions(["clipboard-read", "clipboard-write"], {
+    origin: "http://localhost:3001",
+  });
 });
 
 test("Panel docente: crear clase, crear actividad en borrador y publicarla sin reversión", async ({
@@ -85,6 +92,10 @@ test("Panel docente: crear clase, crear actividad en borrador y publicarla sin r
   await expect(page.getByText(`Clase creada: ${nombreClase}`)).toBeVisible();
   await expect(campoCodigo).toHaveValue(PATRON_CODIGO_UNION);
 
+  // El valor se conserva para compararlo contra el detalle: el código no
+  // debe "desaparecer" al salir de la tarjeta de éxito.
+  const valorCodigo = await campoCodigo.inputValue();
+
   // El id de la clase no se pinta en la tarjeta de éxito, pero sale del href
   // del enlace "Añadir una actividad" (`/teacher/clases/:id/actividades/…`).
   // Se extrae de ahí (nada de API directa) para poder abrir el detalle,
@@ -105,6 +116,18 @@ test("Panel docente: crear clase, crear actividad en borrador y publicarla sin r
   // se usa el atajo "Añadir una actividad" de la tarjeta de éxito).
   await page.goto(`/teacher/clases/${claseId}`);
   await expect(page.getByRole("heading", { name: nombreClase })).toBeVisible();
+
+  // CA 1 (detalle): el código de unión sigue disponible al entrar a la
+  // clase del profesor — mismo valor que en la tarjeta de éxito — y el
+  // botón lo vuelve a copiar al portapapeles.
+  const campoCodigoDetalle = page.getByLabel("Código de unión", {
+    exact: true,
+  });
+  await expect(campoCodigoDetalle).toBeVisible();
+  await expect(campoCodigoDetalle).toHaveValue(valorCodigo);
+  await page.getByRole("button", { name: "Copiar código" }).click();
+  await expect(page.getByRole("button", { name: "¡Copiado!" })).toBeVisible();
+
   await page.getByRole("link", { name: "Nueva actividad" }).click();
   await page.waitForURL("**/actividades/nueva");
 

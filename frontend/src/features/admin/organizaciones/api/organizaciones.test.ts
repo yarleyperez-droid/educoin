@@ -85,9 +85,23 @@ describe("listarOrganizaciones", () => {
   it("pasa página y límite personalizados", async () => {
     vi.mocked(api.get).mockResolvedValueOnce(LISTADO_BACKEND);
 
-    await listarOrganizaciones(3, 50);
+    await listarOrganizaciones({ page: 3, limit: 50 });
 
     expect(api.get).toHaveBeenCalledWith("organizations?page=3&limit=50");
+  });
+
+  it("pasa los filtros q, tipo y activa al query string", async () => {
+    vi.mocked(api.get).mockResolvedValueOnce(LISTADO_BACKEND);
+
+    await listarOrganizaciones({
+      q: "  San Agustín ",
+      tipo: "school",
+      activa: false,
+    });
+
+    expect(api.get).toHaveBeenCalledWith(
+      `organizations?page=1&limit=${LIMITE_ORGANIZACIONES}&q=San+Agust%C3%ADn&tipo=school&activa=false`,
+    );
   });
 
   it("payload fuera de contrato lanza ApiError 422 con el mensaje de zod", async () => {

@@ -90,6 +90,16 @@ describe("listarUsuarios", () => {
     );
   });
 
+  it("pasa los filtros q, rol y activa al query string", async () => {
+    vi.mocked(api.get).mockResolvedValueOnce(LISTADO_BACKEND);
+
+    await listarUsuarios({ q: "  ana ", rol: "teacher", activa: true });
+
+    expect(api.get).toHaveBeenCalledWith(
+      "users?page=1&limit=20&q=ana&rol=teacher&activa=true",
+    );
+  });
+
   it("payload fuera de contrato lanza ApiError 422 con el mensaje de zod", async () => {
     vi.mocked(api.get).mockResolvedValueOnce({
       data: [{ ...USUARIO_BACKEND, rol: "superadmin" }],

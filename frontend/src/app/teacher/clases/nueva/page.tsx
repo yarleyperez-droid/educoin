@@ -2,8 +2,10 @@
  * Página de creación de clase (`/teacher/clases/nueva`) — T5.6.1 (PRO-385).
  *
  * Vista cliente del alta de clase del panel docente (CA 1 de H5.6): el
- * formulario envía el nombre y, al crear, muestra el **código de unión
- * visible y copiable con un clic**.
+ * formulario envía el nombre y, al crear, abre un **diálogo de
+ * confirmación** con el **código de unión visible y copiable con un clic**
+ * (rediseño: el resumen ya no sustituye al formulario en línea, sino que
+ * se muestra en un `Modal` accesible sobre la página).
  *
  * Responsabilidades de esta vista:
  * - Capturar `nombre` con `label` accesible y validarlo en cliente
@@ -12,9 +14,12 @@
  * - Mostrar errores de la capa en un área `role="alert"` con **solo**
  *   `error.message` de `ApiError` (nunca `detalles` ni códigos HTTP) y
  *   **sin limpiar lo escrito** en el formulario (CA 3 del padre H5.6).
- * - En éxito: tarjeta con el código de 8 caracteres en un campo de solo
- *   lectura (seleccionable como fallback) + botón "Copiar código" con
- *   feedback "¡Copiado!".
+ * - En éxito: `Modal` con el código de 8 caracteres vía el componente
+ *   compartido `CodigoUnion` (campo de solo lectura seleccionable +
+ *   botón "Copiar código" con feedback "¡Copiado!") y atajos a "Añadir
+ *   una actividad" / "Crear otra clase" / "Volver al panel". Cerrar el
+ *   diálogo (✕, Escape, overlay o acción) vacía el formulario y deja la
+ *   página lista para otra creación.
  *
  * Contrato con el backend:
  * - La vista **no** conoce endpoints, cookies ni tokens: todo pasa por
@@ -28,15 +33,16 @@
 "use client";
 
 import Link from "next/link";
-import { useState, type FormEvent } from "react";
+import { useCallback, useState, type FormEvent } from "react";
 
+import { Modal } from "@/components/ui";
 import {
   crearClase,
   LONGITUD_MAXIMA_NOMBRE,
   LONGITUD_MINIMA_NOMBRE,
 } from "@/features/teacher/api/clases";
+import { CodigoUnion } from "@/features/teacher/componentes/codigo-union";
 import type { Clase } from "@/features/teacher/tipos";
-import { copiarAlPortapapeles } from "@/features/teacher/util/portapapeles";
 import { ApiError } from "@/lib/api-client";
 
 /** Mensaje de validación cuando el nombre viene vacío. */
@@ -53,15 +59,8 @@ const MENSAJE_NOMBRE_LARGO =
 /** Mensaje genérico para errores inesperados que no son `ApiError`. */
 const MENSAJE_ERROR_GENERICO = "Ocurrió un error inesperado. Intenta de nuevo.";
 
-/** Texto del fallback cuando el navegador no permite copiar al portapapeles. */
-const MENSAJE_COPIADO_FALLBACK =
-  "No se pudo copiar automáticamente. Selecciona el código y cópialo a mano.";
-
-/** Duración del feedback "¡Copiado!" (ms). */
-const DURACION_COPIADO_MS = 2000;
-
 /**
- * Vista de crear clase con código de unión copiable.
+ * Vista de crear clase con confirmación modal y código de unión copiable.
  *
  * Componente cliente (App Router): solo él lleva estado y eventos
  * (AGENTS.md §8). El estado es React controlado a mano — `react-hook-form`
@@ -74,8 +73,8 @@ const DURACION_COPIADO_MS = 2000;
  * - **Carga:** `cargando` deshabilita el botón y muestra "Creando…".
  * - **Error de envío:** `errorEnvio` con `ApiError.message`; el formulario
  *   conserva lo escrito.
- * - **Éxito:** `claseCreada` cambia la tarjeta por el resumen con el
- *   código; `copiado` gestiona el feedback del portapapeles.
+ * - **Éxito:** `claseCreada` abre el `Modal` con el resumen y el código
+ *   (el bloque copiable vive en `CodigoUnion`).
  *
  * @returns Formulario de alta de clase dentro del shell del panel docente.
  */
@@ -85,8 +84,6 @@ export default function NuevaClasePage() {
   const [errorCampo, setErrorCampo] = useState<string | null>(null);
   const [errorEnvio, setErrorEnvio] = useState<string | null>(null);
   const [claseCreada, setClaseCreada] = useState<Clase | null>(null);
-  const [copiado, setCopiado] = useState(false);
-  const [errorCopia, setErrorCopia] = useState<string | null>(null);
 
   /**
    * Valida el nombre en cliente sin llamar a la capa de datos.
@@ -116,8 +113,9 @@ export default function NuevaClasePage() {
    * Procesa el envío del formulario.
    *
    * Flujo: valida en cliente (sin llamada si falla) → `crearClase` (capa de
-   * datos) → muestra la tarjeta de éxito con el código. Cualquier `ApiError`
-   * se muestra tal cual (`error.message`) sin perder lo escrito.
+   * datos) → abre el `Modal` de confirmación con el código. Cualquier
+   * `ApiError` se muestra tal cual (`error.message`) sin perder lo
+   * escrito.
    *
    * @param evento Evento de envío del formulario.
    */
@@ -138,8 +136,6 @@ export default function NuevaClasePage() {
     try {
       const clase = await crearClase({ nombre });
       setClaseCreada(clase);
-      setCopiado(false);
-      setErrorCopia(null);
     } catch (e) {
       if (e instanceof ApiError) {
         setErrorEnvio(e.message);
@@ -151,54 +147,33 @@ export default function NuevaClasePage() {
     }
   }
 
-  /**
-   * Copia el código de unión al portapapeles y muestra el feedback.
-   *
-   * Si el navegador bloquea la API de portapapeles, se muestra el fallback
-   * (el código queda seleccionable en el campo de solo lectura) sin romper
-   * el flujo.
-   */
-  async function manejarCopia(): Promise<void> {
-    if (!claseCreada) {
-      return;
-    }
-
-    const exito = await copiarAlPortapapeles(claseCreada.codigo);
-
-    if (exito) {
-      setCopiado(true);
-      setErrorCopia(null);
-      setTimeout(() => setCopiado(false), DURACION_COPIADO_MS);
-    } else {
-      setCopiado(false);
-      setErrorCopia(MENSAJE_COPIADO_FALLBACK);
-    }
-  }
-
   /** Vuelve al formulario vacío para crear otra clase. */
-  function crearOtra(): void {
+  const crearOtra = useCallback((): void => {
     setClaseCreada(null);
     setNombre("");
     setErrorCampo(null);
     setErrorEnvio(null);
-    setCopiado(false);
-    setErrorCopia(null);
-  }
+  }, []);
 
   return (
-    <div className="w-full max-w-md rounded-lg border border-neutral-200 bg-white p-6 shadow-sm sm:p-8">
-      <h2 className="text-xl font-semibold text-neutral-900">Crear clase</h2>
-      <p className="mt-1 text-sm text-neutral-500">
-        Al crearla recibirás su código de unión para compartirla con tus
-        estudiantes.
-      </p>
+    <div className="space-y-6">
+      {/* Header (mismo patrón que el listado "Mis Clases"). */}
+      <div>
+        <h1 className="text-2xl font-bold text-slate-900 lg:text-3xl">
+          Crear clase
+        </h1>
+        <p className="mt-1 max-w-2xl text-sm text-slate-500">
+          Al crearla recibirás su código de unión para compartirla con tus
+          estudiantes.
+        </p>
+      </div>
 
-      {claseCreada === null ? (
-        <form onSubmit={manejarEnvio} noValidate className="mt-6 space-y-4">
+      <div className="w-full max-w-xl rounded-2xl border border-slate-200 bg-white p-6 shadow-sm sm:p-8">
+        <form onSubmit={manejarEnvio} noValidate>
           <div>
             <label
               htmlFor="nombre-clase"
-              className="block text-sm font-medium text-neutral-700"
+              className="block text-sm font-medium text-slate-700"
             >
               Nombre de la clase
             </label>
@@ -214,108 +189,89 @@ export default function NuevaClasePage() {
               aria-describedby={
                 errorCampo !== null ? "error-nombre" : "ayuda-nombre"
               }
-              className="mt-1 w-full rounded-md border border-neutral-300 px-3 py-2 text-sm text-neutral-900 placeholder-neutral-400 focus:border-neutral-500 focus:outline-none focus:ring-2 focus:ring-neutral-300 disabled:cursor-not-allowed disabled:opacity-60"
+              className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900 placeholder-slate-400 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-200 disabled:cursor-not-allowed disabled:opacity-60"
             />
-            <p id="ayuda-nombre" className="mt-1 text-xs text-neutral-500">
+            <p id="ayuda-nombre" className="mt-1 text-xs text-slate-500">
               Entre {LONGITUD_MINIMA_NOMBRE} y {LONGITUD_MAXIMA_NOMBRE}{" "}
               caracteres.
             </p>
           </div>
 
           {errorCampo !== null && (
-            <p id="error-nombre" role="alert" className="text-sm text-red-700">
+            <p id="error-nombre" role="alert" className="mt-4 text-sm text-red-700">
               {errorCampo}
             </p>
           )}
 
           {errorEnvio !== null && (
-            <p id="error-envio" role="alert" className="text-sm text-red-700">
+            <p id="error-envio" role="alert" className="mt-4 text-sm text-red-700">
               {errorEnvio}
             </p>
           )}
 
-          <div className="flex items-center gap-3">
+          <div className="mt-6 flex items-center gap-3">
             <button
               type="submit"
               disabled={cargando}
               aria-busy={cargando}
-              className="rounded-md bg-neutral-900 px-4 py-2 text-sm font-medium text-white hover:bg-neutral-700 focus:outline-none focus:ring-2 focus:ring-neutral-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60"
+              className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60"
             >
               {cargando ? "Creando…" : "Crear clase"}
             </button>
             <Link
               href="/teacher"
-              className="text-sm text-neutral-600 hover:text-neutral-900"
+              className="text-sm font-medium text-slate-600 hover:text-slate-900"
             >
               Volver al panel
             </Link>
           </div>
         </form>
-      ) : (
-        <section aria-live="polite" className="mt-6 space-y-4">
-          <div className="rounded-md border border-neutral-200 bg-neutral-50 p-4">
-            <p className="text-sm font-medium text-neutral-700">
-              Clase creada: {claseCreada.nombre}
-            </p>
+      </div>
 
-            <label
-              htmlFor="codigo-union"
-              className="mt-3 block text-xs font-medium uppercase tracking-wide text-neutral-500"
-            >
-              Código de unión
-            </label>
-            <input
-              id="codigo-union"
-              type="text"
-              readOnly
-              value={claseCreada.codigo}
-              onFocus={(e) => e.target.select()}
-              className="mt-1 w-full rounded-md border border-neutral-300 bg-white px-3 py-2 text-center font-mono text-lg tracking-widest text-neutral-900 focus:outline-none focus:ring-2 focus:ring-neutral-300"
-            />
-
-            <button
-              type="button"
-              onClick={manejarCopia}
-              className="mt-3 w-full rounded-md border border-neutral-300 bg-white px-4 py-2 text-sm font-medium text-neutral-800 hover:bg-neutral-100 focus:outline-none focus:ring-2 focus:ring-neutral-400 focus:ring-offset-2"
-            >
-              {copiado ? "¡Copiado!" : "Copiar código"}
-            </button>
-
-            {errorCopia !== null && (
-              <p role="alert" className="mt-2 text-xs text-amber-700">
-                {errorCopia}
-              </p>
+      {/* Confirmación de éxito: el formulario sigue montado detrás y el
+          diálogo concentra la atención en el código de unión. */}
+      <Modal
+        abierto={claseCreada !== null}
+        titulo={
+          claseCreada !== null ? `Clase creada: ${claseCreada.nombre}` : ""
+        }
+        alCerrar={crearOtra}
+        acciones={
+          <>
+            {claseCreada !== null && (
+              <Link
+                href={`/teacher/clases/${claseCreada.id}/actividades/nueva`}
+                className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2"
+              >
+                Añadir una actividad
+              </Link>
             )}
-          </div>
-
-          <p className="text-sm text-neutral-500">
-            Comparte este código con tus estudiantes para que se unan a la
-            clase.
-          </p>
-
-          <div className="flex items-center gap-3">
             <button
               type="button"
               onClick={crearOtra}
-              className="rounded-md bg-neutral-900 px-4 py-2 text-sm font-medium text-white hover:bg-neutral-700 focus:outline-none focus:ring-2 focus:ring-neutral-500 focus:ring-offset-2"
+              className="rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-50"
             >
               Crear otra clase
             </button>
             <Link
-              href={`/teacher/clases/${claseCreada.id}/actividades/nueva`}
-              className="text-sm font-medium text-neutral-700 underline hover:text-neutral-900"
-            >
-              Añadir una actividad
-            </Link>
-            <Link
               href="/teacher"
-              className="text-sm text-neutral-600 hover:text-neutral-900"
+              className="text-sm font-medium text-slate-600 hover:text-slate-900"
             >
               Volver al panel
             </Link>
+          </>
+        }
+      >
+        {claseCreada !== null && (
+          <div>
+            <CodigoUnion codigo={claseCreada.codigo} />
+            <p className="mt-4 text-sm text-slate-500">
+              Comparte este código con tus estudiantes para que se unan a la
+              clase.
+            </p>
           </div>
-        </section>
-      )}
+        )}
+      </Modal>
     </div>
   );
 }
