@@ -33,6 +33,12 @@ vi.mock("next/link", () => ({
   ),
 }));
 
+// `CabeceraLanding` usa `usePathname` para saber si está en la propia landing
+// (anclas locales) u otra ruta (vuelven con `/#id`); en este test se simula `/`.
+vi.mock("next/navigation", () => ({
+  usePathname: () => "/",
+}));
+
 afterEach(cleanup);
 
 describe("Landing pública (page.tsx)", () => {

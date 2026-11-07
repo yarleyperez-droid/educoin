@@ -15,6 +15,12 @@
  *   el administrador cuando una institución contacta y adopta el servicio, y
  *   no existe un flujo de registro público.
  *
+ * Reutilización fuera de la landing: la misma cabecera se muestra en
+ * `/login`. Al renderizar en otra ruta, los enlaces de sección dejan de ser
+ * anclas locales (`#id`, scroll en la misma página) y navegan de vuelta a la
+ * landing con `next/link` hacia `/#id` (App Router hace el scroll a la
+ * sección tras llegar).
+ *
  * Accesibilidad: `header` semántico, botón hamburguesa con `aria-expanded` y
  * `aria-controls`, foco visible en todos los enlaces y botones.
  */
@@ -22,6 +28,7 @@
 "use client";
 
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 import { useState } from "react";
 
 import { IconMenu, IconX } from "@/components/ui";
@@ -35,6 +42,49 @@ const ENLACES_SECCION = [
   { texto: "Instituciones", href: "#instituciones" },
 ] as const;
 
+/** Tipo de un enlace de sección del nav. */
+type EnlaceSeccion = (typeof ENLACES_SECCION)[number];
+
+/**
+ * Enlace a una sección de la landing.
+ *
+ * - En la landing (`enLanding`): `<a href='#id'>` — scroll suave en la misma
+ *   página, igual que el mockup original.
+ * - Fuera de la landing (p. ej. `/login`): `<Link href='/#id'>` — navega de
+ *   vuelta a la landing y hace scroll a la sección (App Router).
+ *
+ * @param ancla Entrada de `ENLACES_SECCION` (texto + id de sección).
+ * @param enLanding `true` si la cabecera está en la propia landing.
+ * @param clase Clases Tailwind del enlace (escritorio o móvil).
+ * @param alNavegar Opcional: cierra el menú móvil al pulsar.
+ * @returns Elemento de enlace según la ruta actual.
+ */
+function EnlaceAncla({
+  ancla,
+  enLanding,
+  clase,
+  alNavegar,
+}: {
+  ancla: EnlaceSeccion;
+  enLanding: boolean;
+  clase: string;
+  alNavegar?: () => void;
+}) {
+  if (enLanding) {
+    return (
+      <a href={ancla.href} onClick={alNavegar} className={clase}>
+        {ancla.texto}
+      </a>
+    );
+  }
+
+  return (
+    <Link href={`/${ancla.href}`} onClick={alNavegar} className={clase}>
+      {ancla.texto}
+    </Link>
+  );
+}
+
 /**
  * Cabecera pública con nav de anclas y accesos de sesión.
  *
@@ -42,6 +92,14 @@ const ENLACES_SECCION = [
  */
 export function CabeceraLanding() {
   const [menuAbierto, setMenuAbierto] = useState(false);
+  const pathname = usePathname();
+
+  /**
+   * `true` si la cabecera está en la propia landing (`/`): los enlaces de
+   * sección son anclas locales. Fuera de ella (p. ej. `/login`) navegan de
+   * vuelta a la landing (`/#id`).
+   */
+  const enLanding = pathname === "/";
 
   /** Cierra el menú móvil (al navegar o al pulsar de nuevo la hamburguesa). */
   function cerrarMenu(): void {
@@ -75,12 +133,11 @@ export function CabeceraLanding() {
           <ul className='flex items-center gap-1'>
             {ENLACES_SECCION.map((enlace) => (
               <li key={enlace.href}>
-                <a
-                  href={enlace.href}
-                  className='rounded-card px-3 py-2 text-sm font-medium text-ink2 transition-colors hover:bg-page hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2'
-                >
-                  {enlace.texto}
-                </a>
+                <EnlaceAncla
+                  ancla={enlace}
+                  enLanding={enLanding}
+                  clase='rounded-card px-3 py-2 text-sm font-medium text-ink2 transition-colors hover:bg-page hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2'
+                />
               </li>
             ))}
           </ul>
@@ -131,13 +188,12 @@ export function CabeceraLanding() {
           <ul className='space-y-1'>
             {ENLACES_SECCION.map((enlace) => (
               <li key={enlace.href}>
-                <a
-                  href={enlace.href}
-                  onClick={cerrarMenu}
-                  className='block rounded-card px-3 py-2 text-sm font-medium text-ink2 transition-colors hover:bg-page hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2'
-                >
-                  {enlace.texto}
-                </a>
+                <EnlaceAncla
+                  ancla={enlace}
+                  enLanding={enLanding}
+                  alNavegar={cerrarMenu}
+                  clase='block rounded-card px-3 py-2 text-sm font-medium text-ink2 transition-colors hover:bg-page hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2'
+                />
               </li>
             ))}
           </ul>

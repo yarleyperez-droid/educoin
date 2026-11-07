@@ -26,6 +26,12 @@
  * Selectores con contrato E2E (`e2e/helpers.ts`, `e2e/login.spec.ts`):
  * labels exactos "Usuario o correo" y "Contraseña", botón "Iniciar sesión" y
  * `role="alert"` con los mensajes de validación/error. No se renombran.
+ *
+ * Cabecera: reutiliza `CabeceraLanding` (la misma de la landing). Fuera de
+ * `/`, sus enlaces de sección navegan de vuelta a la landing (`/#id`), por lo
+ * que desde aquí se puede volver a cualquier sección del sitio público.
+ * El `<main>` pasa a `min-h-[calc(100vh-4rem)]` para compensar la cabecera
+ * sticky de 16 (h-16) y evitar scroll sobrante.
  */
 
 "use client";
@@ -38,6 +44,7 @@ import {
   mensajeDeErrorApi,
   useToast,
 } from "@/components/ui";
+import { CabeceraLanding } from "@/components/landing/cabecera-landing";
 import { iniciarSesion, rutaPorRol } from "@/features/auth/api/auth";
 
 /** Mensaje de validación cuando falta algún campo del formulario. */
@@ -83,7 +90,8 @@ function IconoInfo() {
  * - **Error de envío:** toast `error` con `mensajeDeErrorApi(error)` —
  *   validaciones de campo siguen en el área `role="alert"` en línea.
  *
- * @returns Vista de login centrada sobre el fondo neutro.
+ * @returns Vista de login con la cabecera pública y el formulario centrado
+ *   sobre el fondo neutro.
  */
 export default function LoginPage() {
   const router = useRouter();
@@ -133,99 +141,102 @@ export default function LoginPage() {
   }
 
   return (
-    <main className='flex min-h-screen flex-col items-center justify-center bg-slate-50 p-4 sm:p-8'>
-      <div className='w-full max-w-md'>
-        {/* Marca */}
-        <div className='mb-6 flex items-center justify-center gap-2'>
-          <div className='flex h-10 w-10 items-center justify-center rounded-xl bg-indigo-600 text-lg font-bold text-white'>
-            E
-          </div>
-          <span className='text-xl font-bold text-slate-900'>EduCoins</span>
-          <span className='rounded-full bg-indigo-50 px-2 py-0.5 text-xs font-semibold text-indigo-700'>
-            Campus Beta
-          </span>
-        </div>
-
-        <div className='rounded-2xl border border-slate-200 bg-white p-6 shadow-sm sm:p-8'>
-          {/* Aviso de primer ingreso (coincide con el flujo de cambio obligatorio) */}
-          <div className='flex items-start gap-2 rounded-xl bg-indigo-50 p-3'>
-            <IconoInfo />
-            <p className='text-xs leading-relaxed text-indigo-800'>
-              <strong>¿Primer ingreso a EduCoins?</strong> Si tu institución te
-              registró recientemente, el sistema te solicitará renovar tu
-              contraseña temporal otorgada por coordinación al ingresar.
-            </p>
+    <>
+      <CabeceraLanding />
+      <main className='flex min-h-[calc(100vh-4rem)] flex-col items-center justify-center bg-slate-50 p-4 sm:p-8'>
+        <div className='w-full max-w-md'>
+          {/* Marca */}
+          <div className='mb-6 flex items-center justify-center gap-2'>
+            <div className='flex h-10 w-10 items-center justify-center rounded-xl bg-indigo-600 text-lg font-bold text-white'>
+              E
+            </div>
+            <span className='text-xl font-bold text-slate-900'>EduCoins</span>
+            <span className='rounded-full bg-indigo-50 px-2 py-0.5 text-xs font-semibold text-indigo-700'>
+              Campus Beta
+            </span>
           </div>
 
-          <h1 className='mt-6 text-2xl font-bold text-slate-900'>
-            Hola de nuevo
-          </h1>
-          <p className='mt-1 text-sm text-slate-500'>
-            Ingresa a tu cuenta de EduCoins para acceder a tu billetera y módulos.
-          </p>
-
-          <form onSubmit={manejarEnvio} noValidate className='mt-6 space-y-4'>
-            <div>
-              <label
-                htmlFor='identificador'
-                className='block text-sm font-medium text-slate-700'
-              >
-                Usuario o correo
-              </label>
-              <input
-                id='identificador'
-                name='identificador'
-                type='text'
-                autoComplete='username'
-                value={identificador}
-                onChange={(e) => setIdentificador(e.target.value)}
-                disabled={cargando}
-                aria-invalid={errorCampo !== null}
-                aria-describedby={errorCampo !== null ? "error-campo" : undefined}
-                className='mt-1 w-full rounded-lg border border-slate-300 bg-slate-50 px-3 py-2 text-sm text-slate-900 placeholder-slate-400 focus:border-indigo-500 focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-200 disabled:cursor-not-allowed disabled:opacity-60'
-              />
-            </div>
-
-            <div>
-              <label
-                htmlFor='contrasena'
-                className='block text-sm font-medium text-slate-700'
-              >
-                Contraseña
-              </label>
-              <input
-                id='contrasena'
-                name='contrasena'
-                type='password'
-                autoComplete='current-password'
-                value={contrasena}
-                onChange={(e) => setContrasena(e.target.value)}
-                disabled={cargando}
-                aria-invalid={errorCampo !== null}
-                aria-describedby={errorCampo !== null ? "error-campo" : undefined}
-                className='mt-1 w-full rounded-lg border border-slate-300 bg-slate-50 px-3 py-2 text-sm text-slate-900 placeholder-slate-400 focus:border-indigo-500 focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-200 disabled:cursor-not-allowed disabled:opacity-60'
-              />
-            </div>
-
-            {errorCampo !== null && (
-              <p id='error-campo' role='alert' className='text-sm text-red-700'>
-                {errorCampo}
+          <div className='rounded-2xl border border-slate-200 bg-white p-6 shadow-sm sm:p-8'>
+            {/* Aviso de primer ingreso (coincide con el flujo de cambio obligatorio) */}
+            <div className='flex items-start gap-2 rounded-xl bg-indigo-50 p-3'>
+              <IconoInfo />
+              <p className='text-xs leading-relaxed text-indigo-800'>
+                <strong>¿Primer ingreso a EduCoins?</strong> Si tu institución te
+                registró recientemente, el sistema te solicitará renovar tu
+                contraseña temporal otorgada por coordinación al ingresar.
               </p>
-            )}
+            </div>
 
-            {cargando ? (
-              <EstadoCarga mensaje='Verificando tus credenciales…' />
-            ) : (
-              <button
-                type='submit'
-                className='w-full rounded-lg bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-indigo-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2'
-              >
-                Iniciar sesión
-              </button>
-            )}
-          </form>
+            <h1 className='mt-6 text-2xl font-bold text-slate-900'>
+              Hola de nuevo
+            </h1>
+            <p className='mt-1 text-sm text-slate-500'>
+              Ingresa a tu cuenta de EduCoins para acceder a tu billetera y módulos.
+            </p>
+
+            <form onSubmit={manejarEnvio} noValidate className='mt-6 space-y-4'>
+              <div>
+                <label
+                  htmlFor='identificador'
+                  className='block text-sm font-medium text-slate-700'
+                >
+                  Usuario o correo
+                </label>
+                <input
+                  id='identificador'
+                  name='identificador'
+                  type='text'
+                  autoComplete='username'
+                  value={identificador}
+                  onChange={(e) => setIdentificador(e.target.value)}
+                  disabled={cargando}
+                  aria-invalid={errorCampo !== null}
+                  aria-describedby={errorCampo !== null ? "error-campo" : undefined}
+                  className='mt-1 w-full rounded-lg border border-slate-300 bg-slate-50 px-3 py-2 text-sm text-slate-900 placeholder-slate-400 focus:border-indigo-500 focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-200 disabled:cursor-not-allowed disabled:opacity-60'
+                />
+              </div>
+
+              <div>
+                <label
+                  htmlFor='contrasena'
+                  className='block text-sm font-medium text-slate-700'
+                >
+                  Contraseña
+                </label>
+                <input
+                  id='contrasena'
+                  name='contrasena'
+                  type='password'
+                  autoComplete='current-password'
+                  value={contrasena}
+                  onChange={(e) => setContrasena(e.target.value)}
+                  disabled={cargando}
+                  aria-invalid={errorCampo !== null}
+                  aria-describedby={errorCampo !== null ? "error-campo" : undefined}
+                  className='mt-1 w-full rounded-lg border border-slate-300 bg-slate-50 px-3 py-2 text-sm text-slate-900 placeholder-slate-400 focus:border-indigo-500 focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-200 disabled:cursor-not-allowed disabled:opacity-60'
+                />
+              </div>
+
+              {errorCampo !== null && (
+                <p id='error-campo' role='alert' className='text-sm text-red-700'>
+                  {errorCampo}
+                </p>
+              )}
+
+              {cargando ? (
+                <EstadoCarga mensaje='Verificando tus credenciales…' />
+              ) : (
+                <button
+                  type='submit'
+                  className='w-full rounded-lg bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-indigo-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2'
+                >
+                  Iniciar sesión
+                </button>
+              )}
+            </form>
+          </div>
         </div>
-      </div>
-    </main>
+      </main>
+    </>
   );
 }
