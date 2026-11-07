@@ -129,7 +129,7 @@ psql -U educoins -h localhost -p 5434 -d educoins -v ON_ERROR_STOP=1 -f db/002_s
 | `admin` | `Admin123!` | `admin` (global) | `true` |
 | `prof.lopez` | `Prof123!` | `teacher` | `false` |
 | `est.perez` | `Estudiante123!` | `student` | `true` |
-| `est.gomez` | `Estudiante123!` | `student` | `true` |
+| `est.gomez` | `Estudiante123!` | `student` | `false` |
 
 > Clase de prueba: `Mathematics 10A` (código generado por BD), actividad de 120 monedas, 2 ítems canjeables.
 

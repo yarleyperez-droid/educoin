@@ -54,12 +54,14 @@ WHERE o.name = 'Colegio Demo';
 -- ---------------------------------------------------------------------
 INSERT INTO users (organization_id, role, username, email, password_hash,
                    first_name, last_name, must_change_password)
+-- est.perez arranca con cambio obligatorio (flujo de primer ingreso);
+-- est.gomez entra directa, para poder probar sin pasar por /cambiar-contrasena.
 SELECT o.id, 'student', x.username, x.email,
        '$argon2id$v=19$m=65536,p=4,t=3$iAqxY4mnRJMM3mBszblO5w$xpVqxLvREUUH/YbFD8p7CyEcTGhzsxLHZxNGv98dcWw',
-       x.first_name, x.last_name, TRUE
+       x.first_name, x.last_name, x.must_change_password
 FROM organizations o
-CROSS JOIN (VALUES ('est.perez',  'perez@educoins.test',  'Juan',   'Pérez'),
-                   ('est.gomez',  'gomez@educoins.test',  'María',  'Gómez')) AS x(username, email, first_name, last_name)
+CROSS JOIN (VALUES ('est.perez',  'perez@educoins.test',  'Juan',   'Pérez', TRUE),
+                   ('est.gomez',  'gomez@educoins.test',  'María',  'Gómez', FALSE)) AS x(username, email, first_name, last_name, must_change_password)
 WHERE o.name = 'Colegio Demo';
 
 -- ---------------------------------------------------------------------
