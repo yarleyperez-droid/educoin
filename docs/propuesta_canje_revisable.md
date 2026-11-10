@@ -175,6 +175,15 @@ ALTER TABLE redeemable_items
 - **`delivered` no es automático:** lo marca el profesor cuando entrega el ítem (para
   `grade_bonus`, al materializar el bono). La auto-aprobación acelera la decisión, no la entrega.
 
+**Dónde se configura (y qué hay que construir):**
+
+| Capa | Dónde queda | Cuándo |
+|---|---|---|
+| Migración | `ALTER TABLE redeemable_items ADD COLUMN auto_approve ...` (§2.6) | H7.2 · T7.2.1 |
+| Backend | Campo `autoApprove` en `CrearItemDto` y `ActualizarItemDto` + salida en `ItemDto` (`src/modules/items/dto/item.dto.ts`) y su service (`items.service.ts`) | H7.2 (o historia del catálogo) |
+| Frontend | Checkbox *"Aprobación automática"* en el formulario de ítems del profesor | ⚠️ **Hoy no existe esa pantalla**: H4.1 fue solo backend y el front solo tiene la vista de canje del estudiante. El formulario, cuando se construya, debe nacer con el checkbox |
+| Evaluación | Se lee `item.auto_approve` **al momento de solicitar** el canje; queda congelado en ese canje | H7.2 |
+
 ---
 
 ## 3. Contrato de estados y transiciones ← *T7.1.2 / PRO-460*
