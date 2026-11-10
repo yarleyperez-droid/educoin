@@ -28,7 +28,7 @@ export function BotonCerrarSesion({ className }: { className?: string }) {
       onClick={manejarClic}
       disabled={cargando}
       aria-busy={cargando}
-      className={`rounded-md border border-neutral-300 px-3 py-1.5 text-sm font-medium text-neutral-700 hover:bg-neutral-50 focus:outline-none focus:ring-2 focus:ring-neutral-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60 ${className ?? ""}`}
+      className={`rounded-md border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-700 hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-slate-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60 ${className ?? ""}`}
     >
       {cargando ? "Cerrando…" : "Cerrar sesión"}
     </button>

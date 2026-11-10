@@ -9,6 +9,7 @@
  */
 
 export { EstadoCarga, type PropsEstadoCarga } from "./estado-carga";
+export { LockupEducoin, type PropsLockupEducoin } from "./marca";
 export {
   EstadoVacio,
   type AccionSugerida,

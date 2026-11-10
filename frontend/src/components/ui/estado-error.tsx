@@ -50,7 +50,7 @@ export function EstadoError({
         <button
           type="button"
           onClick={alReintentar}
-          className="rounded-md border px-3 py-1.5 text-sm font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-700 focus-visible:ring-offset-2"
+          className="rounded-md border px-3 py-1.5 text-sm font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-700 focus-visible:ring-offset-2"
           style={{ borderColor: "var(--danger)", color: "var(--danger)" }}
         >
           Reintentar

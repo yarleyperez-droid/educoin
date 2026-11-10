@@ -224,7 +224,7 @@ export default function EditarActividadPage() {
               <section className='space-y-4'>
                 <p
                   role='alert'
-                  className='rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800'
+                  className='rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-700'
                 >
                   Esta actividad ya está publicada y no se puede editar; tampoco
                   puede volver a borrador.

@@ -169,16 +169,16 @@ export default function CanjePage() {
   }
 
   return (
-    <div className="w-full max-w-2xl rounded-lg border border-neutral-200 bg-white p-6 shadow-sm sm:p-8">
-      <h2 className="text-xl font-semibold text-neutral-900">
+    <div className="w-full max-w-2xl rounded-lg border border-slate-200 bg-white p-6 shadow-sm sm:p-8">
+      <h2 className="text-xl font-semibold text-slate-900">
         Canjear monedas
       </h2>
-      <p className="mt-1 text-sm text-neutral-500">
+      <p className="mt-1 text-sm text-slate-500">
         Elige una recompensa y confirma antes de descontar tus monedas.
       </p>
 
       {saldo !== null && (
-        <p className="mt-4 rounded-md bg-amber-50 px-3 py-2 text-sm font-medium text-amber-900">
+        <p className="mt-4 rounded-md bg-amber-50 px-3 py-2 text-sm font-medium text-amber-700">
           Saldo disponible:{" "}
           <span data-testid="saldo-canje">{saldo}</span> monedas
         </p>
@@ -202,19 +202,19 @@ export default function CanjePage() {
           {items.map((item) => (
             <li
               key={item.id}
-              className="rounded-md border border-neutral-200 p-4"
+              className="rounded-md border border-slate-200 p-4"
             >
               <div className="flex flex-wrap items-start justify-between gap-2">
                 <div>
-                  <p className="text-sm font-medium text-neutral-900">
+                  <p className="text-sm font-medium text-slate-900">
                     {item.name}
                   </p>
                   {item.description !== null && (
-                    <p className="mt-0.5 text-xs text-neutral-500">
+                    <p className="mt-0.5 text-xs text-slate-500">
                       {item.description}
                     </p>
                   )}
-                  <p className="mt-1 text-xs text-neutral-500">
+                  <p className="mt-1 text-xs text-slate-500">
                     {item.type === "grade_bonus"
                       ? `Bono de nota (+${item.gradePoints ?? "?"} puntos)`
                       : "Actividad lúdica"}{" "}
@@ -222,13 +222,13 @@ export default function CanjePage() {
                   </p>
                 </div>
                 <div className="flex items-center gap-3">
-                  <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800">
+                  <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-700">
                     {item.costCoins} monedas
                   </span>
                   <button
                     type="button"
                     onClick={() => void seleccionar(item)}
-                    className="rounded-md bg-neutral-900 px-3 py-1.5 text-xs font-medium text-white hover:bg-neutral-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-500 focus-visible:ring-offset-2"
+                    className="rounded-md bg-slate-900 px-3 py-1.5 text-xs font-medium text-white hover:bg-slate-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-500 focus-visible:ring-offset-2"
                   >
                     Canjear
                   </button>
@@ -241,10 +241,10 @@ export default function CanjePage() {
 
       {seleccion !== null && (
         <section
-          className="mt-6 rounded-md border border-neutral-300 bg-neutral-50 p-4"
+          className="mt-6 rounded-md border border-slate-300 bg-slate-50 p-4"
           aria-label="Confirmar canje"
         >
-          <h3 className="text-sm font-semibold text-neutral-900">
+          <h3 className="text-sm font-semibold text-slate-900">
             Confirmar canje
           </h3>
 
@@ -254,7 +254,7 @@ export default function CanjePage() {
 
           {preview !== null && !cargandoPreview && (
             <>
-              <dl className="mt-3 space-y-1 text-sm text-neutral-700">
+              <dl className="mt-3 space-y-1 text-sm text-slate-700">
                 <div className="flex justify-between">
                   <dt>Ítem</dt>
                   <dd className="font-medium">{preview.item.nombre}</dd>
@@ -287,7 +287,7 @@ export default function CanjePage() {
                   type="button"
                   onClick={() => void confirmar()}
                   disabled={!preview.puedeCanjear || canjeando}
-                  className="rounded-md bg-neutral-900 px-4 py-2 text-sm font-medium text-white enabled:hover:bg-neutral-700 disabled:opacity-40"
+                  className="rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white enabled:hover:bg-slate-700 disabled:opacity-40"
                 >
                   {canjeando ? "Canjeando…" : TEXTO_CONFIRMAR}
                 </button>
@@ -295,7 +295,7 @@ export default function CanjePage() {
                   type="button"
                   onClick={cancelar}
                   disabled={canjeando}
-                  className="rounded-md border border-neutral-300 px-4 py-2 text-sm font-medium text-neutral-700 enabled:hover:bg-neutral-50 disabled:opacity-40"
+                  className="rounded-md border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 enabled:hover:bg-slate-50 disabled:opacity-40"
                 >
                   {TEXTO_CANCELAR}
                 </button>

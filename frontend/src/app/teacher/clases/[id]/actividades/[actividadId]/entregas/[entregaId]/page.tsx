@@ -132,7 +132,7 @@ function veredictoDe(respuesta: RespuestaCalificada): {
   clases: string;
 } {
   if (respuesta.is_correct === true) {
-    return { texto: "Correcta", clases: "text-green-700" };
+    return { texto: "Correcta", clases: "text-emerald-700" };
   }
 
   if (respuesta.is_correct === false) {
