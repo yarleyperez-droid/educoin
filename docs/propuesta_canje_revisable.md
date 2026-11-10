@@ -1,8 +1,10 @@
 # Propuesta de esquema — Canje revisable (H7.1)
 
-> **Estado:** 🔴 **PENDIENTE DE APROBACIÓN** — hasta que el equipo registre el veredicto en
-> [PRO-447](https://linear.app/projectsu/issue/PRO-447), **no se ejecuta ninguna migración** en
-> ninguna base de datos del proyecto (CA 3 de H7.1 / `docs/post_mvp.md` §5).
+> **Estado:** 🟢 **APROBADO el 2026-11-10** (veredicto del responsable actual del proyecto, con las
+> 6 decisiones de §5 — incluida la columna `auto_approve` de §2.6). Registrado en
+> [PRO-447](https://linear.app/projectsu/issue/PRO-447).
+> La **migración** la ejecuta H7.2 (T7.2.1) en su propio flujo: aquí **no se ejecutó ninguna**
+> (CA 3).
 > **Ticket:** PRO-447 · **Sub-tareas:** PRO-459 (SQL) · PRO-460 (contrato) · PRO-461 (impacto).
 > **Rama:** `s6_h7_1_canje_revisable_esquema` · **Spec:** `spec/features/046-h7-1-canje-revisable-esquema/`.
 > **Fuente de verdad del esquema actual:** `db/001_schema.sql` (no el diseño pre-MVP).
@@ -149,6 +151,30 @@ exclusivamente con monedas y stock.
    si la BD gana valores y el schema no, el cliente tipa mal las filas nuevas (T7.2.1).
 5. **Validación previa:** `pnpm prisma validate` antes de aplicar nada.
 
+### 2.6 Configuración de aprobación automática por ítem
+
+**Decisión PO (2026-11-10):** hay canjes que el profesor pre-aprueba por política ("respuesta
+automática") y otros que requieren su verificación manual (documentos / preguntas complejas).
+
+```sql
+-- Columna nueva en el catálogo (NO en redemptions): quién puede auto-aprobar.
+ALTER TABLE redeemable_items
+  ADD COLUMN auto_approve BOOLEAN NOT NULL DEFAULT FALSE;
+```
+
+- **`FALSE` (default):** el canje queda `pending` y espera la decisión del **profesor** (camino
+  manual de §3.2).
+- **`TRUE`:** la API, **en la misma transacción de la solicitud**, ejecuta `pending → approved`
+  (actor: el sistema, siguiendo la política que el profesor configuró en el ítem).
+- **Auditoría sin columna extra:** `approved` sigue exigiendo `resolved_by` + `resolved_at`
+  (CHECK intacto); en la auto-aprobación `resolved_by` = **profesor de la clase** (autor de la
+  política, pre-aprobación) y `resolved_at` = instante automático. Para distinguirlo, se lee
+  `redeemable_items.auto_approve` (misma fila que el `item_id` del canje). *Alternativa dejada
+  anotada: una columna `redemptions.auto_approved` si algún día hace falta distinguirlo sin JOIN
+  (p. ej. si la política puede cambiar después de un canje).*
+- **`delivered` no es automático:** lo marca el profesor cuando entrega el ítem (para
+  `grade_bonus`, al materializar el bono). La auto-aprobación acelera la decisión, no la entrega.
+
 ---
 
 ## 3. Contrato de estados y transiciones ← *T7.1.2 / PRO-460*
@@ -183,10 +209,10 @@ stateDiagram-v2
 | # | Transición | Actor | Saldo (`enrollments`) | Stock (`redeemable_items`) | `coin_movements` | Auditoría |
 |---|---|---|---|---|---|---|
 | 0 | *(INSERT)* → `pending` | estudiante | `−cost_coins` | `−1` si es limitado | `spending` (1, único) | `redeemed_at` |
-| 1 | `pending` → **`approved`** | profesor de la clase | sin cambio | sin cambio | **ninguno** | app: `resolved_by`, `resolved_at` |
-| 2 | `approved` → **`delivered`** | profesor | sin cambio | sin cambio | **ninguno** | (`resolved_*` ya llenos) |
+| 1 | `pending` → **`approved`** | **profesor** de la clase, o **el sistema** si `item.auto_approve = TRUE` (ver §2.6) | sin cambio | sin cambio | **ninguno** | app: `resolved_by`, `resolved_at` |
+| 2 | `approved` → **`delivered`** | profesor (siempre manual; la auto-aprobación **no** entrega) | sin cambio | sin cambio | **ninguno** | (`resolved_*` ya llenos) |
 | 3 | `pending` → **`rejected`** | profesor de la clase | `+cost_coins` (vuelta exacta) | `+1` si era limitado | `reversal` (1, único) | app: `resolved_by`, `resolved_at` |
-| 4 | `completed` → `reversed` | estudiante dueño (MVP) | `+cost_coins` | `+1` | `reversal` (1, único) | app: `reversed_at` |
+| 4 | `completed` → `reversed` | estudiante dueño (MVP, **se retira en H7.2** — decisión §5.4) | `+cost_coins` | `+1` | `reversal` (1, único) | app: `reversed_at` |
 | 5 | cualquier otra | — | ❌ **409** — `El canje ya fue resuelto` | | | |
 
 - **Las únicas transiciones permitidas por la historia (CA 1) son 1, 2 y 3**; la 4 es la heredada
@@ -226,7 +252,7 @@ POST /api/v1/redemptions/:id/deliver   → 200 { id, estado: "delivered",  resue
 | 4 | `enrollments` | ⚪ Comportamiento | Sin cambios de esquema; `fn_apply_movement` contabiliza el `reversal` del rechazo y `ck_enrollment_no_negative` sigue blindando la reserva |
 | 5 | `activities` | ❌ Ninguno | — |
 | 6 | `submissions` | ❌ Ninguno | — |
-| 7 | `redeemable_items` | ⚪ Comportamiento | Sin cambios de esquema; `stock −1` al solicitar y `+1` al rechazar (mismos triggers) |
+| 7 | `redeemable_items` | ✅ **Sí (directo)** | Nueva columna `auto_approve` (§2.6); `stock −1` al solicitar y `+1` al rechazar (mismos triggers, sin cambios) |
 | 8 | **`redemptions`** | ✅ **Sí (directo)** | Enum + 2 columnas + 2 `CHECK` + 1 índice parcial + trigger `fn_reverse_redemption` extendido |
 | 9 | `coin_movements` | ⚪ Comportamiento | Sin cambios de esquema; nuevo `reversal` por rechazo. `ck_movement_coherent` ya admite `reversal` con `redemption_id` y `uq_movement_reversal` impide duplicados |
 
@@ -272,19 +298,29 @@ POST /api/v1/redemptions/:id/deliver   → 200 { id, estado: "delivered",  resue
 
 ---
 
-## 5. Preguntas abiertas para el PO (se publican en PRO-447)
+## 5. Decisiones tomadas (aprobadas el 2026-11-10)
 
-1. **Canje instantáneo:** ¿pasa a "aprobar automáticamente" o se elimina cuando exista el flujo
-   revisable? (`docs/post_mvp.md` H7.1 §Conversación)
-2. **`approved` vs. `delivered`:** el CA de H7.1 exige la transición `approved → delivered`, pero
-   H7.2 (Escenario 3 y T7.2.3.4) describe que **aprobar pasa directo a `delivered`**. Esta
-   propuesta mantiene `approved` como estado real (lo exige H7.1) y marca la discrepancia.
-3. **`DEFAULT`:** ¿pasa a `pending` en la migración de H7.2 o la API escribe `pending` explícito?
-   (Propuesta: dejarlo para T7.2.1 y que la API lo escriba explícito.)
-4. **Código de error por saldo/stock insuficiente:** H7.2 (T7.2.2.3) pide `400`, pero el canje
-   instantáneo del MVP responde `422` (spec 025). Conviene fijar uno solo antes de H7.2.
-5. **`reversed_at` en un rechazo:** ¿se rellena también (dato histórico de devolución) o solo
-   `resolved_at` como propone §2.2?
+> Registradas por el responsable actual del proyecto (hoy único del equipo) y publicadas en
+> [PRO-447](https://linear.app/projectsu/issue/PRO-447). Sustituyen a las preguntas abiertas de la
+> primera iteración de la propuesta.
+
+1. **Canje instantáneo del MVP:** **se retira al llegar H7.2** — la solicitud nace `pending` con
+   reserva y desaparece el atajo `completed` del INSERT. (`completed`/`reversed` **siguen siendo
+   valores válidos** del enum: CA 2 / §4.3.)
+2. **`approved` y `delivered` se mantienen como dos pasos** (cumple literalmente el CA 1 de H7.1):
+   `approved` = decisión, `delivered` = ítem entregado/materializado. Ajustar el texto de H7.2
+   (Escenario 3 y T7.2.3.4), que hoy describe que aprobar va directo a `delivered`.
+3. **Aprobación automática configurable por ítem:** `redeemable_items.auto_approve` (§2.6). Con
+   "respuesta automática" el sistema hace `pending → approved` en la misma transacción; documentos
+   o preguntas complejas (ítems sin auto-aprobación) esperan la **verificación manual** del
+   profesor. `delivered` sigue siempre manual.
+4. **`DEFAULT` de `redemptions.status`:** **se conserva `'completed'`**; la **API escribe
+   `pending` explícito** al solicitar (H7.2, T7.2.2). Cero riesgo para el flujo instantáneo
+   mientras coexista.
+5. **Código de error por saldo/stock insuficiente: `422`** (igual que el canje instantáneo actual,
+   spec 025). H7.2, T7.2.2.3 pasa de `400` a `422`.
+6. **`reversed_at` no se llena en un rechazo:** solo `resolved_by`/`resolved_at`; `reversed_at`
+   queda con la semántica de "anulación del estudiante".
 
 ---
 
@@ -293,7 +329,7 @@ POST /api/v1/redemptions/:id/deliver   → 200 { id, estado: "delivered",  resue
 Se ejecutó contra una **base descartable** creada para la ocasión (contenedor efímero con la misma
 imagen `postgres:16` del proyecto, esquema `db/001_schema.sql` + `db/002_seed.sql`, **sin tocar
 `educoin-db` ni ninguna base del equipo**; opción A aprobada en la spec). Resultado:
-**25/25 aserciones en verde**.
+**26/26 aserciones en verde** (corrida de verificación tras las decisiones de §5).
 
 | # | Comprobación | Resultado |
 |---|---|---|
@@ -306,6 +342,7 @@ imagen `postgres:16` del proyecto, esquema `db/001_schema.sql` + `db/002_seed.sq
 | F2 | Índice parcial `idx_redemptions_pending` creado | ✅ |
 | F3 | **Filas legacy** (`completed`/`reversed`, insertadas *antes* de los CHECK) aceptadas y con `resolved_*` en NULL — CA 2 | ✅ |
 | F4 | `fn_award_coins` y `trg_submissions_award_coins` intactos (sin impacto) | ✅ |
+| F5 | `redeemable_items.auto_approve` existe, `NOT NULL`, `DEFAULT FALSE` y el seed queda en `FALSE` (§2.6) | ✅ |
 | Extra | Nota §2.5.1 reproducida: usar el valor recién creado en la misma transacción falla con `unsafe use of new value ... New enum values must be committed before they can be used`, y el valor queda **deshecho** al abortar | ✅ |
 
 **Conclusión:** el DDL de §2 es ejecutable y produce exactamente el comportamiento del contrato de
@@ -317,8 +354,13 @@ imagen `postgres:16` del proyecto, esquema `db/001_schema.sql` + `db/002_seed.sq
 
 | Criterio (H7.1) | Evidencia | Estado |
 |---|---|---|
-| CA 1 — Transiciones válidas documentadas | §3.1 (diagrama) + §3.2 (tabla) | ☐ pendiente de revisión |
-| CA 2 — Compatibilidad con `completed`/`reversed` | §4.2 (inventario completo) + §4.3 (migración) | ☐ pendiente de revisión |
-| CA 3 — Sin implementación prematura | No se ejecuta nada hasta el veredicto en PRO-447 | ☐ **cumplido por diseño** |
+| CA 1 — Transiciones válidas documentadas | §3.1 (diagrama) + §3.2 (tabla) | ☑ **cumplido** |
+| CA 2 — Compatibilidad con `completed`/`reversed` | §4.2 (inventario completo) + §4.3 (migración) + evidencia F3 (§6) | ☑ **cumplido** |
+| CA 3 — Sin implementación prematura | La propuesta solo se ejecutó en una **BD efímera descartable** (§6); ninguna migración aplicada al proyecto | ☑ **cumplido** |
 
-**Veredicto del equipo (se registra en PRO-447):** ☐ Aprobado · ☐ Aprobado con cambios · ☐ Rechazado
+**Veredicto:** ☑ **APROBADO** el **2026-11-10** por el responsable actual del proyecto, con las 6
+decisiones de §5 (incluida la columna `auto_approve` de §2.6). Registrado en
+[PRO-447](https://linear.app/projectsu/issue/PRO-447); PRO-460 y PRO-461 cerradas en consecuencia.
+
+> **Alcance de esta aprobación:** solo **esquema y contrato**. La **migración** la ejecuta H7.2
+> (T7.2.1) en su propio flujo — aquí no se ejecutó ninguna.
