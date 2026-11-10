@@ -11,7 +11,13 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 
-import { IconBuilding, IconDashboard, IconUsers, IconX } from '@/components/ui';
+import {
+  IconBuilding,
+  IconDashboard,
+  IconUsers,
+  IconX,
+  LockupEducoin,
+} from '@/components/ui';
 
 /** Enlaces del nav bajo "Gestión Institucional". */
 const navItems = [
@@ -31,13 +37,8 @@ export function AdminSidebar({ onClose }: { onClose?: () => void }) {
   return (
     <aside className='flex h-full w-64 flex-col border-r border-slate-200 bg-white'>
       <div className='flex items-center gap-3 p-4'>
-        <div className='flex h-9 w-9 items-center justify-center rounded-lg bg-indigo-600 text-lg font-bold text-white'>
-          E
-        </div>
         <div className='min-w-0 flex-1'>
-          <p className='text-sm font-bold leading-tight text-slate-900'>
-            EduCoins
-          </p>
+          <LockupEducoin className='h-8 w-auto' />
           <p className='text-xs text-slate-500'>Panel Administrador</p>
         </div>
         {onClose && (

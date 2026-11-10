@@ -87,17 +87,17 @@ export function PreguntaCuestionario({
   const bloqueado = deshabilitado || !operativo;
 
   return (
-    <article className="rounded-md border border-neutral-200 p-4">
+    <article className="rounded-md border border-slate-200 p-4">
       <div className="flex items-center justify-between gap-2">
-        <span className="text-xs font-semibold uppercase tracking-wide text-neutral-500">
+        <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">
           Pregunta {pregunta.position}
         </span>
-        <span className="text-xs text-neutral-500">
+        <span className="text-xs text-slate-500">
           {pregunta.score} {pregunta.score === 1 ? "punto" : "puntos"}
         </span>
       </div>
 
-      <p className="mt-2 text-sm text-neutral-900">
+      <p className="mt-2 text-sm text-slate-900">
         <Enunciado texto={pregunta.prompt} />
       </p>
 
@@ -114,9 +114,9 @@ export function PreguntaCuestionario({
                   disabled={bloqueado}
                   onChange={() => onChange?.(opcion.text)}
                   aria-label={`Opción ${indice + 1}: ${opcion.text}`}
-                  className="h-4 w-4 accent-neutral-900"
+                  className="h-4 w-4 accent-slate-900"
                 />
-                <span className="text-sm text-neutral-700">{opcion.text}</span>
+                <span className="text-sm text-slate-700">{opcion.text}</span>
               </li>
             ))}
           </ul>
@@ -138,13 +138,13 @@ export function PreguntaCuestionario({
             disabled={bloqueado}
             onChange={(e) => onChange?.(e.target.value)}
             placeholder="Tu respuesta"
-            className="mt-1 w-full rounded-md border border-neutral-300 bg-neutral-50 px-3 py-2 text-sm text-neutral-900 placeholder-neutral-400 focus:border-neutral-500 focus:bg-white focus:outline-none focus:ring-2 focus:ring-neutral-300 disabled:cursor-not-allowed disabled:opacity-60"
+            className="mt-1 w-full rounded-md border border-slate-300 bg-slate-50 px-3 py-2 text-sm text-slate-900 placeholder-slate-400 focus:border-slate-500 focus:bg-white focus:outline-none focus:ring-2 focus:ring-slate-300 disabled:cursor-not-allowed disabled:opacity-60"
           />
         </div>
       )}
 
       {(pregunta.type === "file" || pregunta.type === "minigame") && (
-        <p className="mt-3 rounded-md border border-dashed border-neutral-300 p-3 text-xs text-neutral-500">
+        <p className="mt-3 rounded-md border border-dashed border-slate-300 p-3 text-xs text-slate-500">
           Este tipo de pregunta se resuelve de otra forma y no está disponible
           en la versión actual.
         </p>

@@ -23,19 +23,19 @@ const PRESENTACION: Readonly<
 > = {
   active: {
     etiqueta: "Activa",
-    clases: "bg-green-100 text-green-800",
+    clases: "bg-emerald-100 text-emerald-700",
   },
   archived: {
     etiqueta: "Archivada",
-    clases: "bg-neutral-200 text-neutral-700",
+    clases: "bg-slate-200 text-slate-700",
   },
   draft: {
     etiqueta: "Borrador",
-    clases: "bg-amber-100 text-amber-800",
+    clases: "bg-amber-100 text-amber-700",
   },
   published: {
     etiqueta: "Publicada",
-    clases: "bg-green-100 text-green-800",
+    clases: "bg-emerald-100 text-emerald-700",
   },
   deleted: {
     etiqueta: "Eliminada",

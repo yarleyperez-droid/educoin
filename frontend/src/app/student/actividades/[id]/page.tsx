@@ -303,11 +303,11 @@ export default function CuestionarioPage() {
           <div className="w-full rounded-2xl border border-slate-200 bg-white p-6 shadow-sm sm:p-8">
             {entrega !== null ? (
               <section aria-live="polite" className="space-y-4">
-                <div className="rounded-lg border border-green-200 bg-green-100 p-4">
-                  <p className="text-sm font-semibold text-green-700">
+                <div className="rounded-lg border border-emerald-200 bg-emerald-100 p-4">
+                  <p className="text-sm font-semibold text-emerald-700">
                     {MENSAJE_ENVIADO}
                   </p>
-                  <p className="mt-1 text-xs text-green-700">
+                  <p className="mt-1 text-xs text-emerald-700">
                     {MENSAJE_SIN_REINTENTO}
                   </p>
                 </div>
@@ -322,7 +322,7 @@ export default function CuestionarioPage() {
                 {entrega.estado === "submitted" && (
                   <p
                     role="status"
-                    className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800"
+                    className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-700"
                   >
                     Esperando el resultado de la auto-calificación…
                   </p>
@@ -360,7 +360,7 @@ export default function CuestionarioPage() {
                                 aria-hidden="true"
                                 className={
                                   item.correcta
-                                    ? "font-semibold text-green-700"
+                                    ? "font-semibold text-emerald-700"
                                     : "font-semibold text-red-700"
                                 }
                               >

@@ -23,15 +23,15 @@ const PRESENTACION: Readonly<
 > = {
   in_progress: {
     etiqueta: "Borrador",
-    clases: "bg-amber-100 text-amber-800",
+    clases: "bg-amber-100 text-amber-700",
   },
   submitted: {
     etiqueta: "Enviada",
-    clases: "bg-blue-100 text-blue-800",
+    clases: "bg-indigo-100 text-indigo-800",
   },
   graded: {
     etiqueta: "Calificada",
-    clases: "bg-green-100 text-green-800",
+    clases: "bg-emerald-100 text-emerald-700",
   },
   rejected: {
     etiqueta: "Rechazada",

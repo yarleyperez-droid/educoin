@@ -1,100 +1,88 @@
 @import "tailwindcss";
 
 /*
- * Tokens de marca de EduCoins (landing pública y paneles).
+ * Tokens de marca de EduCoin (landing pública y paneles).
  *
- * Fuente visual: `docs/prototipo-educoins.html` (la spec lo declara fuente de
- * verdad del diseño). Se exponen en el namespace `--color-*` de Tailwind 4
- * para que la landing y los paneles compartan la misma paleta sin repetir
- * valores hex en cada className.
+ * Fuente visual: identidad de marca `brand-identity/educoin/brand/`
+ * (brand-guidelines.md v1.0 + tokens/design-tokens.css). Se exponen en el
+ * namespace `--color-*` de Tailwind 4 para que la landing y los paneles
+ * compartan la misma paleta sin repetir valores hex en cada className.
  *
- * Accesibilidad (AA):
- * - `--color-muted` conserva el valor oscurecido `#6b6a63` de la auditoría
- *   T5.2.3 (el `#7a7971` del prototipo da 4.37:1 sobre blanco y no llega a
- *   4.5:1).
- * - `--color-gold-ink` (`#8a6500`, 5.3:1 sobre blanco) es el dorado de
- *   texto; el dorado de marca `#c8930a` (2.8:1 sobre blanco) solo se usa en
- *   fondos, iconos, bordes y números grandes, nunca en texto de cuerpo.
+ * Paleta de marca (proporción 60% neutros · 30% índigo · 10% oro/verde):
+ * - Índigo Mérito  `#4F46E5` (primario)  → indigo-600
+ * - Índigo Profundo `#1E1B4B` (institucional) → indigo-900 (sobrescrito abajo)
+ * - Oro Educoin    `#F59E0B` (recompensa) → amber-500
+ * - Oro Destello   `#FBBF24` (dark mode)  → amber-400
+ * - Ámbar Académico `#B45309` (oro texto) → amber-700
+ * - Verde Ascenso  `#10B981` (éxito)      → emerald-500
+ * - Pizarra Nocturna `#0F172A` (texto)    → slate-900
+ * - Papel Alabastro `#F8FAFC` (lienzo)    → slate-50
+ *
+ * Reglas de la guía aplicadas:
+ * - Texto sobre oro = Pizarra Nocturna o Índigo Profundo (nunca blanco).
+ * - Todo texto dorado sobre claro usa Ámbar Académico `#B45309` (5.02:1,
+ *   AA); Oro Educoin `#F59E0B` solo en fondos, iconos, bordes y números
+ *   grandes, nunca en texto de cuerpo.
+ * - `--color-success` usa emerald-700 `#047857` (5.9:1 sobre blanco, AA)
+ *   para texto; Verde Ascenso `#10B981` es para badges/fondos (emerald-500).
+ * - `--color-muted` = slate-500 `#64748B` (4.76:1 sobre blanco, AA).
  */
 @theme {
-  --color-gold: #c8930a;
-  --color-gold-bg: #fdf4dc;
-  --color-gold-border: #f0c84a;
-  --color-gold-ink: #8a6500;
-  --color-ink: #1c1b18;
-  --color-ink2: #3d3c38;
-  --color-muted: #6b6a63;
+  /* Oro (recompensas) — escala amber de la marca. */
+  --color-gold: #f59e0b; /* Oro Educoin: fondos, iconos, bordes, números grandes */
+  --color-gold-bg: #fef3c7; /* amber-100 */
+  --color-gold-border: #fbbf24; /* Oro Destello (amber-400) */
+  --color-gold-ink: #b45309; /* Ámbar Académico: oro de texto (AA) */
+
+  /* Neutros — Pizarra Nocturna / Papel Alabastro. */
+  --color-ink: #0f172a; /* slate-900 */
+  --color-ink2: #334155; /* slate-700 */
+  --color-muted: #64748b; /* slate-500 (4.76:1 sobre blanco) */
   --color-surface: #ffffff;
-  --color-page: #f5f4f0;
-  --color-edge: #e8e6e0;
-  --color-accent: #1860a5;
-  --color-accent-bg: #e6f1fb;
-  --color-accent-strong: #134f8a;
-  --color-success: #2d7a2d;
-  --color-success-bg: #eaf3de;
+  --color-page: #f8fafc; /* Papel Alabastro (slate-50) */
+  --color-edge: #e2e8f0; /* slate-200 */
+
+  /* Índigo (primario) — Índigo Mérito / Profundo. */
+  --color-accent: #4f46e5; /* Índigo Mérito (indigo-600) */
+  --color-accent-bg: #eef2ff; /* indigo-50 */
+  --color-accent-strong: #4338ca; /* indigo-700 */
+
+  /* Verde (éxito) — Verde Ascenso (fondo: emerald-500; texto: emerald-700). */
+  --color-success: #047857; /* emerald-700 (5.9:1 sobre blanco, AA) */
+  --color-success-bg: #d1fae5; /* emerald-100 */
+
+  /*
+   * Peligro/error: la identidad de marca no define color de peligro; se
+   * conserva el rojo semántico ya auditado (7.07:1 sobre blanco, AA).
+   */
   --color-danger: #a32d2d;
   --color-danger-bg: #fcebeb;
 
-  /* Radios y sombra del prototipo (`--radius`, `--radius-lg`, `--shadow`). */
+  /*
+   * Índigo Profundo de marca `#1E1B4B` para `indigo-900` (Tailwind usa
+   * `#312E81`; la guía define el paso 900 como Índigo Profundo).
+   */
+  --color-indigo-900: #1e1b4b;
+
+  /* Radios y sombra del sistema de diseño. */
   --radius-card: 10px;
   --radius-panel: 16px;
   --shadow-suave: 0 1px 3px rgba(0, 0, 0, 0.08), 0 1px 2px rgba(0, 0, 0, 0.04);
-
-  /*
-   * Tokens M3 del mockup admin (docs/prototipo admin).
-   * Paleta índigo/lavanda exclusiva del panel `/admin`; NO reemplaza al
-   * oro de marca (landing y paneles teacher/student siguen con `gold`).
-   * Prefijo `md-` para no colisionar con los tokens existentes.
-   */
-  --color-md-primary: #3525cd;
-  --color-md-primary-container: #4f46e5;
-  --color-md-on-primary: #ffffff;
-  --color-md-on-primary-container: #dad7ff;
-  --color-md-surface: #faf8ff;
-  --color-md-surface-dim: #d2d9f4;
-  --color-md-surface-container-lowest: #ffffff;
-  --color-md-surface-container-low: #f2f3ff;
-  --color-md-surface-container: #eaedff;
-  --color-md-surface-container-high: #e2e7ff;
-  --color-md-surface-container-highest: #dae2fd;
-  --color-md-on-surface: #131b2e;
-  --color-md-on-surface-variant: #464555;
-  --color-md-outline: #777587;
-  --color-md-outline-variant: #c7c4d8;
-  --color-md-secondary: #855300;
-  --color-md-secondary-container: #fea619;
-  --color-md-on-secondary: #ffffff;
-  --color-md-on-secondary-fixed: #2a1700;
-  --color-md-secondary-fixed: #ffddb8;
-  --color-md-tertiary: #005338;
-  --color-md-tertiary-container: #006e4b;
-  --color-md-tertiary-fixed: #6ffbbe;
-  --color-md-on-tertiary: #ffffff;
-  --color-md-on-tertiary-container: #67f4b7;
-  --color-md-error: #ba1a1a;
-  --color-md-error-container: #ffdad6;
-  --color-md-on-error: #ffffff;
-  --color-md-inverse-surface: #283044;
-  --color-md-inverse-on-surface: #eef0ff;
-  --color-md-inverse-primary: #c3c0ff;
 }
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --background: #f8fafc; /* Papel Alabastro (lienzo de marca) */
+  --foreground: #0f172a; /* Pizarra Nocturna */
 
   /*
-   * Tokens de estado del kit UI (H5.2 / PRO-283).
-   * Fuente visual: `docs/prototipo-educoins.html:12` (spec 005 la declara
-   * fuente de verdad). `--muted` se oscureció de `#7a7971` a `#6b6a63`
-   * porque el original da 4.37:1 sobre blanco y no cumple AA para texto
-   * (auditoría T5.2.3).
+   * Tokens de estado del kit UI (H5.2 / PRO-283), alineados a la escala de
+   * marca (design-tokens.css).
    */
-  --success: #2d7a2d; /* 5.34:1 sobre blanco */
-  --success-bg: #eaf3de;
-  --danger: #a32d2d; /* 7.07:1 sobre blanco */
+  --success: #047857; /* emerald-700 (5.9:1 sobre blanco) */
+  --success-bg: #d1fae5; /* emerald-100 */
+  --danger: #a32d2d; /* 7.07:1 sobre blanco (sin rojo en la identidad) */
   --danger-bg: #fcebeb;
-  --muted: #6b6a63; /* 5.43:1 sobre blanco */
+  --muted: #64748b; /* slate-500 (4.76:1 sobre blanco) */
 }
 
 body {

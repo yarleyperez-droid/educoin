@@ -88,7 +88,7 @@ export function MockupNavegador() {
               </p>
               <p className="text-xs text-ink2">200 monedas para canjear</p>
             </div>
-            <span className="rounded-card bg-gold px-3 py-1.5 text-xs font-semibold text-white">
+            <span className="rounded-card bg-gold px-3 py-1.5 text-xs font-semibold text-ink">
               Canjear
             </span>
           </div>

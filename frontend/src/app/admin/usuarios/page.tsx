@@ -360,7 +360,7 @@ export default function UsuariosPage() {
                 onClick={() => void copiarContrasena()}
                 className={`rounded-lg px-3 py-2 text-sm font-semibold transition-colors ${
                   copiada
-                    ? 'bg-green-100 text-green-700'
+                    ? 'bg-emerald-100 text-emerald-700'
                     : 'bg-indigo-600 text-white hover:bg-indigo-700'
                 }`}
               >
@@ -730,9 +730,9 @@ export default function UsuariosPage() {
                         </td>
                         <td className='px-4 py-3 text-center'>
                           {fila.activo ? (
-                            <span className='inline-flex items-center gap-1.5 rounded-full bg-green-100 px-2.5 py-0.5 text-[11px] font-semibold text-green-700'>
+                            <span className='inline-flex items-center gap-1.5 rounded-full bg-emerald-100 px-2.5 py-0.5 text-[11px] font-semibold text-emerald-700'>
                               <span
-                                className='h-1.5 w-1.5 rounded-full bg-green-600'
+                                className='h-1.5 w-1.5 rounded-full bg-emerald-500'
                                 aria-hidden='true'
                               />
                               Activo

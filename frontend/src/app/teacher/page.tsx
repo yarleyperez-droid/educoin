@@ -122,7 +122,7 @@ export default function TeacherPage() {
   return (
     <div className='space-y-6'>
       {/* Hero */}
-      <section className='relative overflow-hidden rounded-2xl bg-gradient-to-br from-indigo-600 to-violet-700 p-6 text-white shadow-lg lg:p-8'>
+      <section className='relative overflow-hidden rounded-2xl bg-gradient-to-br from-indigo-600 to-indigo-900 p-6 text-white shadow-lg lg:p-8'>
         <div className='relative z-10 flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between'>
           <div className='lg:max-w-xl'>
             <span className='inline-flex items-center gap-1.5 rounded-full bg-white/20 px-3 py-1 text-xs font-medium backdrop-blur-sm'>
@@ -267,7 +267,7 @@ export default function TeacherPage() {
                       {clase.actividades.length} actividad
                       {clase.actividades.length === 1 ? '' : 'es'}
                     </span>
-                    <span className='inline-flex items-center gap-1 text-emerald-600'>
+                    <span className='inline-flex items-center gap-1 text-emerald-700'>
                       {publicadasClase} publicada
                       {publicadasClase === 1 ? '' : 's'}
                     </span>

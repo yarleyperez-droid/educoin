@@ -69,14 +69,14 @@ function clasePorTipo(tipo: TipoMovimiento): string {
     case "spending":
       return "bg-red-50 text-red-700 ring-red-200";
     case "reversal":
-      return "bg-blue-50 text-blue-700 ring-blue-200";
+      return "bg-indigo-50 text-indigo-700 ring-indigo-200";
     case "adjustment":
       return "bg-amber-50 text-amber-700 ring-amber-200";
   }
 }
 
 function colorImpacto(cantidad: number): string {
-  return cantidad < 0 ? "text-red-600" : "text-emerald-600";
+  return cantidad < 0 ? "text-red-600" : "text-emerald-700";
 }
 
 function formatearCantidad(cantidad: number): string {
@@ -217,7 +217,7 @@ export default function BilleteraPage() {
       </div>
 
       {/* Hero saldo */}
-      <section className='relative overflow-hidden rounded-2xl bg-gradient-to-br from-indigo-600 to-violet-700 p-6 text-white shadow-lg lg:p-8'>
+      <section className='relative overflow-hidden rounded-2xl bg-gradient-to-br from-indigo-600 to-indigo-900 p-6 text-white shadow-lg lg:p-8'>
         <div className='relative z-10 space-y-6'>
           <div>
             <p className='text-xs font-semibold uppercase tracking-wide text-indigo-100'>
