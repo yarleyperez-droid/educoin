@@ -6,6 +6,7 @@ import { usePathname } from 'next/navigation';
 import {
   IconDashboard,
   IconClasses,
+  IconCoin,
   IconBuilding,
   IconX,
   LockupEducoin,
@@ -14,6 +15,7 @@ import {
 const navItems = [
   { href: '/teacher', label: 'Dashboard', icon: IconDashboard },
   { href: '/teacher/clases', label: 'Mis Clases', icon: IconClasses },
+  { href: '/teacher/canjes', label: 'Canjes', icon: IconCoin },
 ];
 
 export function TeacherSidebar({ onClose }: { onClose?: () => void }) {

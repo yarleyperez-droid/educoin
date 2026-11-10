@@ -579,7 +579,7 @@ describe('H6.3 regresión del hito (e2e)', () => {
           .send({ itemId: String(itemAId) }),
       );
       expect(canje.status).toBe(201);
-      expect(canje.body.estado).toBe('completed');
+      expect(canje.body.estado).toBe('pending'); // H7.2: la solicitud nace pendiente
       expect(canje.body.costoMonedas).toBe(COSTO_ITEM);
       canjeId = canje.body.id;
 
@@ -897,7 +897,7 @@ describe('H6.3 regresión del hito (e2e)', () => {
           .send({ itemId: String(itemAId) }),
       );
       expect(canje.status).toBe(422);
-      expect(canje.body.message).toContain('No tienes monedas suficientes');
+      expect(canje.body.message).toBe('Saldo insuficiente');
 
       expect(await saldoInscripcion()).toEqual({
         ganadas: RECOMPENSA,
@@ -905,7 +905,7 @@ describe('H6.3 regresión del hito (e2e)', () => {
         disponibles: RECOMPENSA - COSTO_ITEM,
       });
       const canjes = await prisma.redemptions.count({
-        where: { item_id: itemAId, status: 'completed' },
+        where: { item_id: itemAId, status: 'pending' },
       });
       expect(canjes).toBe(1);
     });

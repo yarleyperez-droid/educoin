@@ -107,6 +107,7 @@ model redeemable_items {
   grade_points Decimal?      @db.Decimal(4, 2)
   stock        Int?
   status       item_status   @default(active)
+  auto_approve Boolean       @default(false) @map("auto_approve")
   created_at   DateTime      @default(now()) @db.Timestamptz(6)
   updated_at   DateTime      @default(now()) @db.Timestamptz(6)
   classes      classes       @relation(fields: [class_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
@@ -125,13 +126,17 @@ model redemptions {
   status           redemption_status @default(completed)
   redeemed_at      DateTime          @default(now()) @db.Timestamptz(6)
   reversed_at      DateTime?         @db.Timestamptz(6)
+  resolved_by      BigInt?           @map("resolved_by")
+  resolved_at      DateTime?         @map("resolved_at") @db.Timestamptz(6)
   notes            String?
   coin_movements   coin_movements?
   enrollments      enrollments       @relation(fields: [enrollment_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
   redeemable_items redeemable_items  @relation(fields: [item_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  resuelto_por     users?            @relation(fields: [resolved_by], references: [id], onDelete: NoAction, onUpdate: NoAction)
 
   @@index([enrollment_id], map: "idx_redemptions_enrollment")
   @@index([item_id], map: "idx_redemptions_item")
+  @@index([redeemed_at], map: "idx_redemptions_pending", where: raw("status = 'pending'"))
 }
 
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
@@ -176,6 +181,7 @@ model users {
   classes              classes[]
   coin_movements       coin_movements[]
   enrollments          enrollments[]
+  redemptions          redemptions[]
   submissions          submissions[]
   organizations        organizations?   @relation(fields: [organization_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
 
@@ -225,6 +231,10 @@ enum organization_type {
 }
 
 enum redemption_status {
+  pending
+  approved
+  rejected
+  delivered
   completed
   reversed
 }

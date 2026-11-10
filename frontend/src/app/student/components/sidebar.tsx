@@ -7,6 +7,7 @@ import {
   IconDashboard,
   IconActivities,
   IconWallet,
+  IconCoin,
   IconRanking,
   IconProgress,
   IconBuilding,
@@ -18,6 +19,7 @@ const navItems = [
   { href: '/student', label: 'Dashboard', icon: IconDashboard },
   { href: '/student/actividades', label: 'Mis Actividades', icon: IconActivities },
   { href: '/student/billetera', label: 'Mi Billetera', icon: IconWallet },
+  { href: '/student/canjes', label: 'Mis Canjes', icon: IconCoin },
   { href: '/student/ranking', label: 'Tabla de Posiciones', icon: IconRanking },
   { href: '/student/progreso', label: 'Mi Progreso', icon: IconProgress },
 ];

@@ -1,5 +1,6 @@
 /**
- * Fachada de canje del estudiante (H4.4 → T5.7.2 / PRO-391).
+ * Fachada de canje del estudiante (H4.4 → T5.7.2 / PRO-391, ampliada por
+ * el canje revisable de H7.3).
  *
  * Punto único entre `/student/canje` y el transporte. Habla con la API
  * real cuyo contrato fue verificado contra los controllers:
@@ -12,18 +13,24 @@
  * - `POST /api/v1/redemptions` `{ itemId }` → `CanjeRespuestaDto` en
  *   plano (201). La BD congela el costo y descuenta el stock: el front
  *   no calcula nada y, tras cualquier resultado, vuelve a pedir el saldo
- *   a la API (H4.4: rollback total garantizado por la BD).
+ *   a la API (H4.4: rollback total garantizado por la BD). Con el canje
+ *   revisable la fila nace `pending` (o `approved` si el ítem tiene
+ *   auto-aprobación: `aprobacionAutomatica: true`).
+ * - `GET /api/v1/redemptions/mine?page&limit` → historial propio con la
+ *   envoltura `{ data, meta }` (`ListadoCanjesDto`, T7.2.5): `api.get`.
  *
  * El estudiante **no envía** costo, saldo ni stock: solo el `itemId`.
  * Los errores (`ApiError` de H5.1) salen con el `message` en español del
  * backend (422 de saldo insuficiente/sin stock, 409 de conflicto).
  */
 
-import { apiPlano } from "@/lib/api-client";
+import { api, apiPlano } from "@/lib/api-client";
 
 import type {
   Canje,
+  CanjeListado,
   ItemCanje,
+  ListadoCanjes,
   PrevisualizacionCanje,
 } from "../contrato/canje";
 
@@ -91,11 +98,39 @@ export async function previsualizarCanje(
 /**
  * Confirma un canje (`POST /redemptions`).
  *
+ * Con el canje revisable (H7.2/T7.2.2) el resultado nace `pending`
+ * (pendiente de aprobación del profesor) o `approved` cuando el ítem
+ * tiene auto-aprobación (`aprobacionAutomatica: true`); el legado
+ * instantáneo devolvía `completed`.
+ *
  * @param itemId Id del ítem canjeado.
- * @returns El canje registrado (`estado: "completed"`).
+ * @returns El canje registrado con su estado real (`pending`/`approved`).
  * @throws {ApiError} 422 (saldo insuficiente / sin stock / ítem
  *   inactivo), 409 u otros; el mensaje del backend se propaga tal cual.
  */
 export async function canjear(itemId: string): Promise<Canje> {
   return apiPlano.post<Canje>("redemptions", { itemId });
+}
+
+/**
+ * Lista una página del historial de canjes del estudiante
+ * (`GET /redemptions/mine`, `{ data, meta }`, T7.2.5).
+ *
+ * @param page Página solicitada (≥ 1).
+ * @param limit Tamaño de página (1–100; por defecto 20 en el backend).
+ * @returns Sus canjes ordenados por `solicitadoEn` descendente.
+ * @throws {ApiError} Si la API falla o responde 401/403/500.
+ */
+export async function listarMisCanjes(
+  page: number,
+  limit: number,
+): Promise<ListadoCanjes> {
+  const respuesta = await api.get<CanjeListado[]>(
+    `redemptions/mine?page=${page}&limit=${limit}`,
+  );
+
+  return {
+    data: respuesta.data,
+    meta: respuesta.meta ?? { total: respuesta.data.length, page, limit },
+  };
 }

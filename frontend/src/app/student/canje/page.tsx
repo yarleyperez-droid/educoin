@@ -11,10 +11,18 @@
  * **refresca contra la API** (el rollback total lo garantiza la BD, el
  * front no recalcula). Errores 422/409 salen con el `message` real del
  * backend vía toast (cliente H5.1).
+ *
+ * Con el canje revisable (H7.3 / T7.2.2) el resultado ya no es "Canje
+ * realizado": se muestra el **estado real** del `CanjeRespuestaDto` —
+ * `pending` ("Solicitud enviada: pendiente de aprobación del profesor",
+ * con las monedas ya reservadas) o `approved` con `aprobacionAutomatica`
+ * ("Aprobado automáticamente, pendiente de entrega"). El panel de
+ * resultado enlaza a "Mis canjes" (`/student/canjes`).
  */
 
 "use client";
 
+import Link from "next/link";
 import { useEffect, useState } from "react";
 
 import {
@@ -32,6 +40,7 @@ import {
 } from "@/features/billetera/api/canje";
 import { obtenerSaldo } from "@/features/billetera/api/billetera";
 import type {
+  Canje,
   ItemCanje,
   PrevisualizacionCanje,
 } from "@/features/billetera/contrato/canje";
@@ -49,6 +58,53 @@ const TEXTO_CONFIRMAR = "Confirmar canje";
 
 /** Texto del botón de cancelar la confirmación. */
 const TEXTO_CANCELAR = "Cancelar";
+
+/** Toast/result cuando el canje nace `pending` (H7.3). */
+const MENSAJE_PENDIENTE =
+  "Solicitud enviada: pendiente de aprobación del profesor.";
+
+/** Toast/result cuando el canje sale `approved` por auto-aprobación (H7.3). */
+const MENSAJE_AUTOAPROBADO = "Aprobado automáticamente, pendiente de entrega.";
+
+/**
+ * Título del panel de resultado según el estado real del canje.
+ *
+ * @param canje Canje recién confirmado (`CanjeRespuestaDto`).
+ * @returns Título corto del panel.
+ */
+function tituloResultado(canje: Canje): string {
+  if (canje.estado === "approved") {
+    return canje.aprobacionAutomatica
+      ? "Aprobado automáticamente"
+      : "Aprobado";
+  }
+
+  if (canje.estado === "completed") {
+    return "Canje realizado";
+  }
+
+  return "Solicitud enviada";
+}
+
+/**
+ * Descripción del panel de resultado según el estado real del canje.
+ *
+ * @param canje Canje recién confirmado (`CanjeRespuestaDto`).
+ * @returns Texto que explica qué pasa ahora con el canje y las monedas.
+ */
+function descripcionResultado(canje: Canje): string {
+  if (canje.estado === "approved") {
+    return `Tu canje de “${canje.nombreItem}” fue aprobado${
+      canje.aprobacionAutomatica ? " automáticamente" : ""
+    } y está pendiente de entrega.`;
+  }
+
+  if (canje.estado === "completed") {
+    return `Tu canje de “${canje.nombreItem}” se completó.`;
+  }
+
+  return `Tu canje de “${canje.nombreItem}” está pendiente de aprobación del profesor. Tus ${canje.costoMonedas} monedas ya quedaron reservadas: si el profesor rechaza la solicitud, te las devolveremos.`;
+}
 
 /**
  * Etiqueta visible del stock: "Sin límite" cuando el backend devuelve
@@ -76,6 +132,8 @@ export default function CanjePage() {
   const [preview, setPreview] = useState<PrevisualizacionCanje | null>(null);
   const [cargandoPreview, setCargandoPreview] = useState(false);
   const [canjeando, setCanjeando] = useState(false);
+  /** Último canje confirmado (panel de resultado con su estado real). */
+  const [resultado, setResultado] = useState<Canje | null>(null);
   /** Contador para forzar una recarga desde un evento (tras canje/error). */
   const [recarga, setRecarga] = useState(0);
 
@@ -149,16 +207,25 @@ export default function CanjePage() {
   }
 
   /**
-   * Confirma el canje y fuerza el refresco de saldo/catálogo contra la
-   * API, tanto en éxito como en error (CA 3: el saldo no cambia si falla
-   * y el front nunca recalcula).
+   * Confirma el canje y muestra su **estado real** (H7.3: `pending` o
+   * `approved` con auto-aprobación), forzando además el refresco de
+   * saldo/catálogo contra la API, tanto en éxito como en error (CA 3: el
+   * saldo no cambia si falla y el front nunca recalcula). Los errores
+   * 422/409 se muestran con el mensaje exacto del backend.
    */
   async function confirmar(): Promise<void> {
     if (seleccion === null) return;
     setCanjeando(true);
+    setResultado(null);
     try {
       const canje = await canjear(seleccion.id);
-      mostrar(`Canje realizado: ${canje.nombreItem}.`, "exito");
+      setResultado(canje);
+      mostrar(
+        canje.estado === "approved"
+          ? MENSAJE_AUTOAPROBADO
+          : MENSAJE_PENDIENTE,
+        "exito",
+      );
     } catch (e) {
       mostrar(mensajeDeErrorApi(e), "error");
     } finally {
@@ -182,6 +249,40 @@ export default function CanjePage() {
           Saldo disponible:{" "}
           <span data-testid="saldo-canje">{saldo}</span> monedas
         </p>
+      )}
+
+      {/* Resultado del último canje: estado REAL (H7.3), no "Canje realizado". */}
+      {resultado !== null && (
+        <section
+          aria-label="Resultado del canje"
+          className={`mt-4 rounded-md border p-4 ${
+            resultado.estado === "approved"
+              ? "border-emerald-200 bg-emerald-50"
+              : "border-indigo-200 bg-indigo-50"
+          }`}
+        >
+          <h3 className="text-sm font-semibold text-slate-900">
+            {tituloResultado(resultado)}
+          </h3>
+          <p className="mt-1 text-sm text-slate-700">
+            {descripcionResultado(resultado)}
+          </p>
+          <div className="mt-3 flex flex-wrap gap-3">
+            <Link
+              href="/student/canjes"
+              className="rounded-md bg-slate-900 px-3 py-1.5 text-xs font-medium text-white hover:bg-slate-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-500 focus-visible:ring-offset-2"
+            >
+              Ver mis canjes
+            </Link>
+            <button
+              type="button"
+              onClick={() => setResultado(null)}
+              className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50"
+            >
+              Seguir canjeando
+            </button>
+          </div>
+        </section>
       )}
 
       {cargando && <EstadoCarga mensaje="Cargando recompensas…" />}

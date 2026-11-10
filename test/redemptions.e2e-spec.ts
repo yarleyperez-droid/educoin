@@ -8,13 +8,18 @@ import { configurarApp } from './../src/app.setup';
 import { PrismaService } from './../src/prisma/prisma.service';
 
 /**
- * Canje instantáneo con anulación (H4.4 / PRO-282, T4.4.4).
+ * Canje con anulación (H4.4 / PRO-282 + H7.2 / PRO-447, T4.4.4).
  *
  * Corre contra la BD REAL (los triggers §12.6–12.8 hacen el negocio:
- * congelado de costo, descuento de stock/monedas y reversión). Cubre los
- * CAs 1–4: camino feliz, saldo insuficiente con rollback total, stock 0
- * con rollback total y anulación `completed → reversed` con monedas y
- * stock de vuelta.
+ * congelado de costo, descuento de stock/monedas y reversión). Desde H7.2
+ * la solicitud nace **`pending`** (flujo revisable); la anulación
+ * `completed → reversed` solo aplica a canjes **legacy** del MVP (la
+ * reversión de los canjes nuevos la dispara el rechazo del profesor —
+ * ver `canje-revisable.e2e-spec.ts`). Cubre:
+ * - Solicitud `pending` con saldo/stock descontados (reserva).
+ * - Saldo insuficiente → 422 `Saldo insuficiente` con rollback total.
+ * - Stock 0 → 422 `Sin stock disponible` con rollback total.
+ * - Anulación de un canje legacy `completed → reversed` (trigger revierte).
  *
  * Fixtures (el seed no otorga monedas ni tiene ítem sin stock):
  * - `adjustment` de +120 monedas a la inscripción de `est.perez` (el trigger
@@ -66,6 +71,7 @@ describe('Canje instantáneo con anulación (e2e)', () => {
   let itemSeedGradoId = 0n;
   let itemSeedDiversionId = 0n;
   let canjeId = '';
+  let canjeLegacyId = 0n;
 
   beforeAll(async () => {
     const moduleFixture: TestingModule = await Test.createTestingModule({
@@ -242,7 +248,7 @@ describe('Canje instantáneo con anulación (e2e)', () => {
     );
   });
 
-  it('CA 1: el canje queda completed con costo congelado, saldo y stock descontados', async () => {
+  it('CA 1: la solicitud nace pending con costo congelado, saldo y stock descontados', async () => {
     const saldoAntes = await saldoDisponible();
     const stockAntes = await stockDe(itemFixtureId);
 
@@ -252,10 +258,12 @@ describe('Canje instantáneo con anulación (e2e)', () => {
       .send({ itemId: String(itemFixtureId) });
 
     expect(respuesta.status).toBe(201);
-    expect(respuesta.body.estado).toBe('completed');
+    expect(respuesta.body.estado).toBe('pending');
     expect(respuesta.body.costoMonedas).toBe(30);
     expect(respuesta.body.itemId).toBe(String(itemFixtureId));
     expect(respuesta.body.reversadoEn).toBeNull();
+    expect(respuesta.body.resueltoEn).toBeNull();
+    expect(respuesta.body.aprobacionAutomatica).toBe(false);
     canjeId = respuesta.body.id;
 
     expect(await saldoDisponible()).toBe(saldoAntes - 30);
@@ -266,9 +274,17 @@ describe('Canje instantáneo con anulación (e2e)', () => {
       where: { id: BigInt(canjeId) },
     });
     expect(Number(fila?.cost_coins)).toBe(30);
+    expect(fila?.status).toBe('pending');
+    expect(fila?.resolved_at).toBeNull();
+
+    // La reserva deja exactamente 1 movimiento `spending`.
+    const movimientos = await prisma.coin_movements.findMany({
+      where: { redemption_id: BigInt(canjeId) },
+    });
+    expect(movimientos.map((m) => m.type)).toEqual(['spending']);
   });
 
-  it('CA 2: saldo insuficiente → 422 con rollback total (ni saldo ni stock)', async () => {
+  it('CA 2: saldo insuficiente → 422 `Saldo insuficiente` con rollback total (ni saldo ni stock)', async () => {
     const stockAntes = await stockDe(itemFixtureId);
 
     const respuesta = await httpServer
@@ -277,7 +293,7 @@ describe('Canje instantáneo con anulación (e2e)', () => {
       .send({ itemId: String(itemFixtureId) });
 
     expect(respuesta.status).toBe(422);
-    expect(respuesta.body.message).toContain('No tienes monedas suficientes');
+    expect(respuesta.body.message).toBe('Saldo insuficiente');
 
     const filas = await prisma.$queryRaw<{ coins_available: number }[]>`
       SELECT e.coins_available
@@ -288,13 +304,14 @@ describe('Canje instantáneo con anulación (e2e)', () => {
     expect(Number(filas[0]?.coins_available ?? -1)).toBe(0);
     expect(await stockDe(itemFixtureId)).toBe(stockAntes);
 
+    // Sin creación de fila: solo el canje `pending` del CA 1.
     const canjes = await prisma.redemptions.count({
-      where: { item_id: itemFixtureId, status: 'completed' },
+      where: { item_id: itemFixtureId, status: 'pending' },
     });
     expect(canjes).toBe(1); // solo el del CA 1
   });
 
-  it('CA 3: ítem sin stock → 422 con rollback total', async () => {
+  it('CA 3: ítem sin stock → 422 `Sin stock disponible` con rollback total', async () => {
     const saldoAntes = await saldoDisponible();
 
     const respuesta = await httpServer
@@ -303,17 +320,35 @@ describe('Canje instantáneo con anulación (e2e)', () => {
       .send({ itemId: String(itemSinStockId) });
 
     expect(respuesta.status).toBe(422);
-    expect(respuesta.body.message).toContain('sin stock');
+    expect(respuesta.body.message).toBe('Sin stock disponible');
     expect(await saldoDisponible()).toBe(saldoAntes);
     expect(await stockDe(itemSinStockId)).toBe(0);
+
+    const canjes = await prisma.redemptions.count({
+      where: { item_id: itemSinStockId },
+    });
+    expect(canjes).toBe(0); // sin creación de fila
   });
 
-  it('CA 4: anular revierte monedas y stock y deja el canje reversed', async () => {
+  it('CA 4: anular un canje legacy completed revierte monedas y stock y deja el canje reversed', async () => {
+    // Fixture legacy (flujo instantáneo del MVP, retirado en H7.2): una
+    // fila que nace `completed` directamente en BD, como existía antes.
+    // Los triggers disparan igual la reserva (stock -1 y `spending`).
+    const legacy = await prisma.redemptions.create({
+      data: {
+        enrollment_id: inscripcionEstudianteId,
+        item_id: itemFixtureId,
+        cost_coins: 30,
+        status: 'completed',
+      },
+    });
+    canjeLegacyId = legacy.id;
+
     const saldoAntes = await saldoDisponible();
     const stockAntes = await stockDe(itemFixtureId);
 
     const respuesta = await httpServer
-      .post(`/api/v1/redemptions/${canjeId}/reverse`)
+      .post(`/api/v1/redemptions/${canjeLegacyId}/reverse`)
       .set('Authorization', `Bearer ${tokenEstudiante}`);
 
     expect(respuesta.status).toBe(200);
@@ -324,20 +359,29 @@ describe('Canje instantáneo con anulación (e2e)', () => {
     expect(await stockDe(itemFixtureId)).toBe((stockAntes ?? 0) + 1);
 
     const movimientos = await prisma.coin_movements.findMany({
-      where: { redemption_id: BigInt(canjeId) },
+      where: { redemption_id: canjeLegacyId },
       orderBy: { id: 'asc' },
     });
     expect(movimientos.map((m) => m.type)).toEqual(['spending', 'reversal']);
     expect(Number(movimientos[1]?.quantity)).toBe(30); // reversal positivo
   });
 
-  it('doble anulación → 409', async () => {
+  it('doble anulación (o cualquier estado fuera de completed) → 409 `El canje ya fue resuelto`', async () => {
+    const respuesta = await httpServer
+      .post(`/api/v1/redemptions/${canjeLegacyId}/reverse`)
+      .set('Authorization', `Bearer ${tokenEstudiante}`);
+
+    expect(respuesta.status).toBe(409);
+    expect(respuesta.body.message).toBe('El canje ya fue resuelto');
+  });
+
+  it('reverse sobre un canje nuevo (pending) → 409: la reversión ahora es del rechazo del profesor', async () => {
     const respuesta = await httpServer
       .post(`/api/v1/redemptions/${canjeId}/reverse`)
       .set('Authorization', `Bearer ${tokenEstudiante}`);
 
     expect(respuesta.status).toBe(409);
-    expect(respuesta.body.message).toBe('El canje ya fue anulado.');
+    expect(respuesta.body.message).toBe('El canje ya fue resuelto');
   });
 
   it('anular un canje inexistente o ajeno responde 404 (anti-enumeración)', async () => {
