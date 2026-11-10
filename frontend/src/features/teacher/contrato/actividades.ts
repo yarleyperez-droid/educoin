@@ -40,6 +40,23 @@ export const TIPOS_PREGUNTA = [
   "minigame",
 ] as const;
 
+/**
+ * Camino NORMAL de calificación de una actividad (espejo de
+ * `ModoCalificacion` en `src/modules/activities/dto/preguntas.schema.ts`):
+ *
+ * - `"automatica"`: todas las preguntas son `test`/`completion` → la
+ *   entrega se auto-califica al enviarse (umbral ≥ 80% del puntaje
+ *   total; por debajo, cae en revisión del profesor);
+ * - `"manual"`: hay al menos una pregunta `file`/`minigame` → el
+ *   profesor revisa y califica.
+ *
+ * Describe el camino normal de la actividad, no el veredicto de una
+ * entrega concreta. Lo calcula el backend desde `questions` y viaja en
+ * los DTOs de actividad (`totalPuntos`/`modoCalificacion`); la UI solo
+ * lo muestra.
+ */
+export type ModoCalificacion = "automatica" | "manual";
+
 /** Opción de una pregunta `test`/`completion` (clave del JSONB). */
 export const OpcionSchema = z.object({
   /** Texto visible de la opción (clave `text` del JSONB). */

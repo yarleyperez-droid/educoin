@@ -1,5 +1,9 @@
 import type { activity_status } from '../../../generated/prisma/client';
-import type { Pregunta, PreguntaSinRespuestas } from './preguntas.schema';
+import type {
+  ModoCalificacion,
+  Pregunta,
+  PreguntaSinRespuestas,
+} from './preguntas.schema';
 
 /**
  * Datos de la actividad que SALEN hacia el cliente (AGENTS.md §8: nunca
@@ -18,6 +22,10 @@ export class ActividadRespuestaDto {
   descripcion!: string | null;
   recompensaMonedas!: number;
   estado!: activity_status;
+  /** Suma de preguntas[].score (puntaje máximo de la actividad). */
+  totalPuntos!: number;
+  /** Camino normal de calificación: automática o revisión del profesor. */
+  modoCalificacion!: ModoCalificacion;
   /** questions JSONB tal como quedó guardado (estructura de la seed). */
   preguntas!: Pregunta[];
   publicadaEn!: string | null;
@@ -42,6 +50,10 @@ export class ActividadEstudianteRespuestaDto {
   descripcion!: string | null;
   recompensaMonedas!: number;
   estado!: activity_status;
+  /** Suma de preguntas[].score (puntaje máximo de la actividad). */
+  totalPuntos!: number;
+  /** Camino normal de calificación: automática o revisión del profesor. */
+  modoCalificacion!: ModoCalificacion;
   /** questions JSONB SANITIZADO: nunca incluye respuestas correctas. */
   preguntas!: PreguntaSinRespuestas[];
   publicadaEn!: string | null;
@@ -62,13 +74,18 @@ export class ActividadCreadaRespuestaDto {
 /**
  * Ítem del listado de actividades: SIN preguntas — el JSONB completo
  * puede ser grande y para la lista basta el resumen; el detalle está en
- * GET /activities/:id.
+ * GET /activities/:id. `totalPuntos` y `modoCalificacion` se derivan
+ * del JSONB en la misma fila de la consulta (sin N+1).
  */
 export class ActividadListadoDto {
   id!: string;
   titulo!: string;
   estado!: activity_status;
   recompensaMonedas!: number;
+  /** Suma de preguntas[].score (puntaje máximo de la actividad). */
+  totalPuntos!: number;
+  /** Camino normal de calificación: automática o revisión del profesor. */
+  modoCalificacion!: ModoCalificacion;
   publicadaEn!: string | null;
   cierraEn!: string | null;
   creadoEn!: string;

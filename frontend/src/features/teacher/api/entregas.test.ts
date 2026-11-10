@@ -189,6 +189,7 @@ const DETALLE_CON_NULLS = {
   entregadoEn: "2026-10-18T15:30:00.000Z",
   calificadoEn: null,
   puntaje: null,
+  puntajeAutomatico: 5,
   monedasOtorgadas: 0,
   feedback: null,
   respuestas: [
@@ -214,6 +215,7 @@ const DETALLE_ESPERADO: EntregaDetalle = {
   entregadoEn: "2026-10-18T15:30:00.000Z",
   calificadoEn: null,
   puntaje: null,
+  puntajeAutomatico: 5,
   monedasOtorgadas: 0,
   feedback: null,
   respuestas: [

@@ -20,6 +20,10 @@ import {
   listarInscripciones,
   type Inscripcion,
 } from '@/features/estudiante/api/inscripciones';
+import {
+  BadgeModoCalificacion,
+  explicacionModoCalificacion,
+} from '@/features/estudiante/componentes/badge-modo-calificacion';
 import type { ActividadResumen } from '@/features/estudiante/contrato/cuestionario';
 import { ApiError } from '@/lib/api-client';
 
@@ -183,12 +187,16 @@ export default function ActividadesEstudiantePage() {
                       </span>
                       <span className='inline-flex items-center gap-1 rounded-full bg-amber-50 px-2 py-0.5 text-xs font-semibold text-amber-700'>
                         <IconCoin className='h-3 w-3' />
-                        {actividad.recompensaMonedas} monedas
+                        hasta {actividad.recompensaMonedas} monedas
                       </span>
                     </div>
-                    <h3 className='mt-2 text-sm font-semibold text-slate-900'>
+                    <h3 className='mt-2 flex flex-wrap items-center gap-2 text-sm font-semibold text-slate-900'>
                       {actividad.titulo}
+                      <BadgeModoCalificacion modo={actividad.modoCalificacion} />
                     </h3>
+                    <p className='mt-1 text-xs text-slate-500'>
+                      {explicacionModoCalificacion(actividad.modoCalificacion)}
+                    </p>
                     <p className='mt-1 inline-flex items-center gap-1 text-xs text-slate-500'>
                       {actividad.cierraEn !== null ? (
                         <>

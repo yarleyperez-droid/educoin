@@ -77,6 +77,10 @@ Cobertura de cada requisito de la ficha oficial respecto a lo planificado:
   - Restricción "no mezclar modalidades" (CHECK o trigger).
 - **Prioridad:** 🟡 Media — el MVP ya cubre ambos caminos de forma simple
   (auto-calificación en backend + `fn_award_coins`, y manual con `graded_by`).
+  Desde la corrección de coherencia puntaje↔monedas, el MVP usa un umbral
+  **por puntos** (80% fijo) y paga `reward_coins` **proporcional al puntaje**;
+  lo pendiente de esta idea es hacer el umbral **configurable por actividad**
+  (`porcentaje_aprobacion`).
 - **Estado del plan:** sin historias planificadas.
 
 ### 3. Tabla `preguntas` independiente (hoy es JSONB)

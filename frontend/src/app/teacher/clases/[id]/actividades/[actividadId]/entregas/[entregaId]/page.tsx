@@ -204,8 +204,10 @@ export default function DetalleEntregaPage() {
   const { mostrar } = useToast();
 
   const [entrega, setEntrega] = useState<EntregaDetalle | null>(null);
-  /** Total de puntos de la actividad (suma de `preguntas[].score`). */
+  /** Total de puntos de la actividad (lo trae la API). */
   const [total, setTotal] = useState<number | null>(null);
+  /** Recompensa máxima de la actividad (monedas proporcionales al puntaje). */
+  const [recompensaMaxima, setRecompensaMaxima] = useState<number | null>(null);
   const [cargando, setCargando] = useState(true);
   /** Mensaje de "no encontrada" (traducción del `404` a `null`). */
   const [noEncontrada, setNoEncontrada] = useState<string | null>(null);
@@ -236,6 +238,7 @@ export default function DetalleEntregaPage() {
         if (encontrada === null) {
           setEntrega(null);
           setTotal(null);
+          setRecompensaMaxima(null);
           setNoEncontrada(MENSAJE_NO_ENCONTRADA);
           return;
         }
@@ -243,13 +246,22 @@ export default function DetalleEntregaPage() {
         if (actividad === null) {
           setEntrega(null);
           setTotal(null);
+          setRecompensaMaxima(null);
           setNoEncontrada(MENSAJE_ACTIVIDAD_NO_ENCONTRADA);
           return;
         }
 
         setEntrega(encontrada);
-        setTotal(
-          actividad.preguntas.reduce((suma, pregunta) => suma + pregunta.score, 0),
+        setTotal(actividad.totalPuntos);
+        setRecompensaMaxima(actividad.recompensaMonedas);
+        // Prellenado: en una entrega enviada, el puntaje ya calculado por
+        // las preguntas automáticas es el punto de partida; el profesor
+        // puede ajustarlo antes de calificar.
+        setPuntaje(
+          encontrada.estado === "submitted" &&
+            encontrada.puntajeAutomatico !== null
+            ? String(encontrada.puntajeAutomatico)
+            : "",
         );
         setNoEncontrada(null);
         setErrorCarga(null);
@@ -257,6 +269,7 @@ export default function DetalleEntregaPage() {
         if (vigente) {
           setEntrega(null);
           setTotal(null);
+          setRecompensaMaxima(null);
           setErrorCarga(mensajeDeErrorApi(e));
         }
       } finally {
@@ -537,6 +550,16 @@ export default function DetalleEntregaPage() {
                   className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-200 disabled:cursor-not-allowed disabled:opacity-60"
                 />
                 <p className="mt-1 text-xs text-slate-500">0 a {total}</p>
+                {entrega.puntajeAutomatico !== null && (
+                  <p className="mt-1 text-xs text-slate-500">
+                    Puntaje automático: {entrega.puntajeAutomatico} de {total} —
+                    puedes ajustarlo.
+                  </p>
+                )}
+                <p className="mt-2 text-xs text-slate-500">
+                  Recompensa máxima: {recompensaMaxima ?? "—"} monedas — se paga
+                  proporcional al puntaje final.
+                </p>
               </div>
 
               <div>
@@ -623,6 +646,7 @@ export default function DetalleEntregaPage() {
               </dt>
               <dd className="text-sm text-slate-900">
                 {entrega.puntaje === null ? "—" : entrega.puntaje}
+                {total !== null ? ` de ${total}` : ""}
               </dd>
             </div>
             <div>
@@ -631,6 +655,7 @@ export default function DetalleEntregaPage() {
               </dt>
               <dd className="text-sm text-slate-900">
                 {entrega.monedasOtorgadas}
+                {recompensaMaxima !== null ? ` de ${recompensaMaxima}` : ""}
               </dd>
             </div>
             <div>

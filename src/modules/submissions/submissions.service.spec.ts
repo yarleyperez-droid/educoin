@@ -1477,10 +1477,35 @@ describe('SubmissionsService', () => {
         entregadoEn: '2026-10-17T10:00:00.000Z',
         calificadoEn: null,
         puntaje: null,
+        puntajeAutomatico: 10,
         monedasOtorgadas: 0,
         feedback: null,
         respuestas: RESPUESTAS_CALIFICADAS_OK,
       });
+    });
+
+    it('puntajeAutomatico null cuando ninguna respuesta tiene score (todas file/minigame)', async () => {
+      prisma.submissions.findFirst.mockResolvedValue({
+        ...DETALLE_SUBMITTED,
+        answers: [
+          {
+            question_position: 1,
+            files: [
+              {
+                path: '7/1/11111111-1111-4111-8111-111111111111.pdf',
+                mime: 'application/pdf',
+                bytes: 100,
+              },
+            ],
+            is_correct: null,
+            score: null,
+          },
+        ],
+      });
+
+      const resultado = await submissionsService.detalle('7', '21', PROFESOR);
+
+      expect(resultado.puntajeAutomatico).toBeNull();
     });
 
     it('entrega inexistente (o de otra actividad): el 404 estándar', async () => {
@@ -1573,6 +1598,7 @@ describe('SubmissionsService', () => {
           entregadoEn: '2026-10-17T10:00:00.000Z',
           calificadoEn: '2026-10-18T12:00:00.000Z',
           puntaje: 7.5,
+          puntajeAutomatico: 10,
           monedasOtorgadas: 120,
           feedback: 'Bien en general; revisa el planteo del ejercicio 1.',
           respuestas: RESPUESTAS_CALIFICADAS_OK,

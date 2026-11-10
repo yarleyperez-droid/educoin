@@ -181,6 +181,10 @@ describe('Actividades (e2e, datos del seed)', () => {
         descripcion: CUERPO_CREAR.descripcion,
         recompensaMonedas: 120,
         estado: 'draft',
+        // Puntaje total de la actividad (5 + 5) y su camino normal de
+        // calificación: solo preguntas test/completion → 'automatica'.
+        totalPuntos: 10,
+        modoCalificacion: 'automatica',
         preguntas: PREGUNTAS,
         publicadaEn: null,
         cierraEn: null,

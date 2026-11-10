@@ -71,6 +71,12 @@ export default function EditarActividadPage() {
   const [recompensa, setRecompensa] = useState("");
   const [preguntas, setPreguntas] = useState<Pregunta[]>([]);
 
+  /** Suma de los puntajes: el máximo que puede obtener el estudiante. */
+  const totalPuntos = preguntas.reduce(
+    (suma, pregunta) => suma + pregunta.score,
+    0,
+  );
+
   const [guardando, setGuardando] = useState(false);
   const [errorResumen, setErrorResumen] = useState<string | null>(null);
   const [mensajeExito, setMensajeExito] = useState<string | null>(null);
@@ -321,7 +327,7 @@ export default function EditarActividadPage() {
                     htmlFor='recompensa-actividad'
                     className='block text-sm font-medium text-slate-700'
                   >
-                    Recompensa (monedas)
+                    Recompensa máxima (monedas)
                   </label>
                   <input
                     id='recompensa-actividad'
@@ -333,6 +339,9 @@ export default function EditarActividadPage() {
                     disabled={guardando}
                     className='mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-200 disabled:cursor-not-allowed disabled:opacity-60'
                   />
+                  <p className='mt-1 text-xs text-slate-500'>
+                    Se otorga proporcionalmente al puntaje obtenido.
+                  </p>
                 </div>
 
                 <EditorPreguntas
@@ -340,6 +349,10 @@ export default function EditarActividadPage() {
                   cambiarPreguntas={setPreguntas}
                   deshabilitado={guardando}
                 />
+
+                <p className='text-xs text-slate-500' aria-live='polite'>
+                  Total de la actividad: {totalPuntos} puntos
+                </p>
 
                 {errorResumen !== null && (
                   <p

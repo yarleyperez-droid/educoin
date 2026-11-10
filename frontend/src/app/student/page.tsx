@@ -327,7 +327,7 @@ export default function StudentPage() {
                   <div className='flex shrink-0 flex-col items-end gap-2'>
                     <span className='inline-flex items-center gap-1 rounded-full bg-amber-50 px-2 py-1 text-xs font-semibold text-amber-700'>
                       <IconCoin className='h-3 w-3' />
-                      +{actividad.recompensaMonedas} EduCoins
+                      hasta +{actividad.recompensaMonedas} EduCoins
                     </span>
                     <Link
                       href={`/student/actividades/${actividad.id}`}

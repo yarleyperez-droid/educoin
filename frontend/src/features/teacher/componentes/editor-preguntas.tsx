@@ -345,6 +345,9 @@ export function EditorPreguntas({
               onChange={(e) => cambiarScore(indice, e.target.value)}
               className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-200 disabled:cursor-not-allowed disabled:opacity-60"
             />
+            <p className="mt-1 text-xs text-slate-500">
+              Pesa en el puntaje final de la actividad.
+            </p>
           </div>
 
           {pregunta.type === "completion" && (

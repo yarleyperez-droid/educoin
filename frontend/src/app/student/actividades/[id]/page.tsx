@@ -40,6 +40,10 @@ import {
   obtenerEntrega,
   type Entrega,
 } from "@/features/estudiante/api/entregas";
+import {
+  BadgeModoCalificacion,
+  explicacionModoCalificacion,
+} from "@/features/estudiante/componentes/badge-modo-calificacion";
 import { PreguntaCuestionario } from "@/features/estudiante/componentes/pregunta-cuestionario";
 import type {
   ActividadEstudiante,
@@ -61,6 +65,19 @@ const MENSAJE_INCOMPLETO =
 
 /** Mensaje del bloqueo tras el envío. */
 const MENSAJE_ENVIADO = "Respuestas enviadas";
+
+/** Título cuando la entrega espera la revisión del profesor. */
+const MENSAJE_PENDIENTE_REVISION = "Pendiente de revisión del profesor";
+
+/**
+ * Motivo del estado pendiente cuando la actividad se auto-califica:
+ * la entrega quedó por debajo del umbral del 80% del puntaje total.
+ */
+const MOTIVO_PENDIENTE_AUTOMATICA = "No alcanzaste el 80% del puntaje.";
+
+/** Motivo del estado pendiente cuando la actividad tiene revisión manual. */
+const MOTIVO_PENDIENTE_MANUAL =
+  "La actividad incluye preguntas de revisión manual.";
 
 /** Texto del bloqueo: ya no hay reintento (UNIQUE de la BD). */
 const MENSAJE_SIN_REINTENTO =
@@ -245,9 +262,16 @@ export default function CuestionarioPage() {
     }
   }
 
-  /** Puntos totales posibles de la actividad (para el marcador). */
-  const totalPuntos =
-    actividad?.preguntas.reduce((total, pregunta) => total + pregunta.score, 0) ?? 0;
+  /** Puntos totales posibles de la actividad (para el marcador): los trae
+   * la API (`totalPuntos`), la UI no los recalcula. */
+  const totalPuntos = actividad?.totalPuntos ?? 0;
+
+  /** Puntos ya obtenidos en las preguntas auto-evaluadas. Solo alimenta
+   * el mensaje de revisión: la UI no calcula monedas. */
+  const puntosAutomaticos = (entrega?.resultado ?? []).reduce(
+    (suma, item) => suma + item.puntos,
+    0,
+  );
 
   if (cargando) {
     return <EstadoCarga mensaje="Cargando la actividad…" />;
@@ -284,12 +308,16 @@ export default function CuestionarioPage() {
               {etiquetaEstadoEntrega(entrega.estado)}
             </span>
           )}
+          <BadgeModoCalificacion modo={actividad.modoCalificacion} />
         </div>
         {actividad.descripcion !== null && (
           <p className="mt-1 max-w-2xl text-sm text-slate-500">
             {actividad.descripcion}
           </p>
         )}
+        <p className="mt-1 max-w-2xl text-sm text-slate-500">
+          {explicacionModoCalificacion(actividad.modoCalificacion)}
+        </p>
         <Link
           href="/student/actividades"
           className="mt-2 inline-block text-sm font-medium text-indigo-600 hover:text-indigo-700"
@@ -320,12 +348,25 @@ export default function CuestionarioPage() {
                 </p>
 
                 {entrega.estado === "submitted" && (
-                  <p
+                  <div
                     role="status"
                     className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-700"
                   >
-                    Esperando el resultado de la auto-calificación…
-                  </p>
+                    <p className="font-semibold">
+                      {MENSAJE_PENDIENTE_REVISION}
+                    </p>
+                    <p className="mt-1">
+                      {actividad.modoCalificacion === "automatica"
+                        ? MOTIVO_PENDIENTE_AUTOMATICA
+                        : MOTIVO_PENDIENTE_MANUAL}
+                    </p>
+                    {actividad.modoCalificacion === "automatica" && (
+                      <p className="mt-1">
+                        Llevas {puntosAutomaticos} de {totalPuntos} puntos en
+                        las preguntas automáticas.
+                      </p>
+                    )}
+                  </div>
                 )}
 
                 {entrega.estado === "graded" && (
@@ -342,7 +383,8 @@ export default function CuestionarioPage() {
                       </h3>
                       <p className="mt-1 text-sm text-slate-700">
                         {entrega.puntaje} / {totalPuntos} puntos ·{" "}
-                        {entrega.monedasOtorgadas} monedas
+                        {entrega.monedasOtorgadas} de{" "}
+                        {actividad.recompensaMonedas} monedas
                       </p>
 
                       <ul className="mt-3 space-y-1">
@@ -458,7 +500,11 @@ export default function CuestionarioPage() {
         </div>
 
         <PanelLateral titulo="Sobre esta actividad">
-          <p>{actividad.recompensaMonedas} monedas al completar</p>
+          <p>
+            Hasta {actividad.recompensaMonedas} monedas, proporcionales al
+            puntaje obtenido
+          </p>
+          <p>{totalPuntos} puntos en total</p>
           <p>
             {numeroPreguntas} pregunta{numeroPreguntas === 1 ? "" : "s"}
           </p>

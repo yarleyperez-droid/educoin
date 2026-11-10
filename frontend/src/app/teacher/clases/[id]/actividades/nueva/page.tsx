@@ -85,6 +85,12 @@ export default function NuevaActividadPage() {
     },
   ]);
 
+  /** Suma de los puntajes: el máximo que puede obtener el estudiante. */
+  const totalPuntos = preguntas.reduce(
+    (suma, pregunta) => suma + pregunta.score,
+    0,
+  );
+
   const [cargando, setCargando] = useState(false);
   const [errorResumen, setErrorResumen] = useState<string | null>(null);
   const [errorPublicacion, setErrorPublicacion] = useState<string | null>(null);
@@ -217,7 +223,7 @@ export default function NuevaActividadPage() {
                     htmlFor='recompensa-actividad'
                     className='block text-sm font-medium text-slate-700'
                   >
-                    Recompensa (monedas)
+                    Recompensa máxima (monedas)
                   </label>
                   <input
                     id='recompensa-actividad'
@@ -230,6 +236,9 @@ export default function NuevaActividadPage() {
                     placeholder='120'
                     className='mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900 placeholder-slate-400 focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-200 disabled:cursor-not-allowed disabled:opacity-60'
                   />
+                  <p className='mt-1 text-xs text-slate-500'>
+                    Se otorga proporcionalmente al puntaje obtenido.
+                  </p>
                 </div>
 
                 <EditorPreguntas
@@ -237,6 +246,10 @@ export default function NuevaActividadPage() {
                   cambiarPreguntas={setPreguntas}
                   deshabilitado={cargando}
                 />
+
+                <p className='text-xs text-slate-500' aria-live='polite'>
+                  Total de la actividad: {totalPuntos} puntos
+                </p>
 
                 {errorResumen !== null && (
                   <p

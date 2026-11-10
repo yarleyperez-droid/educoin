@@ -1,4 +1,7 @@
-import type { Pregunta } from '../activities/dto/preguntas.schema';
+import {
+  totalPuntosDe,
+  type Pregunta,
+} from '../activities/dto/preguntas.schema';
 import type { RespuestaEntrega } from './dto/respuestas.schema';
 
 /**
@@ -10,14 +13,15 @@ import type { RespuestaEntrega } from './dto/respuestas.schema';
  * exclusivas del trigger fn_award_coins — aquí solo se decide el
  * veredicto de cada respuesta y si la entrega alcanza el umbral.
  *
- * Regla del equipo (umbral): para que una entrega auto-calificable pase
- * a 'graded' (y con ello el trigger acredite las monedas), el estudiante
- * debe responder correctamente AL MENOS el UMBRAL_CORRECTAS_PORCENTAJE%
- * de las preguntas de la actividad.
+ * Regla del equipo (umbral POR PUNTAJE): para que una entrega
+ * auto-calificable pase a 'graded' (y con ello el trigger acredite las
+ * monedas), el puntaje obtenido debe cubrir al menos el
+ * UMBRAL_PUNTOS_PORCENTAJE% del PUNTAJE TOTAL de la actividad (suma de
+ * questions[].score) — no un porcentaje de respuestas correctas.
  */
 
-/** Umbral del equipo: % de preguntas correctas exigido para calificar. */
-export const UMBRAL_CORRECTAS_PORCENTAJE = 80;
+/** Umbral del equipo: % del puntaje total exigido para calificar. */
+export const UMBRAL_PUNTOS_PORCENTAJE = 80;
 
 /**
  * Respuesta calificada: lo que el estudiante envió (RespuestaEntrega)
@@ -41,13 +45,15 @@ export interface EvaluacionEntrega {
   respuestas: RespuestaCalificada[];
   /** Suma de los puntajes obtenidos (redondeada a 2 decimales). */
   puntaje: number;
-  /** Preguntas respondidas correctamente (solo test/completion). */
+  /** Suma de preguntas[].score: puntaje total (máximo) de la actividad. */
+  totalPuntos: number;
+  /** Preguntas respondidas correctamente (solo test/completion, informativo). */
   correctas: number;
   /** Total de preguntas de la actividad. */
   totalPreguntas: number;
   /** ¿Todas las preguntas fueron respondidas y todas son test/completion? */
   autoCalificable: boolean;
-  /** autoCalificable Y con el UMBRAL_CORRECTAS_PORCENTAJE% de correctas. */
+  /** autoCalificable Y con el UMBRAL_PUNTOS_PORCENTAJE% del puntaje total. */
   alcanzaUmbral: boolean;
 }
 
@@ -75,8 +81,8 @@ function normalizar(valor: string): string {
  *
  * La entrega es `autoCalificable` solo si TODAS las preguntas de la
  * actividad fueron respondidas y todas son test/completion; alcanza el
- * umbral si además `correctas` cubre al menos el
- * UMBRAL_CORRECTAS_PORCENTAJE% del total de preguntas.
+ * umbral si además el `puntaje` obtenido cubre al menos el
+ * UMBRAL_PUNTOS_PORCENTAJE% del `totalPuntos` de la actividad.
  */
 export function evaluarRespuestas(
   respuestas: RespuestaEntrega[],
@@ -150,14 +156,21 @@ export function evaluarRespuestas(
       (pregunta) => pregunta.type === 'test' || pregunta.type === 'completion',
     );
 
-  // Comparación entera (sin punto flotante): 4 de 5 == 80% exacto.
+  const totalPuntos = totalPuntosDe(preguntas);
+
+  // Comparación entera (sin punto flotante): el puntaje obtenido debe
+  // cubrir el UMBRAL_PUNTOS_PORCENTAJE% del puntaje TOTAL de la
+  // actividad (preguntas ponderadas: 12/14 ≈ 85.7% sí, 10/14 ≈ 71.4% no).
   const alcanzaUmbral =
     autoCalificable &&
-    correctas * 100 >= preguntas.length * UMBRAL_CORRECTAS_PORCENTAJE;
+    totalPuntos > 0 &&
+    Math.round(puntaje * 100) >=
+      Math.round(totalPuntos * UMBRAL_PUNTOS_PORCENTAJE);
 
   return {
     respuestas: calificadas,
     puntaje,
+    totalPuntos,
     correctas,
     totalPreguntas: preguntas.length,
     autoCalificable,
