@@ -21,10 +21,12 @@ const ESTADOS_EDITABLES: readonly item_status[] = ['active', 'inactive'];
 /**
  * Datos para crear un ítem canjeable (H4.1 / PRO-279, T4.1.1).
  *
- * Los campos numéricos NO llevan `@Min`/`@IsPositive`: la regla de
- * negocio (> 0, stock ≥ 0, obligatoriedad por tipo) se evalúa en el
- * Service y responde **422** (CA 4 y T4.1.2). Aquí solo se valida
- * estructura → errores 400 (pipe global con whitelist).
+ * Los campos numéricos NO llevan `@Min`/`@Max`: las reglas de negocio
+ * (> 0, stock ≥ 0, rango 0.1–0.5 de los bonos de nota (H10.1),
+ * obligatoriedad por tipo) se evalúan en el Service y responde **422**
+ * (CA 1/4/5 y T4.1.2). Aquí solo se valida estructura → errores 400
+ * (pipe global con whitelist). Un `@Min(0.1)/@Max(0.5)` aquí respondería
+ * 400 (ValidationPipe) y el CA 1 de H10.1 exige 422 con mensaje claro.
  */
 export class CrearItemDto {
   /** Clase a la que pertenece el ítem (BIGINT como número). */
@@ -53,7 +55,10 @@ export class CrearItemDto {
   @IsInt()
   costCoins!: number;
 
-  /** Puntos de nota; obligatorio (> 0) solo para `grade_bonus` (422). */
+  /**
+   * Puntos de nota; obligatorio y acotado a 0.1–0.5 décimas (H10.1)
+   * solo para `grade_bonus` (422). `fun_activity` no lo admite.
+   */
   @IsOptional()
   @Type(() => Number)
   @IsNumber()
@@ -99,6 +104,7 @@ export class ActualizarItemDto {
   @IsInt()
   costCoins?: number;
 
+  /** En el PATCH, el merge se revalida: rango 0.1–0.5 (H10.1) → 422. */
   @IsOptional()
   @Type(() => Number)
   @IsNumber()

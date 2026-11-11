@@ -60,7 +60,7 @@ export class ItemsController {
   @ApiBadRequestResponse({ description: 'Cuerpo estructuralmente inválido (400, whitelist).' })
   @ApiUnprocessableEntityResponse({
     description:
-      'Regla de negocio por tipo violada: costo ≤ 0, fun_activity sin stock/stock negativo, grade_bonus sin grade_points (422, CA 4 y T4.1.2).',
+      'Regla de negocio por tipo violada: costo ≤ 0, fun_activity sin stock/stock negativo, grade_bonus sin grade_points o fuera del rango 0.1–0.5 (H10.1) (422, CA 4 y T4.1.2).',
   })
   @ApiConflictResponse({ description: 'Nombre ya usado en la clase, P2002 → 409.' })
   @Roles('teacher')

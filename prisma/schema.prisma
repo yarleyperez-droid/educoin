@@ -104,6 +104,10 @@ model redeemable_items {
   description  String?
   type         item_type
   cost_coins   Int
+  /// H10.1: el CHECK de BD (`ck_item_grade_points_rango`) acota los bonos
+  /// de nota a 0.1–0.5 décimas; la validación amable (422) vive en el
+  /// service (`evaluarItemPorTipo`). Prisma no modela CHECKs: quedan en la
+  /// migración `20261111000000_bono_nota_rango`.
   grade_points Decimal?      @db.Decimal(4, 2)
   stock        Int?
   status       item_status   @default(active)
