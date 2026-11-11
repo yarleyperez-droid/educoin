@@ -7,16 +7,19 @@ import {
   IconDashboard,
   IconActivities,
   IconWallet,
+  IconCoin,
   IconRanking,
   IconProgress,
   IconBuilding,
   IconX,
+  LockupEducoin,
 } from '@/components/ui';
 
 const navItems = [
   { href: '/student', label: 'Dashboard', icon: IconDashboard },
   { href: '/student/actividades', label: 'Mis Actividades', icon: IconActivities },
   { href: '/student/billetera', label: 'Mi Billetera', icon: IconWallet },
+  { href: '/student/canjes', label: 'Mis Canjes', icon: IconCoin },
   { href: '/student/ranking', label: 'Tabla de Posiciones', icon: IconRanking },
   { href: '/student/progreso', label: 'Mi Progreso', icon: IconProgress },
 ];
@@ -27,11 +30,8 @@ export function StudentSidebar({ onClose }: { onClose?: () => void }) {
   return (
     <aside className='flex h-full w-64 flex-col border-r border-slate-200 bg-white'>
       <div className='flex items-center gap-3 p-4'>
-        <div className='flex h-9 w-9 items-center justify-center rounded-lg bg-indigo-600 text-lg font-bold text-white'>
-          E
-        </div>
         <div className='flex-1 min-w-0'>
-          <p className='text-sm font-bold leading-tight text-slate-900'>EduCoins</p>
+          <LockupEducoin className='h-8 w-auto' />
           <p className='text-xs text-slate-500'>EdTech & Rewards</p>
         </div>
         <span className='rounded-full bg-indigo-50 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-indigo-700'>

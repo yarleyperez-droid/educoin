@@ -75,6 +75,7 @@ export class ItemsService {
         cost_coins: dto.costCoins,
         grade_points: dto.gradePoints ?? null,
         stock: dto.stock ?? null,
+        auto_approve: dto.autoApprove ?? false,
       },
     });
     return aItemRespuesta(item);
@@ -208,6 +209,7 @@ export class ItemsService {
         ...(dto.gradePoints !== undefined && { grade_points: dto.gradePoints }),
         ...(dto.stock !== undefined && { stock: dto.stock }),
         ...(dto.status !== undefined && { status: dto.status }),
+        ...(dto.autoApprove !== undefined && { auto_approve: dto.autoApprove }),
       },
     });
     return aItemRespuesta(item);

@@ -12,7 +12,10 @@
  */
 
 import type { redemption_status } from '../../generated/prisma/client';
-import type { CanjeRespuestaDto } from './dto/canje-respuesta.dto';
+import type {
+  CanjeListadoDto,
+  CanjeRespuestaDto,
+} from './dto/canje-respuesta.dto';
 
 /** Motivo por el que un canje no puede ejecutarse aún. */
 export type MotivoBloqueo =
@@ -63,6 +66,10 @@ export function evaluarCanje(entrada: EntradaEvaluacion): EvaluacionCanje {
 /**
  * Traduce un bloqueo a un mensaje legible para la persona estudiante.
  *
+ * Es el texto DETALLADO de la previsualización (con números); el error
+ * 422 de la confirmación usa los mensajes exactos del contrato de H7.2
+ * ({@link mensajeDeError}).
+ *
  * @param motivo Bloqueo detectado por `evaluarCanje`.
  * @param costoMonedas Costo del ítem (para el mensaje de saldo).
  * @param monedasDisponibles Saldo actual (para el mensaje de saldo).
@@ -80,6 +87,26 @@ export function mensajeDeMotivo(
       return 'El ítem se quedó sin stock.';
     case 'saldo-insuficiente':
       return `No tienes monedas suficientes: necesitas ${costoMonedas} y tienes ${monedasDisponibles}.`;
+  }
+}
+
+/**
+ * Traduce un bloqueo al mensaje EXACTO del contrato de H7.2 para la
+ * respuesta **422** de la confirmación (decisión 5 de
+ * `docs/propuesta_canje_revisable.md`: `Saldo insuficiente` y
+ * `Sin stock disponible` literal; el de ítem inactivo se conserva).
+ *
+ * @param motivo Bloqueo detectado por `evaluarCanje`.
+ * @returns Mensaje exacto en español.
+ */
+export function mensajeDeError(motivo: MotivoBloqueo): string {
+  switch (motivo) {
+    case 'item-no-disponible':
+      return 'El ítem no está disponible.';
+    case 'sin-stock':
+      return 'Sin stock disponible';
+    case 'saldo-insuficiente':
+      return 'Saldo insuficiente';
   }
 }
 
@@ -120,6 +147,7 @@ export interface FilaCanje {
   status: redemption_status;
   redeemed_at: Date | string;
   reversed_at: Date | string | null;
+  resolved_at: Date | string | null;
 }
 
 /**
@@ -131,11 +159,14 @@ export interface FilaCanje {
  *
  * @param fila Canje (modelo Prisma o fila cruda).
  * @param nombreItem Nombre del ítem canjeado (se lee aparte: el modelo no trae la relación).
+ * @param aprobacionAutomatica Política `auto_approve` del ítem (§2.6 de la
+ *   propuesta: aproximación por lectura de la política vigente del ítem).
  * @returns DTO listo para responder.
  */
 export function aCanjeRespuesta(
   fila: FilaCanje,
   nombreItem: string,
+  aprobacionAutomatica: boolean,
 ): CanjeRespuestaDto {
   return {
     id: String(fila.id),
@@ -147,5 +178,41 @@ export function aCanjeRespuesta(
     canjeadoEn: new Date(fila.redeemed_at).toISOString(),
     reversadoEn:
       fila.reversed_at === null ? null : new Date(fila.reversed_at).toISOString(),
+    resueltoEn:
+      fila.resolved_at === null ? null : new Date(fila.resolved_at).toISOString(),
+    aprobacionAutomatica,
+  };
+}
+
+/**
+ * Fila de los listados paginados de canjes (cola del profesor e historial
+ * del estudiante), tal como sale de la consulta SQL (nombres ya unidos).
+ */
+export interface FilaCanjeListado {
+  id: bigint | number;
+  cost_coins: number;
+  status: redemption_status;
+  redeemed_at: Date | string;
+  item_name: string;
+  student_first_name: string;
+  student_last_name: string;
+}
+
+/**
+ * Mapea una fila del listado de canjes (H7.2 / T7.2.4-T7.2.5).
+ *
+ * IDs como `string` y fechas en ISO (AGENTS.md §7).
+ *
+ * @param fila Fila cruda de la consulta paginada.
+ * @returns DTO de fila listo para responder.
+ */
+export function aCanjeListado(fila: FilaCanjeListado): CanjeListadoDto {
+  return {
+    id: String(fila.id),
+    nombreEstudiante: `${fila.student_first_name} ${fila.student_last_name}`,
+    nombreItem: fila.item_name,
+    costoMonedas: Number(fila.cost_coins),
+    estado: fila.status,
+    solicitadoEn: new Date(fila.redeemed_at).toISOString(),
   };
 }

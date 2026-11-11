@@ -196,6 +196,10 @@ function aEntregaDetalle(backend: EntregaDetalle): EntregaDetalle {
     entregadoEn: backend.entregadoEn,
     calificadoEn: backend.calificadoEn,
     puntaje: backend.puntaje === null ? null : Number(backend.puntaje),
+    puntajeAutomatico:
+      backend.puntajeAutomatico === null
+        ? null
+        : Number(backend.puntajeAutomatico),
     monedasOtorgadas: Number(backend.monedasOtorgadas),
     feedback: backend.feedback,
     respuestas: backend.respuestas.map(aRespuestaCalificada),

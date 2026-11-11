@@ -46,8 +46,8 @@ export function EstadoVacio({
   accion,
 }: PropsEstadoVacio): ReactElement {
   return (
-    <div className="flex flex-col items-center gap-2 rounded-lg border border-dashed border-neutral-300 bg-white px-6 py-12 text-center">
-      <p className="text-base font-semibold text-neutral-900">{titulo}</p>
+    <div className="flex flex-col items-center gap-2 rounded-lg border border-dashed border-slate-300 bg-white px-6 py-12 text-center">
+      <p className="text-base font-semibold text-slate-900">{titulo}</p>
       {descripcion !== undefined && (
         <p className="text-sm" style={{ color: "var(--muted)" }}>
           {descripcion}
@@ -57,7 +57,7 @@ export function EstadoVacio({
         <button
           type="button"
           onClick={accion.alHacerClic}
-          className="mt-3 rounded-md border border-neutral-500 bg-white px-4 py-2 text-sm font-medium text-neutral-900 hover:bg-neutral-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-neutral-700 focus-visible:ring-offset-2"
+          className="mt-3 rounded-md border border-slate-500 bg-white px-4 py-2 text-sm font-medium text-slate-900 hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-700 focus-visible:ring-offset-2"
         >
           {accion.texto}
         </button>

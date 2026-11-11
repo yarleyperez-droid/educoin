@@ -176,6 +176,13 @@ export class EntregaDetalleProfesorDto {
   /** Momento de la calificación (graded_at, ISO 8601); null sin calificar. */
   calificadoEn!: string | null;
   puntaje!: number | null;
+  /**
+   * Suma de answers[].score no nulos (redondeada a 2 decimales); null
+   * si ninguna respuesta tiene score (p. ej. todas file/minigame).
+   * Sirve para PRELLENAR el puntaje del profesor en entregas
+   * 'submitted'; el valor final lo decide él (0..total de la actividad).
+   */
+  puntajeAutomatico!: number | null;
   monedasOtorgadas!: number;
   /** Retroalimentación escrita al calificar; null si no hay. */
   feedback!: string | null;

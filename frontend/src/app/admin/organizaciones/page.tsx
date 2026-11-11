@@ -428,14 +428,14 @@ export default function OrganizacionesPage() {
                           <span
                             className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-[11px] font-semibold ${
                               organizacion.activa
-                                ? 'bg-green-100 text-green-700'
+                                ? 'bg-emerald-100 text-emerald-700'
                                 : 'bg-slate-100 text-slate-600'
                             }`}
                           >
                             <span
                               className={`h-1.5 w-1.5 rounded-full ${
                                 organizacion.activa
-                                  ? 'bg-green-600'
+                                  ? 'bg-emerald-500'
                                   : 'bg-slate-400'
                               }`}
                               aria-hidden='true'

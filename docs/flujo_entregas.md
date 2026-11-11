@@ -259,18 +259,23 @@ solo exige que sea un arreglo JSON):
 - `puntaje` = suma de los scores obtenidos (correcta → el puntaje de la
   pregunta; fallada → 0).
 - **Umbral (regla del equipo)**: la entrega solo pasa a `graded` si TODA la
-  actividad quedó respondida, todas las preguntas son `test`/`completion` y
-  las correctas cubren al menos el **80%** del total
-  (`correctas × 100 ≥ total × 80`, comparación entera sin flotantes).
+  actividad quedó respondida, todas las preguntas son `test`/`completion` y el
+  **puntaje obtenido cubre al menos el 80% del puntaje total** de la actividad
+  (`puntaje × 100 ≥ total × 80`, comparación entera sin flotantes). Las
+  preguntas ponderadas pesan: fallar la de 10 puntos no es lo mismo que
+  fallar una de 1.
 - **Monedas**: SIEMPRE son cosa de la BD. `fn_award_coins` es un trigger
-  `BEFORE UPDATE OF status`: otorga `reward_coins` una sola vez, setea
-  `coins_awarded`/`graded_at` e inserta el movimiento `earning`. Como el
-  trigger no dispara en INSERT, el envío auto-calificado es una
-  **transacción**: `in_progress|nueva → submitted` y después
+  `BEFORE UPDATE OF status`: otorga `ROUND(reward_coins × score / total)` —
+  `reward_coins` es el **máximo** y el pago es proporcional al puntaje —
+  una sola vez, setea `coins_awarded`/`graded_at` e inserta el movimiento
+  `earning`. Como el trigger no dispara en INSERT, el envío auto-calificado
+  es una **transacción**: `in_progress|nueva → submitted` y después
   `submitted → graded` (dos UPDATEs; el segundo dispara el trigger). El
   backend jamás escribe monedas, contadores ni movimientos (AGENTS.md §6).
 - Bajo el umbral o con preguntas manuales → queda `submitted` con la
-  evaluación parcial guardada (`score` NULL) para que el profesor decida.
+  evaluación parcial guardada para que el profesor decida; el detalle del
+  profesor expone `puntajeAutomatico` (suma de lo ya evaluado) para
+  prellenar el puntaje final.
 
 ## 6. Seguridad aplicada
 

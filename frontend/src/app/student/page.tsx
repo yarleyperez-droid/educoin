@@ -177,7 +177,7 @@ export default function StudentPage() {
   return (
     <div className='space-y-6'>
       {/* Hero */}
-      <section className='relative overflow-hidden rounded-2xl bg-gradient-to-br from-indigo-600 to-violet-700 p-6 text-white shadow-lg lg:p-8'>
+      <section className='relative overflow-hidden rounded-2xl bg-gradient-to-br from-indigo-600 to-indigo-900 p-6 text-white shadow-lg lg:p-8'>
         <div className='relative z-10 flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between'>
           <div className='lg:max-w-xl'>
             <span className='inline-flex items-center gap-1.5 rounded-full bg-white/20 px-3 py-1 text-xs font-medium backdrop-blur-sm'>
@@ -234,7 +234,7 @@ export default function StudentPage() {
             <IconCoin className='h-5 w-5 text-amber-500' />
           </div>
           <p className='mt-2 text-2xl font-bold text-slate-900' data-testid='saldo-disponibles'>
-            {disponibles} <span className='text-base font-medium text-amber-600'>EduCoins</span>
+            {disponibles} <span className='text-base font-medium text-amber-700'>EduCoins</span>
           </p>
           <Link
             href='/student/billetera'
@@ -327,7 +327,7 @@ export default function StudentPage() {
                   <div className='flex shrink-0 flex-col items-end gap-2'>
                     <span className='inline-flex items-center gap-1 rounded-full bg-amber-50 px-2 py-1 text-xs font-semibold text-amber-700'>
                       <IconCoin className='h-3 w-3' />
-                      +{actividad.recompensaMonedas} EduCoins
+                      hasta +{actividad.recompensaMonedas} EduCoins
                     </span>
                     <Link
                       href={`/student/actividades/${actividad.id}`}
@@ -393,7 +393,7 @@ export default function StudentPage() {
           href='/student/billetera'
           className='group rounded-2xl border border-slate-200 bg-white p-5 shadow-sm transition-shadow hover:shadow-md'
         >
-          <div className='flex h-10 w-10 items-center justify-center rounded-lg bg-amber-100 text-amber-600'>
+          <div className='flex h-10 w-10 items-center justify-center rounded-lg bg-amber-100 text-amber-700'>
             <IconWallet className='h-5 w-5' />
           </div>
           <h3 className='mt-3 text-base font-semibold text-slate-900'>Mi Billetera Digital</h3>
@@ -406,7 +406,7 @@ export default function StudentPage() {
           href='/student/ranking'
           className='group rounded-2xl border border-slate-200 bg-white p-5 shadow-sm transition-shadow hover:shadow-md'
         >
-          <div className='flex h-10 w-10 items-center justify-center rounded-lg bg-violet-100 text-violet-600'>
+          <div className='flex h-10 w-10 items-center justify-center rounded-lg bg-indigo-100 text-indigo-600'>
             <IconRanking className='h-5 w-5' />
           </div>
           <h3 className='mt-3 text-base font-semibold text-slate-900'>Tabla de Posiciones</h3>

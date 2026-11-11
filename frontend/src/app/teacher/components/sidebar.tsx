@@ -6,13 +6,16 @@ import { usePathname } from 'next/navigation';
 import {
   IconDashboard,
   IconClasses,
+  IconCoin,
   IconBuilding,
   IconX,
+  LockupEducoin,
 } from '@/components/ui';
 
 const navItems = [
   { href: '/teacher', label: 'Dashboard', icon: IconDashboard },
   { href: '/teacher/clases', label: 'Mis Clases', icon: IconClasses },
+  { href: '/teacher/canjes', label: 'Canjes', icon: IconCoin },
 ];
 
 export function TeacherSidebar({ onClose }: { onClose?: () => void }) {
@@ -21,11 +24,8 @@ export function TeacherSidebar({ onClose }: { onClose?: () => void }) {
   return (
     <aside className='flex h-full w-64 flex-col border-r border-slate-200 bg-white'>
       <div className='flex items-center gap-3 p-4'>
-        <div className='flex h-9 w-9 items-center justify-center rounded-lg bg-indigo-600 text-lg font-bold text-white'>
-          E
-        </div>
         <div className='min-w-0 flex-1'>
-          <p className='text-sm font-bold leading-tight text-slate-900'>EduCoins</p>
+          <LockupEducoin className='h-8 w-auto' />
           <p className='text-xs text-slate-500'>Panel Docente</p>
         </div>
         <span className='rounded-full bg-indigo-50 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-indigo-700'>

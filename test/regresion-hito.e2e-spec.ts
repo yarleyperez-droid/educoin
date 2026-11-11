@@ -23,7 +23,8 @@ import { auditarSinSecretos } from './helpers/auditoria-respuestas';
  *
  * Contra la BD real, en una única corrida: clase → unión → actividad
  * publicada → borrador → entrega `submitted` → calificación del profesor
- * (`fn_award_coins` acredita exactamente `reward_coins`) → recalificación
+ * (`fn_award_coins` acredita monedas **proporcionales al puntaje**) →
+ * recalificación
  * 409 sin doble pago → canje `completed` (CA 1). Después la matriz de
  * negativos: rol equivocado → 403 en cada recurso, recurso ajeno → 404
  * anti-enumeración / ítems 403 uniforme / billetera 403, validaciones →
@@ -84,7 +85,7 @@ const PREGUNTAS = [
 /** Borrador parcial: solo la primera pregunta respondida. */
 const BORRADOR_PARCIAL = [{ question_position: 1, option: '3' }];
 
-/** Envío con la primera respuesta MAL: 1/2 = 50% < umbral del 80% (S2). */
+/** Envío con la primera respuesta MAL: 5/10 puntos = 50% < 80% del puntaje (S2). */
 const RESPUESTAS_UMBRAL_FALLIDO = [
   { question_position: 1, option: '1' },
   { question_position: 2, text: '6' },
@@ -93,6 +94,13 @@ const RESPUESTAS_UMBRAL_FALLIDO = [
 /** Recompensa propia del fixture: 75 es un valor que ningún otro suite usa. */
 const RECOMPENSA = 75;
 const COSTO_ITEM = 50;
+
+/**
+ * Monedas que acredita la calificación del profesor con puntaje 7.5
+ * sobre un total de 10: fn_award_coins paga en proporción al puntaje
+ * (ROUND(75 × 7.5 / 10) = 56); RECOMPENSA es el MÁXIMO.
+ */
+const MONEDAS_CALIFICACION = 56;
 
 describe('H6.3 regresión del hito (e2e)', () => {
   let app: INestApplication<App>;
@@ -477,7 +485,7 @@ describe('H6.3 regresión del hito (e2e)', () => {
       expect(detalle.body.respuestas[0].is_correct).toBe(false);
     });
 
-    it('A7: calificar graded acredita EXACTAMENTE 75 monedas una sola vez', async () => {
+    it('A7: calificar graded acredita 56 monedas (7.5/10 de 75) exactamente una sola vez', async () => {
       const respuesta = await llamarDocente(
         'POST calificar (graded)',
         httpServer
@@ -496,13 +504,14 @@ describe('H6.3 regresión del hito (e2e)', () => {
       expect(respuesta.body.mensaje).toBe(MENSAJE_ENTREGA_CALIFICADA_PROFESOR);
       expect(respuesta.body.entrega.estado).toBe('graded');
       expect(respuesta.body.entrega.puntaje).toBe(7.5);
-      expect(respuesta.body.entrega.monedasOtorgadas).toBe(RECOMPENSA);
+      expect(respuesta.body.entrega.monedasOtorgadas).toBe(MONEDAS_CALIFICACION);
 
-      // El trigger fn_award_coins acreditó exactamente reward_coins.
+      // El trigger fn_award_coins acreditó las monedas proporcionales
+      // al puntaje (ROUND(75 × 7.5 / 10) = 56), no reward_coins completo.
       expect(await saldoInscripcion()).toEqual({
-        ganadas: RECOMPENSA,
+        ganadas: MONEDAS_CALIFICACION,
         gastadas: 0,
-        disponibles: RECOMPENSA,
+        disponibles: MONEDAS_CALIFICACION,
       });
       const movimientos = await prisma.coin_movements.findMany({
         where: { enrollment_id: inscripcionId },
@@ -511,7 +520,7 @@ describe('H6.3 regresión del hito (e2e)', () => {
       expect(movimientos).toHaveLength(1);
       expect(movimientos[0]).toMatchObject({
         type: 'earning',
-        quantity: RECOMPENSA,
+        quantity: MONEDAS_CALIFICACION,
         description: 'Activity reward',
         submission_id: BigInt(entregaId),
       });
@@ -531,9 +540,9 @@ describe('H6.3 regresión del hito (e2e)', () => {
       expect(respuesta.status).toBe(409);
       expect(respuesta.body.message).toBe(MENSAJE_ENTREGA_NO_PENDIENTE);
       expect(await saldoInscripcion()).toEqual({
-        ganadas: RECOMPENSA,
+        ganadas: MONEDAS_CALIFICACION,
         gastadas: 0,
-        disponibles: RECOMPENSA,
+        disponibles: MONEDAS_CALIFICACION,
       });
       const cantidad = await prisma.coin_movements.count({
         where: { enrollment_id: inscripcionId, type: 'earning' },
@@ -568,7 +577,7 @@ describe('H6.3 regresión del hito (e2e)', () => {
       );
       expect(preview.status).toBe(200);
       expect(preview.body.item.costoMonedas).toBe(COSTO_ITEM);
-      expect(preview.body.saldo.monedasDisponibles).toBe(RECOMPENSA);
+      expect(preview.body.saldo.monedasDisponibles).toBe(MONEDAS_CALIFICACION);
       expect(preview.body.puedeCanjear).toBe(true);
 
       const canje = await llamar(
@@ -579,14 +588,14 @@ describe('H6.3 regresión del hito (e2e)', () => {
           .send({ itemId: String(itemAId) }),
       );
       expect(canje.status).toBe(201);
-      expect(canje.body.estado).toBe('completed');
+      expect(canje.body.estado).toBe('pending'); // H7.2: la solicitud nace pendiente
       expect(canje.body.costoMonedas).toBe(COSTO_ITEM);
       canjeId = canje.body.id;
 
       expect(await saldoInscripcion()).toEqual({
-        ganadas: RECOMPENSA,
+        ganadas: MONEDAS_CALIFICACION,
         gastadas: COSTO_ITEM,
-        disponibles: RECOMPENSA - COSTO_ITEM,
+        disponibles: MONEDAS_CALIFICACION - COSTO_ITEM,
       });
       const movimientos = await prisma.coin_movements.findMany({
         where: { redemption_id: BigInt(canjeId) },
@@ -606,9 +615,11 @@ describe('H6.3 regresión del hito (e2e)', () => {
           .set('Authorization', `Bearer ${tokenEstudiante}`),
       );
       expect(saldo.status).toBe(200);
-      expect(saldo.body.monedasGanadas).toBeGreaterThanOrEqual(RECOMPENSA);
+      expect(saldo.body.monedasGanadas).toBeGreaterThanOrEqual(
+        MONEDAS_CALIFICACION,
+      );
       expect(saldo.body.monedasDisponibles).toBeGreaterThanOrEqual(
-        RECOMPENSA - COSTO_ITEM,
+        MONEDAS_CALIFICACION - COSTO_ITEM,
       );
 
       const historial = await llamar(
@@ -623,7 +634,7 @@ describe('H6.3 regresión del hito (e2e)', () => {
         historial.body.data.some(
           (movimiento: { tipo: string; cantidad: number }) =>
             movimiento.tipo === 'earning' &&
-            movimiento.cantidad === RECOMPENSA,
+            movimiento.cantidad === MONEDAS_CALIFICACION,
         ),
       ).toBe(true);
     });
@@ -897,15 +908,15 @@ describe('H6.3 regresión del hito (e2e)', () => {
           .send({ itemId: String(itemAId) }),
       );
       expect(canje.status).toBe(422);
-      expect(canje.body.message).toContain('No tienes monedas suficientes');
+      expect(canje.body.message).toBe('Saldo insuficiente');
 
       expect(await saldoInscripcion()).toEqual({
-        ganadas: RECOMPENSA,
+        ganadas: MONEDAS_CALIFICACION,
         gastadas: COSTO_ITEM,
-        disponibles: RECOMPENSA - COSTO_ITEM,
+        disponibles: MONEDAS_CALIFICACION - COSTO_ITEM,
       });
       const canjes = await prisma.redemptions.count({
-        where: { item_id: itemAId, status: 'completed' },
+        where: { item_id: itemAId, status: 'pending' },
       });
       expect(canjes).toBe(1);
     });

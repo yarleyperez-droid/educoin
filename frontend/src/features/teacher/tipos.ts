@@ -15,7 +15,7 @@
  * de traducción) y estas vistas no se enteran.
  */
 
-import type { Pregunta } from "./contrato/actividades";
+import type { ModoCalificacion, Pregunta } from "./contrato/actividades";
 
 /** Estados de clase (enum `class_status` de `db/001_schema.sql`). */
 export type EstadoClase = "active" | "archived";
@@ -124,8 +124,15 @@ export interface Actividad {
   /** Descripción opcional (`activities.description`). */
   descripcion: string | null;
 
-  /** Monedas otorgadas al calificar (`reward_coins ≥ 0`). */
+  /** Monedas MÁXIMAS al calificar (`reward_coins ≥ 0`): lo que se paga de
+   * verdad es proporcional al puntaje obtenido (lo calcula solo la BD). */
   recompensaMonedas: number;
+
+  /** Puntaje total (suma de `preguntas[].score`), derivado por el backend. */
+  totalPuntos: number;
+
+  /** Camino normal de calificación: automática o revisión del profesor. */
+  modoCalificacion: ModoCalificacion;
 
   /** Estado lógico de la actividad. */
   estado: EstadoActividad;

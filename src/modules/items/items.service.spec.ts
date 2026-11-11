@@ -32,6 +32,7 @@ const itemCreado = {
   grade_points: null,
   stock: 5,
   status: 'active',
+  auto_approve: false,
   created_at: new Date('2026-10-16T10:00:00Z'),
   updated_at: new Date('2026-10-16T10:00:00Z'),
 };

@@ -14,7 +14,9 @@ import {
   MENSAJE_RECURSO_NO_ENCONTRADO,
 } from '../autorizacion/autorizacion.service';
 import {
+  modoCalificacionDe,
   sinRespuestasCorrectas,
+  totalPuntosDe,
   validarPreguntas,
   type Pregunta,
 } from './dto/preguntas.schema';
@@ -71,12 +73,17 @@ interface ActividadEncontrada {
   deleted_at: Date | null;
 }
 
-/** Fila del listado: sin preguntas (el detalle está en GET /activities/:id). */
+/**
+ * Fila del listado: sin preguntas en la RESPUESTA, pero con el JSONB en
+ * la fila de la consulta — de ahí se derivan totalPuntos y
+ * modoCalificacion en la misma query (sin N+1).
+ */
 interface ActividadListadoEncontrada {
   id: bigint;
   title: string;
   status: activity_status;
   reward_coins: number;
+  questions: Prisma.JsonValue;
   published_at: Date | null;
   closes_at: Date | null;
   created_at: Date;
@@ -102,6 +109,7 @@ const CAMPOS_ACTIVIDAD_LISTADO = {
   title: true,
   status: true,
   reward_coins: true,
+  questions: true,
   published_at: true,
   closes_at: true,
   created_at: true,
@@ -484,6 +492,7 @@ export class ActivitiesService {
   private aActividadRespuesta(
     actividad: ActividadEncontrada,
   ): ActividadRespuestaDto {
+    const preguntas = actividad.questions as Pregunta[];
     return {
       id: actividad.id.toString(),
       claseId: actividad.class_id.toString(),
@@ -491,8 +500,10 @@ export class ActivitiesService {
       descripcion: actividad.description,
       recompensaMonedas: actividad.reward_coins,
       estado: actividad.status,
+      totalPuntos: totalPuntosDe(preguntas),
+      modoCalificacion: modoCalificacionDe(preguntas),
       // Guardado con zod: la estructura ya es la de la seed.
-      preguntas: actividad.questions as Pregunta[],
+      preguntas,
       publicadaEn: actividad.published_at?.toISOString() ?? null,
       cierraEn: actividad.closes_at?.toISOString() ?? null,
       creadoEn: actividad.created_at.toISOString(),
@@ -510,6 +521,7 @@ export class ActivitiesService {
   private aActividadEstudianteRespuesta(
     actividad: ActividadEncontrada,
   ): ActividadEstudianteRespuestaDto {
+    const preguntas = actividad.questions as Pregunta[];
     return {
       id: actividad.id.toString(),
       claseId: actividad.class_id.toString(),
@@ -517,7 +529,9 @@ export class ActivitiesService {
       descripcion: actividad.description,
       recompensaMonedas: actividad.reward_coins,
       estado: actividad.status,
-      preguntas: sinRespuestasCorrectas(actividad.questions as Pregunta[]),
+      totalPuntos: totalPuntosDe(preguntas),
+      modoCalificacion: modoCalificacionDe(preguntas),
+      preguntas: sinRespuestasCorrectas(preguntas),
       publicadaEn: actividad.published_at?.toISOString() ?? null,
       cierraEn: actividad.closes_at?.toISOString() ?? null,
       creadoEn: actividad.created_at.toISOString(),
@@ -527,11 +541,14 @@ export class ActivitiesService {
   private aActividadListado(
     actividad: ActividadListadoEncontrada,
   ): ListadoActividadesDto['data'][number] {
+    const preguntas = actividad.questions as Pregunta[];
     return {
       id: actividad.id.toString(),
       titulo: actividad.title,
       estado: actividad.status,
       recompensaMonedas: actividad.reward_coins,
+      totalPuntos: totalPuntosDe(preguntas),
+      modoCalificacion: modoCalificacionDe(preguntas),
       publicadaEn: actividad.published_at?.toISOString() ?? null,
       cierraEn: actividad.closes_at?.toISOString() ?? null,
       creadoEn: actividad.created_at.toISOString(),

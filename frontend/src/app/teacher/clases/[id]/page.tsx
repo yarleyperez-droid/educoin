@@ -271,7 +271,7 @@ export default function DetalleClasePage() {
               </div>
 
               <p className="mt-1 text-xs text-slate-500">
-                {actividad.recompensaMonedas} monedas
+                hasta {actividad.recompensaMonedas} monedas
                 {actividad.estado === "published" && actividad.publicadaEn
                   ? ` · Publicada el ${new Date(actividad.publicadaEn).toLocaleDateString("es-CO")}`
                   : ""}

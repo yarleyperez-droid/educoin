@@ -1,21 +1,30 @@
 /**
- * Tests de la fachada de canje (T5.7.2 / PRO-391).
+ * Tests de la fachada de canje (T5.7.2 / PRO-391 + canje revisable H7.3).
  *
  * Stubbean `globalThis.fetch` shaped como los controllers reales
  * (`items.controller.ts`, `redemptions.controller.ts`):
  * - `GET /items` → `ItemDto[]` en plano;
  * - `GET /redemptions/preview` → `PrevisualizacionCanjeDto` en plano;
- * - `POST /redemptions` → `CanjeRespuestaDto` en plano (201).
+ * - `POST /redemptions` → `CanjeRespuestaDto` en plano (201), ahora con
+ *   `resueltoEn` y `aprobacionAutomatica` (H7.2);
+ * - `GET /redemptions/mine?page&limit` → `ListadoCanjesDto` con
+ *   `{ data, meta }` (T7.2.5).
  *
- * Verifican mapeo a dominio, la URL de preview con `itemId` y la
- * propagación de `ApiError` (422 de saldo insuficiente).
+ * Verifican mapeo a dominio, la URL de preview con `itemId`, la
+ * paginación de `mine` y la propagación de `ApiError` (422 de saldo
+ * insuficiente).
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { ApiError } from "@/lib/api-client";
 
-import { canjear, listarItems, previsualizarCanje } from "./canje";
+import {
+  canjear,
+  listarItems,
+  listarMisCanjes,
+  previsualizarCanje,
+} from "./canje";
 
 /** URL base idéntica a la que usa `api-client` en producción. */
 const URL_API = "http://localhost:3000/api/v1";
@@ -49,6 +58,30 @@ const PREVIEW_BACKEND = {
   saldo: { monedasDisponibles: 120 },
   puedeCanjear: true,
   motivo: null,
+};
+
+/** `CanjeRespuestaDto` real de un canje recién solicitado (H7.2). */
+const CANJE_BACKEND = {
+  id: "9",
+  itemId: "2",
+  nombreItem: "Trivia game in class",
+  costoMonedas: 50,
+  puntosNota: null,
+  estado: "pending",
+  canjeadoEn: "2026-10-18T12:00:00.000Z",
+  reversadoEn: null,
+  resueltoEn: null,
+  aprobacionAutomatica: false,
+};
+
+/** `CanjeListadoDto` real (fila de `GET /redemptions/mine`). */
+const CANJE_LISTADO_BACKEND = {
+  id: "9",
+  nombreEstudiante: "Ana Pérez",
+  nombreItem: "Trivia game in class",
+  costoMonedas: 50,
+  estado: "pending",
+  solicitadoEn: "2026-10-18T12:00:00.000Z",
 };
 
 /** Stub que responde con el status y cuerpo dados. */
@@ -136,25 +169,33 @@ describe("previsualizarCanje", () => {
 });
 
 describe("canjear", () => {
-  it("envía solo { itemId } y devuelve el canje completed", async () => {
-    responder(201, {
-      id: "9",
-      itemId: "2",
-      nombreItem: "Trivia game in class",
-      costoMonedas: 50,
-      puntosNota: null,
-      estado: "completed",
-      canjeadoEn: "2026-10-18T12:00:00.000Z",
-      reversadoEn: null,
-    });
+  it("envía solo { itemId } y devuelve el canje pending del canje revisable", async () => {
+    responder(201, CANJE_BACKEND);
 
     const canje = await canjear("2");
 
     const [url, init] = vi.mocked(fetch).mock.calls[0] ?? [];
     expect(String(url)).toBe(`${URL_API}/redemptions`);
     expect(JSON.parse(String(init?.body))).toEqual({ itemId: "2" });
-    expect(canje.estado).toBe("completed");
+    expect(canje.estado).toBe("pending");
     expect(canje.costoMonedas).toBe(50);
+    expect(canje.resueltoEn).toBeNull();
+    expect(canje.aprobacionAutomatica).toBe(false);
+  });
+
+  it("devuelve approved con aprobacionAutomatica cuando el ítem auto-aprueba", async () => {
+    responder(201, {
+      ...CANJE_BACKEND,
+      estado: "approved",
+      resueltoEn: "2026-10-18T12:00:01.000Z",
+      aprobacionAutomatica: true,
+    });
+
+    const canje = await canjear("2");
+
+    expect(canje.estado).toBe("approved");
+    expect(canje.aprobacionAutomatica).toBe(true);
+    expect(canje.resueltoEn).toBe("2026-10-18T12:00:01.000Z");
   });
 
   it("propaga el 422 de saldo insuficiente con el mensaje del backend", async () => {
@@ -167,5 +208,48 @@ describe("canjear", () => {
     await expect(canjear("2")).rejects.toThrow(
       "Saldo insuficiente para completar el canje.",
     );
+  });
+});
+
+describe("listarMisCanjes", () => {
+  it("pide redemptions/mine con la paginación y devuelve { data, meta }", async () => {
+    responder(200, {
+      data: [CANJE_LISTADO_BACKEND],
+      meta: { total: 1, page: 2, limit: 10 },
+    });
+
+    const listado = await listarMisCanjes(2, 10);
+
+    expect(String(vi.mocked(fetch).mock.calls[0]?.[0])).toBe(
+      `${URL_API}/redemptions/mine?page=2&limit=10`,
+    );
+    expect(listado.data).toEqual([
+      {
+        id: "9",
+        nombreEstudiante: "Ana Pérez",
+        nombreItem: "Trivia game in class",
+        costoMonedas: 50,
+        estado: "pending",
+        solicitadoEn: "2026-10-18T12:00:00.000Z",
+      },
+    ]);
+    expect(listado.meta).toEqual({ total: 1, page: 2, limit: 10 });
+  });
+
+  it("normaliza la meta cuando el backend no la envía", async () => {
+    responder(200, { data: [CANJE_LISTADO_BACKEND] });
+
+    const listado = await listarMisCanjes(1, 20);
+
+    expect(listado.meta).toEqual({ total: 1, page: 1, limit: 20 });
+  });
+
+  it("propaga ApiError con el mensaje del backend", async () => {
+    responder(403, {
+      statusCode: 403,
+      message: "No tienes permisos para realizar esta acción.",
+    });
+
+    await expect(listarMisCanjes(1, 20)).rejects.toThrow(ApiError);
   });
 });

@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import {
   Geist,
   Geist_Mono,
@@ -33,9 +33,26 @@ const inter = Inter({
   weight: ["400", "500", "600"],
 });
 
+/*
+ * Iconografía y manifest de la identidad de marca (exports de
+ * `brand-identity/educoin/brand/exports/`, servidos desde `public/`).
+ */
 export const metadata: Metadata = {
   title: "EduCoins",
   description: "Plataforma educativa gamificada",
+  icons: {
+    icon: [
+      { url: "/favicon.ico", sizes: "48x48" },
+      { url: "/favicon.svg", type: "image/svg+xml" },
+    ],
+    apple: "/apple-touch-icon.png",
+  },
+  manifest: "/site.webmanifest",
+};
+
+/** Color de la barra de navegación del navegador: Índigo Mérito `#4F46E5`. */
+export const viewport: Viewport = {
+  themeColor: "#4F46E5",
 };
 
 export default function RootLayout({

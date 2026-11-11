@@ -20,6 +20,10 @@
 
 import { z } from 'zod';
 
+import type { ModoCalificacion } from '@/features/teacher/contrato/actividades';
+
+export type { ModoCalificacion };
+
 /**
  * Opción de respuesta vista por el estudiante: **solo el texto**.
  *
@@ -70,8 +74,18 @@ export interface ActividadResumen {
   /** Título visible. */
   titulo: string;
 
-  /** Monedas que otorga al ser calificada. */
+  /**
+   * Monedas MÁXIMAS de la actividad (`reward_coins`): lo que se paga de
+   * verdad es proporcional al puntaje obtenido
+   * (`ROUND(recompensa × puntaje / totalPuntos)`, lo calcula solo la BD).
+   */
   recompensaMonedas: number;
+
+  /** Puntaje total (suma de `preguntas[].score`), calculado por el backend. */
+  totalPuntos: number;
+
+  /** Camino normal de calificación: automática o revisión del profesor. */
+  modoCalificacion: ModoCalificacion;
 
   /** Fecha de publicación (ISO). */
   publicadaEn: string | null;
@@ -103,8 +117,18 @@ export interface ActividadEstudiante {
   /** Descripción opcional. */
   descripcion: string | null;
 
-  /** Monedas que otorga al ser calificada. */
+  /**
+   * Monedas MÁXIMAS de la actividad (`reward_coins`): lo que se paga de
+   * verdad es proporcional al puntaje obtenido
+   * (`ROUND(recompensa × puntaje / totalPuntos)`, lo calcula solo la BD).
+   */
   recompensaMonedas: number;
+
+  /** Puntaje total (suma de `preguntas[].score`), calculado por el backend. */
+  totalPuntos: number;
+
+  /** Camino normal de calificación: automática o revisión del profesor. */
+  modoCalificacion: ModoCalificacion;
 
   /** Preguntas ya proyectadas (sin secretos). */
   preguntas: PreguntaEstudiante[];

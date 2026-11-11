@@ -72,7 +72,7 @@ export function StudentTopbar({ onMenuClick }: { onMenuClick: () => void }) {
         <span className='inline-flex items-center gap-1.5 rounded-full border border-amber-100 bg-amber-50 px-2.5 py-1.5 text-sm font-semibold text-amber-700 sm:px-3'>
           <IconCoin className='h-4 w-4' />
           <span className='hidden sm:inline'>+{disponibles ?? '—'}</span>
-          <span className='hidden text-xs font-normal text-amber-600 sm:inline'>
+          <span className='hidden text-xs font-normal text-amber-700 sm:inline'>
             ({ganadas ?? '—'} ganadas)
           </span>
         </span>

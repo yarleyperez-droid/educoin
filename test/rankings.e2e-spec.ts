@@ -359,7 +359,7 @@ describe('Rankings global y por clase (e2e, fixtures aislados por corrida)', () 
       .set('Authorization', `Bearer ${tokenEstudiante}`)
       .send({ itemId: String(itemFixtureId) });
     expect(canje.status).toBe(201);
-    expect(canje.body.estado).toBe('completed');
+    expect(canje.body.estado).toBe('pending'); // H7.2: la solicitud nace pendiente
     expect(canje.body.costoMonedas).toBe(30);
 
     const despues = await rankingGlobal(tokenProfesor);

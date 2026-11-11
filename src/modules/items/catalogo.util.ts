@@ -29,6 +29,7 @@ export interface FilaItemCatalogo {
   grade_points: unknown;
   stock: number | null;
   status: string;
+  auto_approve: boolean;
   created_at: Date | string;
   updated_at: Date | string;
 }
@@ -57,6 +58,7 @@ export function aItemRespuesta(fila: FilaItemCatalogo): ItemDto {
         : Number(fila.grade_points),
     stock: fila.stock === null ? null : Number(fila.stock),
     status: fila.status as ItemDto['status'],
+    autoApprove: fila.auto_approve,
     creadoEn: new Date(fila.created_at).toISOString(),
     actualizadoEn: new Date(fila.updated_at).toISOString(),
   };

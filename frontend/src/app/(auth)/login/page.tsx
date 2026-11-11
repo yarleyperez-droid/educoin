@@ -41,6 +41,7 @@ import { useState, type FormEvent } from "react";
 
 import {
   EstadoCarga,
+  LockupEducoin,
   mensajeDeErrorApi,
   useToast,
 } from "@/components/ui";
@@ -147,10 +148,7 @@ export default function LoginPage() {
         <div className='w-full max-w-md'>
           {/* Marca */}
           <div className='mb-6 flex items-center justify-center gap-2'>
-            <div className='flex h-10 w-10 items-center justify-center rounded-xl bg-indigo-600 text-lg font-bold text-white'>
-              E
-            </div>
-            <span className='text-xl font-bold text-slate-900'>EduCoins</span>
+            <LockupEducoin className='h-10 w-auto' />
             <span className='rounded-full bg-indigo-50 px-2 py-0.5 text-xs font-semibold text-indigo-700'>
               Campus Beta
             </span>

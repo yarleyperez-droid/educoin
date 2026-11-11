@@ -38,7 +38,10 @@ function colorPodio(posicion: number): string {
     case 2:
       return "bg-slate-200 text-slate-700 ring-slate-300";
     case 3:
-      return "bg-orange-100 text-orange-700 ring-orange-200";
+      /* Bronce = Ámbar Académico sólido (#B45309, identidad EduCoin) con
+         texto ámbar-100 (5.84:1, AA). La guía prohíbe texto blanco sobre
+         fondos dorados/ámbar; el ámbar-100 mantiene el contraste sin blanco. */
+      return "bg-amber-700 text-amber-100 ring-amber-700";
     default:
       return "bg-slate-100 text-slate-600";
   }

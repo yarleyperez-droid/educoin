@@ -20,6 +20,7 @@ import type { ApiMeta } from '@/lib/api-client';
 import type {
   ActividadEstudiante,
   ActividadResumen,
+  ModoCalificacion,
   PreguntaEstudiante,
 } from '../contrato/cuestionario';
 
@@ -49,6 +50,8 @@ interface ActividadEstudianteBackend {
   titulo: string;
   descripcion: string | null;
   recompensaMonedas: number;
+  totalPuntos: number;
+  modoCalificacion: ModoCalificacion;
   preguntas: PreguntaEstudianteBackend[];
   publicadaEn: string | null;
 }
@@ -62,6 +65,8 @@ interface ActividadListadoBackend {
   titulo: string;
   estado: string;
   recompensaMonedas: number;
+  totalPuntos: number;
+  modoCalificacion: ModoCalificacion;
   publicadaEn: string | null;
   cierraEn: string | null;
   creadoEn: string;
@@ -111,6 +116,8 @@ function aActividadEstudiante(
     titulo: backend.titulo,
     descripcion: backend.descripcion,
     recompensaMonedas: backend.recompensaMonedas,
+    totalPuntos: backend.totalPuntos,
+    modoCalificacion: backend.modoCalificacion,
     preguntas: backend.preguntas.map(aPreguntaEstudiante),
     publicadaEn: backend.publicadaEn,
   };
@@ -127,6 +134,8 @@ function aActividadResumen(backend: ActividadListadoBackend): ActividadResumen {
     id: String(backend.id),
     titulo: backend.titulo,
     recompensaMonedas: backend.recompensaMonedas,
+    totalPuntos: backend.totalPuntos,
+    modoCalificacion: backend.modoCalificacion,
     publicadaEn: backend.publicadaEn,
     cierraEn: backend.cierraEn,
     creadoEn: backend.creadoEn,

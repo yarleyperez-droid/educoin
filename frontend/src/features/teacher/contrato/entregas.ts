@@ -248,6 +248,10 @@ export type RespuestaCalificada = z.infer<typeof RespuestaCalificadaSchema>;
  *   (en `rejected` la BD lo deja `null`);
  * - `entregadoEn` es `null` en los borradores (`in_progress`);
  * - `puntaje` es `null` hasta calificar (`NUMERIC(6,2)` → `number`);
+ * - `puntajeAutomatico` es la suma de `answers[].score` no nulos
+ *   (redondeada a 2 decimales) o `null` si ninguna respuesta tiene
+ *   `score`: sirve para **prellenar** el puntaje del profesor en entregas
+ *   `submitted`; el valor final lo decide él (0..total de la actividad);
  * - `monedasOtorgadas` lo escribe el trigger `fn_award_coins` (`0`
  *   antes de `graded`) — la UI jamás lo calcula (AGENTS.md §6).
  */
@@ -269,6 +273,13 @@ export const EntregaDetalleSchema = z.object({
 
   /** Puntaje total al calificarse; `null` mientras espera al profesor. */
   puntaje: z.number().nullable(),
+
+  /**
+   * Suma de `answers[].score` no nulos (respuestas auto-evaluadas);
+   * `null` si ninguna respuesta tiene `score`. Prellena el puntaje del
+   * profesor; no es la nota final.
+   */
+  puntajeAutomatico: z.number().nullable(),
 
   /** Monedas otorgadas por `fn_award_coins` al pasar a `graded` (0 antes). */
   monedasOtorgadas: z.number(),
@@ -299,6 +310,13 @@ export interface EntregaDetalle {
 
   /** Puntaje total; `null` hasta calificar. */
   puntaje: number | null;
+
+  /**
+   * Suma de `answers[].score` no nulos (respuestas auto-evaluadas);
+   * `null` si ninguna respuesta tiene `score`. Prellena el puntaje del
+   * profesor; el valor final lo decide él.
+   */
+  puntajeAutomatico: number | null;
 
   /** Monedas otorgadas (`0` hasta calificar). */
   monedasOtorgadas: number;

@@ -110,6 +110,9 @@ const ACTIVIDAD_LISTADO = {
   title: 'Challenge 2: Fractions',
   status: 'draft' as const,
   reward_coins: 120,
+  // El JSONB viaja en la fila de la consulta (CAMPOS_ACTIVIDAD_LISTADO):
+  // de ahí se derivan totalPuntos/modoCalificacion sin N+1.
+  questions: PREGUNTAS_SEED,
   published_at: null,
   closes_at: null,
   created_at: new Date('2026-10-12T10:00:00.000Z'),
@@ -133,6 +136,8 @@ const RESPUESTA_ACTIVIDAD = {
   descripcion: 'Solve the following exercises',
   recompensaMonedas: 120,
   estado: 'draft',
+  totalPuntos: 10,
+  modoCalificacion: 'automatica',
   preguntas: PREGUNTAS_SEED,
   publicadaEn: null,
   cierraEn: null,
@@ -149,6 +154,8 @@ const RESPUESTA_ACTIVIDAD_ESTUDIANTE = {
   descripcion: 'Solve the following exercises',
   recompensaMonedas: 120,
   estado: 'published',
+  totalPuntos: 10,
+  modoCalificacion: 'automatica',
   preguntas: [
     {
       position: 1,
@@ -480,6 +487,8 @@ describe('ActivitiesService', () => {
             titulo: 'Challenge 2: Fractions',
             estado: 'draft',
             recompensaMonedas: 120,
+            totalPuntos: 10,
+            modoCalificacion: 'automatica',
             publicadaEn: null,
             cierraEn: null,
             creadoEn: '2026-10-12T10:00:00.000Z',
@@ -668,6 +677,8 @@ describe('ActivitiesService', () => {
             titulo: 'Challenge 2: Fractions',
             estado: 'draft',
             recompensaMonedas: 120,
+            totalPuntos: 10,
+            modoCalificacion: 'automatica',
             publicadaEn: null,
             cierraEn: null,
             creadoEn: '2026-10-12T10:00:00.000Z',

@@ -56,17 +56,17 @@ import type {
  * Mensajes de resultado (exportados para que las pruebas compartan
  * exactamente el mismo texto). El Service decide cuál va según la
  * evaluación (evaluarRespuestas):
- * - calificada: auto-calificable Y con el umbral de correctas → el
- *   trigger ya acreditó las monedas.
- * - umbral: auto-calificable pero sin el 80% de correctas → queda
+ * - calificada: auto-calificable Y con el umbral de puntaje → el
+ *   trigger ya acreditó las monedas (proporcionales al puntaje).
+ * - umbral: auto-calificable pero sin el 80% del puntaje → queda
  *   'submitted' y la decisión final es del profesor.
  * - pendiente: la actividad tiene preguntas de calificación manual.
  */
 export const MENSAJE_ENTREGA_CALIFICADA =
-  'Entrega registrada y calificada automáticamente: alcanzaste el umbral de respuestas correctas y las monedas de la actividad ya fueron acreditadas.';
+  'Entrega registrada y calificada automáticamente: alcanzaste el umbral de puntaje y las monedas de la actividad ya fueron acreditadas.';
 
 export const MENSAJE_ENTREGA_UMBRAL =
-  'Tu entrega no alcanzó el umbral del 80% de respuestas correctas: queda pendiente de revisión del profesor, quien decidirá si la califica.';
+  'Tu entrega no alcanzó el umbral del 80% del puntaje: queda pendiente de revisión del profesor, quien decidirá si la califica.';
 
 export const MENSAJE_ENTREGA_PENDIENTE =
   'Entrega registrada con la evaluación de las preguntas auto-calificables: la calificación final la hará el profesor (la actividad tiene preguntas de calificación manual).';
@@ -525,7 +525,7 @@ export class SubmissionsService {
 
     // Auto-calificación (AGENTS.md §11.2): veredicto por respuesta en
     // el propio JSONB answers; con él se decide si la entrega pasa a
-    // 'graded' (umbral del 80% de correctas, regla del equipo).
+    // 'graded' (umbral del 80% del puntaje total, regla del equipo).
     const evaluacion = evaluarRespuestas(respuestas, contexto.preguntas);
 
     const entregadoEn = new Date();
@@ -1171,10 +1171,34 @@ export class SubmissionsService {
       calificadoEn:
         entrega.graded_at === null ? null : entrega.graded_at.toISOString(),
       puntaje: entrega.score === null ? null : Number(entrega.score.toString()),
+      puntajeAutomatico: this.puntajeAutomaticoDe(
+        entrega.answers as RespuestaCalificada[],
+      ),
       monedasOtorgadas: entrega.coins_awarded,
       feedback: entrega.feedback,
       respuestas: entrega.answers as RespuestaCalificada[],
     };
+  }
+
+  /**
+   * Suma de answers[].score no nulos (redondeada a 2 decimales); null
+   * si ninguna respuesta tiene score (p. ej. todas file/minigame).
+   * Prellena el puntaje del profesor en entregas 'submitted': el valor
+   * final lo decide él (0..total de la actividad).
+   */
+  private puntajeAutomaticoDe(
+    respuestas: RespuestaCalificada[],
+  ): number | null {
+    const puntajes = respuestas
+      .map((respuesta) => respuesta.score)
+      .filter((score): score is number => typeof score === 'number');
+    if (puntajes.length === 0) {
+      return null;
+    }
+    return (
+      Math.round(puntajes.reduce((total, score) => total + score, 0) * 100) /
+      100
+    );
   }
 
   /**

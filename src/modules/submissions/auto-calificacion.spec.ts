@@ -1,7 +1,7 @@
 import type { Pregunta } from '../activities/dto/preguntas.schema';
 import type { RespuestaEntrega } from './dto/respuestas.schema';
 import {
-  UMBRAL_CORRECTAS_PORCENTAJE,
+  UMBRAL_PUNTOS_PORCENTAJE,
   evaluarRespuestas,
 } from './auto-calificacion';
 
@@ -27,12 +27,20 @@ const PREGUNTAS_SEED: Pregunta[] = [
   },
 ];
 
-/** Generador de pregunta test de una correcta (a|b) para pruebas de umbral. */
-const preguntaTest = (position: number, correcta: 'a' | 'b'): Pregunta => ({
+/**
+ * Generador de pregunta test de una correcta (a|b) para pruebas de
+ * umbral. `score` por defecto 1 (preguntas sin ponderar); para pruebas
+ * ponderadas se pasa el puntaje de la pregunta.
+ */
+const preguntaTest = (
+  position: number,
+  correcta: 'a' | 'b',
+  score = 1,
+): Pregunta => ({
   position,
   type: 'test',
   prompt: `Pregunta ${position}`,
-  score: 1,
+  score,
   options: [
     { text: 'a', is_correct: correcta === 'a' },
     { text: 'b', is_correct: correcta === 'b' },
@@ -237,8 +245,8 @@ describe('evaluarRespuestas', () => {
     });
   });
 
-  describe('umbral de correctas (regla del equipo: 80%)', () => {
-    it('4 de 5 correctas (80% exacto) alcanza el umbral', () => {
+  describe('umbral de puntaje (regla del equipo: 80% del puntaje total)', () => {
+    it('4 de 5 preguntas de 1 punto (80% exacto del puntaje) alcanza el umbral', () => {
       const preguntas = [
         preguntaTest(1, 'a'),
         preguntaTest(2, 'a'),
@@ -261,7 +269,7 @@ describe('evaluarRespuestas', () => {
       expect(evaluacion.alcanzaUmbral).toBe(true);
     });
 
-    it('3 de 5 correctas (60%) NO alcanza el umbral', () => {
+    it('3 de 5 preguntas de 1 punto (60% del puntaje) NO alcanza el umbral', () => {
       const preguntas = [
         preguntaTest(1, 'a'),
         preguntaTest(2, 'a'),
@@ -307,7 +315,7 @@ describe('evaluarRespuestas', () => {
       expect(evaluacion.alcanzaUmbral).toBe(false);
     });
 
-    it('2 de 2 correctas: umbral alcanzado', () => {
+    it('2 de 2 correctas (todo el puntaje): umbral alcanzado', () => {
       const evaluacion = evaluarRespuestas(
         [
           { question_position: 1, option: '3' },
@@ -319,7 +327,7 @@ describe('evaluarRespuestas', () => {
       expect(evaluacion.alcanzaUmbral).toBe(true);
     });
 
-    it('1 de 2 correctas (50%): umbral NO alcanzado', () => {
+    it('1 de 2 correctas (5/10 = 50% del puntaje): umbral NO alcanzado', () => {
       const evaluacion = evaluarRespuestas(
         [
           { question_position: 1, option: '2' },
@@ -336,7 +344,73 @@ describe('evaluarRespuestas', () => {
     });
 
     it('el umbral es el porcentaje exportado (80)', () => {
-      expect(UMBRAL_CORRECTAS_PORCENTAJE).toBe(80);
+      expect(UMBRAL_PUNTOS_PORCENTAJE).toBe(80);
+    });
+  });
+
+  describe('umbral por PUNTAJE con preguntas ponderadas (10,1,1,1,1 → total 14)', () => {
+    /**
+     * 5 preguntas: la primera vale 10 puntos y las cuatro siguientes
+     * valen 1 punto cada una (total 14). Todas con respuesta correcta
+     * 'a': cada caso elige qué responder bien/mal.
+     */
+    const PREGUNTAS_PONDERADAS = [
+      preguntaTest(1, 'a', 10),
+      preguntaTest(2, 'a', 1),
+      preguntaTest(3, 'a', 1),
+      preguntaTest(4, 'a', 1),
+      preguntaTest(5, 'a', 1),
+    ];
+
+    it('acertar solo las cuatro de 1 punto (4/14 ≈ 28.6%) NO alcanza el umbral', () => {
+      const respuestas = [
+        responderTest(1, 'b'), // falla la de 10
+        responderTest(2, 'a'),
+        responderTest(3, 'a'),
+        responderTest(4, 'a'),
+        responderTest(5, 'a'),
+      ];
+
+      const evaluacion = evaluarRespuestas(respuestas, PREGUNTAS_PONDERADAS);
+
+      expect(evaluacion.totalPuntos).toBe(14);
+      expect(evaluacion.correctas).toBe(4);
+      expect(evaluacion.puntaje).toBe(4);
+      expect(evaluacion.alcanzaUmbral).toBe(false);
+    });
+
+    it('acertar solo la de 10 puntos (10/14 ≈ 71.4%) NO alcanza el umbral', () => {
+      const respuestas = [
+        responderTest(1, 'a'),
+        responderTest(2, 'b'),
+        responderTest(3, 'b'),
+        responderTest(4, 'b'),
+        responderTest(5, 'b'),
+      ];
+
+      const evaluacion = evaluarRespuestas(respuestas, PREGUNTAS_PONDERADAS);
+
+      expect(evaluacion.totalPuntos).toBe(14);
+      expect(evaluacion.correctas).toBe(1);
+      expect(evaluacion.puntaje).toBe(10);
+      expect(evaluacion.alcanzaUmbral).toBe(false);
+    });
+
+    it('acertar la de 10 + dos de 1 (12/14 ≈ 85.7%) SÍ alcanza el umbral', () => {
+      const respuestas = [
+        responderTest(1, 'a'),
+        responderTest(2, 'a'),
+        responderTest(3, 'a'),
+        responderTest(4, 'b'),
+        responderTest(5, 'b'),
+      ];
+
+      const evaluacion = evaluarRespuestas(respuestas, PREGUNTAS_PONDERADAS);
+
+      expect(evaluacion.totalPuntos).toBe(14);
+      expect(evaluacion.correctas).toBe(3);
+      expect(evaluacion.puntaje).toBe(12);
+      expect(evaluacion.alcanzaUmbral).toBe(true);
     });
   });
 });

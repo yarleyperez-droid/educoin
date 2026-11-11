@@ -108,7 +108,7 @@ const RESPUESTAS_VALIDAS = [
   { question_position: 2, text: '6' },
 ];
 
-/** Misma entrega con la primera respuesta MAL: 1/2 = 50% < umbral. */
+/** Misma entrega con la primera respuesta MAL: 5/10 puntos = 50% < 80% del puntaje. */
 const RESPUESTAS_UMBRAL_FALLIDO = [
   { question_position: 1, option: '1' },
   { question_position: 2, text: '6' },
@@ -121,6 +121,13 @@ const RESPUESTAS_MINIGAME = [
 ];
 
 const RECOMPENSA = 120;
+
+/**
+ * Monedas que acredita la calificación MANUAL del profesor con
+ * puntaje 7.5 sobre un total de 10: fn_award_coins paga en proporción
+ * al puntaje (ROUND(120 × 7.5 / 10) = 90); RECOMPENSA es el MÁXIMO.
+ */
+const MONEDAS_CALIFICACION = 90;
 
 describe('Entregas: borrador, retomada y envío (e2e, datos del seed)', () => {
   let app: INestApplication<App>;
@@ -766,7 +773,7 @@ describe('Entregas: borrador, retomada y envío (e2e, datos del seed)', () => {
   });
 
   describe('umbral del 80% y preguntas de calificación manual', () => {
-    it('1 de 2 correctas (50%): queda submitted SIN monedas, con la evaluación guardada', async () => {
+    it('5 de 10 puntos (50% < 80% del puntaje): queda submitted SIN monedas, con la evaluación guardada', async () => {
       const monedasAntes = await monedasGanadas();
 
       const respuesta = await entregar(
@@ -1011,6 +1018,9 @@ describe('Entregas: borrador, retomada y envío (e2e, datos del seed)', () => {
         entregadoEn: expect.any(String),
         calificadoEn: null,
         puntaje: null,
+        // Suma de answers[].score no nulos (0 + 5) para prellenar el
+        // puntaje del profesor; null solo si ninguna respuesta tiene score.
+        puntajeAutomatico: 5,
         monedasOtorgadas: 0,
         feedback: null,
         respuestas: [
@@ -1047,10 +1057,11 @@ describe('Entregas: borrador, retomada y envío (e2e, datos del seed)', () => {
       expect(respuesta.body.entrega.feedback).toBe(
         'Bien en general; revisa el planteo del ejercicio 1.',
       );
-      // fn_award_coins acreditó la recompensa recién AL CALIFICAR el
-      // profesor (la entrega venía 'submitted' sin monedas).
-      expect(respuesta.body.entrega.monedasOtorgadas).toBe(RECOMPENSA);
-      expect(await monedasGanadas()).toBe(monedasAntes + RECOMPENSA);
+      // fn_award_coins acreditó las monedas proporcionales recién AL
+      // CALIFICAR el profesor (la entrega venía 'submitted' sin monedas):
+      // ROUND(120 × 7.5 / 10) = 90, no la recompensa completa.
+      expect(respuesta.body.entrega.monedasOtorgadas).toBe(MONEDAS_CALIFICACION);
+      expect(await monedasGanadas()).toBe(monedasAntes + MONEDAS_CALIFICACION);
     });
 
     it('el estudiante VE la calificación y el feedback (GET mi entrega)', async () => {
@@ -1059,7 +1070,7 @@ describe('Entregas: borrador, retomada y envío (e2e, datos del seed)', () => {
       expect(respuesta.status).toBe(200);
       expect(respuesta.body.estado).toBe('graded');
       expect(respuesta.body.puntaje).toBe(7.5);
-      expect(respuesta.body.monedasOtorgadas).toBe(RECOMPENSA);
+      expect(respuesta.body.monedasOtorgadas).toBe(MONEDAS_CALIFICACION);
       expect(respuesta.body.feedback).toBe(
         'Bien en general; revisa el planteo del ejercicio 1.',
       );

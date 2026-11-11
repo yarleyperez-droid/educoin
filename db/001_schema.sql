@@ -9,8 +9,15 @@
 --   Multi-tenant (organizaciones) · usuarios con 3 roles · clases con
 --   código de unión · inscripciones con contadores de monedas por clase
 --   · actividades autocontenidas (preguntas en JSONB) · entregas con
---   respuestas en JSONB · catálogo de ítems canjeables · canje
---   instantáneo · libro mayor de auditoría de monedas.
+--   respuestas en JSONB · catálogo de ítems canjeables (con
+--   aprobación automática opcional) · canje revisable
+--   (pendiente → aprobado | rechazado → entregado) · libro mayor de
+--   auditoría de monedas.
+--
+--   (Historia H7.2 — épica E7 "Canje con aprobación del profesor":
+--   el enum, las columnas de resolución, los CHECK, el índice de la
+--   cola, la reversión al rechazar y redeemable_items.auto_approve
+--   fueron aprobados en H7.1 → docs/propuesta_canje_revisable.md)
 --
 -- USO:
 --   psql -U <usuario> -d plataforma_educativa -f db/001_schema.sql
@@ -48,7 +55,11 @@ CREATE TYPE activity_status   AS ENUM ('draft', 'published', 'deleted');
 CREATE TYPE submission_status AS ENUM ('in_progress', 'submitted', 'graded', 'rejected');
 CREATE TYPE item_type         AS ENUM ('grade_bonus', 'fun_activity');
 CREATE TYPE item_status       AS ENUM ('active', 'inactive', 'deleted');
-CREATE TYPE redemption_status AS ENUM ('completed', 'reversed');
+-- Ampliados en H7.1/H7.2 (docs/propuesta_canje_revisable.md): los 4
+-- valores nuevos entran ANTES de 'completed' para conservar el orden
+-- de la máquina de estados.
+CREATE TYPE redemption_status AS ENUM ('pending', 'approved', 'rejected',
+                                       'delivered', 'completed', 'reversed');
 CREATE TYPE movement_type     AS ENUM ('earning', 'spending', 'reversal', 'adjustment');
 
 -- ---------------------------------------------------------------------
@@ -134,6 +145,9 @@ CREATE INDEX idx_enrollments_student ON enrollments(student_id);
 --    · questions: JSONB autocontenido
 --      [{position, type: test|completion|file|minigame, prompt,
 --        score, expected_answer, options: [{text, is_correct}]}]
+--    · reward_coins es el MÁXIMO de monedas: fn_award_coins lo paga en
+--      proporción al puntaje obtenido (submissions.score) sobre el
+--      puntaje total de la actividad (suma de questions[].score)
 --    · Borrado lógico: status = 'deleted' + deleted_at
 -- ---------------------------------------------------------------------
 CREATE TABLE activities (
@@ -188,6 +202,8 @@ CREATE INDEX idx_submissions_enrollment ON submissions(enrollment_id);
 --    · grade_bonus    : exige grade_points (puntos de nota acreditados)
 --    · fun_activity   : actividad lúdica, no aporta puntos de nota
 --    · stock NULL = ilimitado
+--    · auto_approve = TRUE → el canje se aprueba solo (H7.2, §2.6 de
+--      la propuesta aprobada); FALSE (default) → espera al profesor
 --    · El profesor se deduce de la clase (teacher_id); no se duplica.
 -- ---------------------------------------------------------------------
 CREATE TABLE redeemable_items (
@@ -199,6 +215,7 @@ CREATE TABLE redeemable_items (
     cost_coins   INT NOT NULL CHECK (cost_coins > 0),
     grade_points NUMERIC(4,2) CHECK (grade_points IS NULL OR grade_points > 0),
     stock        INT CHECK (stock IS NULL OR stock >= 0),
+    auto_approve BOOLEAN NOT NULL DEFAULT FALSE,
     status       item_status NOT NULL DEFAULT 'active',
     created_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
@@ -207,12 +224,18 @@ CREATE TABLE redeemable_items (
 );
 
 -- ---------------------------------------------------------------------
--- 10. redemptions — canje instantáneo (sin flujo de aprobación)
---     · cost_coins/grade_points: copia congelada del ítem al canjear
+-- 10. redemptions — canje revisable (H7.1/H7.2): el estudiante
+--     solicita (pending, con reserva) y el profesor resuelve
+--     (approved | rejected); approved → delivered al entregar.
+--     · cost_coins/grade_points: copia congelada del ítem al solicitar
+--     · resolved_by/resolved_at: quién resolvió y cuándo (los escribe
+--       la app en el MISMO UPDATE; el trigger es AFTER UPDATE)
 --     · Trigger execute_redemption : valida stock, lo descuenta y congela
 --     · Trigger register_redemption: registra el movimiento de gasto
---     · Trigger reverse_redemption : al pasar a 'reversed' devuelve
---       monedas y stock
+--     · Trigger reverse_redemption : al pasar a 'reversed' (MVP) o a
+--       'rejected' desde 'pending' devuelve monedas y stock
+--     · Los valores 'completed'/'reversed' se conservan: el flujo
+--       instantáneo legacy y sus filas existentes siguen válidos
 -- ---------------------------------------------------------------------
 CREATE TABLE redemptions (
     id             BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
@@ -221,12 +244,25 @@ CREATE TABLE redemptions (
     cost_coins     INT NOT NULL CHECK (cost_coins > 0),
     grade_points   NUMERIC(4,2),
     status         redemption_status NOT NULL DEFAULT 'completed',
+    resolved_by    BIGINT REFERENCES users(id),
+    resolved_at    TIMESTAMPTZ,
     redeemed_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
     reversed_at    TIMESTAMPTZ,
-    notes          TEXT
+    notes          TEXT,
+    -- Un canje resuelto DEBE traer auditoría completa…
+    CONSTRAINT ck_redemption_resolved_audit
+      CHECK ( status NOT IN ('approved','rejected','delivered')
+              OR (resolved_by IS NOT NULL AND resolved_at IS NOT NULL) ),
+    -- …y un pendiente NO debe tenerla.
+    CONSTRAINT ck_redemption_pending_clean
+      CHECK ( status <> 'pending'
+              OR (resolved_by IS NULL AND resolved_at IS NULL) )
 );
 CREATE INDEX idx_redemptions_enrollment ON redemptions(enrollment_id);
 CREATE INDEX idx_redemptions_item       ON redemptions(item_id);
+-- Cola de pendientes del profesor (parcial, misma familia que uq_movement_*)
+CREATE INDEX idx_redemptions_pending    ON redemptions(redeemed_at)
+    WHERE status = 'pending';
 
 -- ---------------------------------------------------------------------
 -- 11. coin_movements — libro mayor: auditoría de cada moneda
@@ -343,17 +379,49 @@ FOR EACH ROW EXECUTE FUNCTION fn_validate_submission();
 
 -- 12.4 Al calificar la entrega se otorgan las monedas de la actividad
 --      (una sola vez: el índice único parcial uq_movement_earning lo garantiza)
+--      Monedas proporcionales al puntaje: activities.reward_coins es el
+--      MÁXIMO y se paga en proporción a submissions.score sobre el total
+--      de la actividad. Coincide literalmente con la migración
+--      20261110000002_monedas_proporcionales.
+
+-- Puntaje total de una actividad = suma de questions[].score.
+-- IMMUTABLE para poder usarse dentro del trigger.
+CREATE OR REPLACE FUNCTION fn_activity_total_points(p_questions JSONB)
+RETURNS NUMERIC
+LANGUAGE sql IMMUTABLE AS $$
+    SELECT COALESCE(SUM((pregunta->>'score')::numeric), 0)
+    FROM jsonb_array_elements(p_questions) AS pregunta
+$$;
+
 CREATE OR REPLACE FUNCTION fn_award_coins() RETURNS trigger
 LANGUAGE plpgsql AS $$
-DECLARE v_reward INT;
+DECLARE
+    v_reward INT;
+    v_total  NUMERIC;
+    v_coins  INT;
 BEGIN
     IF NEW.status = 'graded' AND OLD.status <> 'graded' THEN
-        SELECT reward_coins INTO v_reward FROM activities WHERE id = NEW.activity_id;
-        NEW.coins_awarded := COALESCE(v_reward, 0);
+        SELECT reward_coins, fn_activity_total_points(questions)
+          INTO v_reward, v_total
+          FROM activities WHERE id = NEW.activity_id;
+
+        v_reward := COALESCE(v_reward, 0);
+
+        IF NEW.score IS NOT NULL AND COALESCE(v_total, 0) > 0 THEN
+            v_coins := ROUND(v_reward * NEW.score / v_total)::int;
+        ELSE
+            -- Sin puntaje o sin total: se conserva el contrato anterior.
+            v_coins := v_reward;
+        END IF;
+
+        -- Red de seguridad: nunca negativo ni por encima del máximo.
+        v_coins := GREATEST(0, LEAST(v_coins, v_reward));
+
+        NEW.coins_awarded := v_coins;
         NEW.graded_at     := COALESCE(NEW.graded_at, now());
-        IF COALESCE(v_reward, 0) > 0 THEN
+        IF v_coins > 0 THEN
             INSERT INTO coin_movements (enrollment_id, type, quantity, submission_id, description)
-            VALUES (NEW.enrollment_id, 'earning', v_reward, NEW.id, 'Activity reward');
+            VALUES (NEW.enrollment_id, 'earning', v_coins, NEW.id, 'Activity reward');
         END IF;
     END IF;
     RETURN NEW;
@@ -431,6 +499,10 @@ AFTER INSERT ON redemptions
 FOR EACH ROW EXECUTE FUNCTION fn_register_redemption();
 
 -- 12.8 Canje revertido: devuelve monedas y stock
+--      · 'reversed'  : anulación legacy del estudiante (MVP)
+--      · 'rejected'  : rechazo del profesor — SOLO desde 'pending'
+--        (guard OLD.status = 'pending'; uq_movement_reversal es la red
+--        de seguridad contra una segunda devolución)
 CREATE OR REPLACE FUNCTION fn_reverse_redemption() RETURNS trigger
 LANGUAGE plpgsql AS $$
 BEGIN
@@ -438,6 +510,11 @@ BEGIN
         NEW.reversed_at := COALESCE(NEW.reversed_at, now());
         INSERT INTO coin_movements (enrollment_id, type, quantity, redemption_id, description)
         VALUES (NEW.enrollment_id, 'reversal', NEW.cost_coins, NEW.id, 'Redemption reversed');
+        UPDATE redeemable_items SET stock = stock + 1
+         WHERE id = NEW.item_id AND stock IS NOT NULL;
+    ELSIF NEW.status = 'rejected' AND OLD.status = 'pending' THEN
+        INSERT INTO coin_movements (enrollment_id, type, quantity, redemption_id, description)
+        VALUES (NEW.enrollment_id, 'reversal', NEW.cost_coins, NEW.id, 'Redemption rejected');
         UPDATE redeemable_items SET stock = stock + 1
          WHERE id = NEW.item_id AND stock IS NOT NULL;
     END IF;

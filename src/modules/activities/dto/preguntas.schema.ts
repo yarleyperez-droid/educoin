@@ -137,6 +137,41 @@ export const preguntasSchema = z
 export type Pregunta = z.infer<typeof preguntasSchema>[number];
 
 /**
+ * Camino NORMAL de calificación de una actividad:
+ * - 'automatica': TODAS las preguntas son test/completion → la entrega
+ *   se auto-califica al enviarse.
+ * - 'manual': hay al menos una pregunta file/minigame → el profesor
+ *   revisa y califica.
+ *
+ * Describe el camino normal de la actividad, no el veredicto de una
+ * entrega concreta: una actividad 'automatica' puede caer en revisión
+ * del profesor si la entrega no alcanza el umbral de puntaje.
+ */
+export type ModoCalificacion = 'automatica' | 'manual';
+
+/** 'automatica' si TODAS las preguntas son test/completion; si no, 'manual'. */
+export function modoCalificacionDe(preguntas: Pregunta[]): ModoCalificacion {
+  return preguntas.every(
+    (pregunta) => pregunta.type === 'test' || pregunta.type === 'completion',
+  )
+    ? 'automatica'
+    : 'manual';
+}
+
+/**
+ * Suma de questions[].score (0 si no hay preguntas): el puntaje total,
+ * o puntaje máximo, de la actividad. Redondeada a 2 decimales, la misma
+ * precisión del puntaje de la entrega (submissions.score).
+ */
+export function totalPuntosDe(preguntas: Pregunta[]): number {
+  return (
+    Math.round(
+      preguntas.reduce((total, pregunta) => total + pregunta.score, 0) * 100,
+    ) / 100
+  );
+}
+
+/**
  * Pregunta tal como la ve el ESTUDIANTE: sin `options[].is_correct` ni
  * `expected_answer` (AGENTS.md §9.5: la respuesta correcta nunca se
  * envía al frontend mientras el estudiante resuelve).

@@ -247,7 +247,7 @@ La BD implementa reglas de negocio con **triggers, funciones y constraints** (ve
 |---|---|---|
 | Inscripción | Trigger `fn_validate_enrollment`: estudiante y profesor deben compartir organización | Validar antes para dar un error amigable |
 | Crear entrega | Trigger `fn_validate_submission`: actividad `published` y vigente, inscripción `active`, misma clase | Solo INSERT; traducir la excepción |
-| Calificar | Cambiar `status` a `graded` → trigger `fn_award_coins` otorga `reward_coins` **una sola vez** e inserta el movimiento `earning` (garantizado por índice único parcial) | **Nunca** insertar en `coin_movements` ni tocar `coins_earned/coins_spent` |
+| Calificar | Cambiar `status` a `graded` → trigger `fn_award_coins` otorga `ROUND(reward_coins × score / total)` (recompensa **proporcional al puntaje**; `reward_coins` es el máximo) **una sola vez** e inserta el movimiento `earning` (garantizado por índice único parcial) | **Nunca** insertar en `coin_movements` ni tocar `coins_earned/coins_spent` |
 | Contadores | Trigger `fn_apply_movement` actualiza `enrollments` con cada movimiento | Solo leer. `coins_available` es **columna generada** (no escribirla) |
 | Canje | Triggers `fn_execute_redemption` (valida ítem/stock/clase y congela costo y puntos) + `fn_register_redemption` (descuenta monedas; `ck_enrollment_no_negative` impide saldo negativo) | Solo `INSERT` en `redemptions` (`enrollment_id`, `item_id`). No calcular costo ni descontar |
 | Revertir canje | Cambiar `status` a `reversed` → trigger `fn_reverse_redemption` devuelve monedas y stock | Solo cambiar el `status` |
@@ -412,7 +412,7 @@ Crea un `ExceptionFilter` en `common/filters` que traduzca:
 1. El estudiante crea la entrega (`INSERT` en `submissions`). La BD valida: actividad `published` y vigente, inscripción `active`, misma clase → si falla, `422`.
 2. El backend evalúa las respuestas contra `activities.questions` (`test`/`completion` por `is_correct`/`expected_answer`; validación de `file` y puntuación de `minigame` — **minijuegos sin implementar**, ver `docs/post_mvp.md`) y guarda el resultado en `submissions.answers` (JSONB) con puntaje y `score` de la entrega.
 3. El backend pasa la entrega a `submitted` (manual) o directamente a `graded` (auto-calificada).
-4. Al llegar a `graded`, el trigger `fn_award_coins` otorga `reward_coins` **una sola vez** e inserta el movimiento `earning` → contadores y rankings se actualizan solos.
+4. Al llegar a `graded`, el trigger `fn_award_coins` otorga monedas **proporcionales al puntaje** (`ROUND(reward_coins × score / total)`; `reward_coins` es el máximo) **una sola vez** e inserta el movimiento `earning` → contadores y rankings se actualizan solos.
 5. El profesor también puede calificar manualmente (`graded`, con `graded_by` y `feedback`) o rechazar (`rejected`).
 
 ### Canje (instantáneo — sin aprobación en MVP)

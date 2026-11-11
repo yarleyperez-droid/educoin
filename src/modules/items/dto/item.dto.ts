@@ -1,5 +1,6 @@
 import { Type } from 'class-transformer';
 import {
+  IsBoolean,
   IsIn,
   IsInt,
   IsNotEmpty,
@@ -63,6 +64,15 @@ export class CrearItemDto {
   @Type(() => Number)
   @IsInt()
   stock?: number | null;
+
+  /**
+   * Aprobación automática del canje (H7.2 / §2.6): `true` ⇒ la solicitud
+   * de canje se aprueba sola en la misma transacción. Default `false`
+   * (espera la verificación manual del profesor).
+   */
+  @IsOptional()
+  @IsBoolean()
+  autoApprove?: boolean;
 }
 
 /**
@@ -103,6 +113,11 @@ export class ActualizarItemDto {
   @IsOptional()
   @IsIn(ESTADOS_EDITABLES)
   status?: 'active' | 'inactive';
+
+  /** Cambia la política de aprobación automática del canje (H7.2 / §2.6). */
+  @IsOptional()
+  @IsBoolean()
+  autoApprove?: boolean;
 }
 
 /**
@@ -139,6 +154,8 @@ export class ItemDto {
   gradePoints!: number | null;
   stock!: number | null;
   status!: item_status;
+  /** Política de aprobación automática del canje (H7.2 / §2.6). */
+  autoApprove!: boolean;
   creadoEn!: string;
   actualizadoEn!: string;
 }

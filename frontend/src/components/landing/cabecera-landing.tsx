@@ -31,7 +31,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState } from "react";
 
-import { IconMenu, IconX } from "@/components/ui";
+import { IconMenu, IconX, LockupEducoin } from "@/components/ui";
 
 /** Anclas del nav: texto visible → id de la sección de destino. */
 const ENLACES_SECCION = [
@@ -114,17 +114,9 @@ export function CabeceraLanding() {
           href='/'
           className='flex items-center gap-2.5 rounded-card focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2'
         >
-          <span
-            aria-hidden='true'
-            className='flex h-9 w-9 items-center justify-center rounded-full bg-gold text-base font-bold text-white'
-          >
-            E
-          </span>
-          <span className='flex flex-col leading-tight'>
-            <span className='text-lg font-bold text-ink'>EduCoins</span>
-            <span className='hidden text-[11px] font-medium text-muted sm:block'>
-              Microeconomía Gamificada
-            </span>
+          <LockupEducoin className='h-9 w-auto' />
+          <span className='hidden text-[11px] font-medium text-muted sm:block'>
+            Microeconomía Gamificada
           </span>
         </Link>
 

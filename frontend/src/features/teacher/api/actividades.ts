@@ -53,6 +53,7 @@ import {
   mensajeDeErroresZod,
   normalizarPosiciones,
   PreguntasSchema,
+  type ModoCalificacion,
   type Pregunta,
 } from "../contrato/actividades";
 
@@ -71,6 +72,8 @@ interface ActividadBackend {
   titulo: string;
   descripcion: string | null;
   recompensaMonedas: number;
+  totalPuntos: number;
+  modoCalificacion: ModoCalificacion;
   estado: EstadoActividad;
   preguntas: Pregunta[];
   publicadaEn: string | null;
@@ -90,6 +93,8 @@ interface ActividadListadoBackend {
   titulo: string;
   estado: EstadoActividad;
   recompensaMonedas: number;
+  totalPuntos: number;
+  modoCalificacion: ModoCalificacion;
   publicadaEn: string | null;
   cierraEn: string | null;
   creadoEn: string;
@@ -120,6 +125,8 @@ function aActividad(backend: ActividadBackend): Actividad {
     titulo: backend.titulo,
     descripcion: backend.descripcion,
     recompensaMonedas: backend.recompensaMonedas,
+    totalPuntos: backend.totalPuntos,
+    modoCalificacion: backend.modoCalificacion,
     estado: backend.estado,
     preguntas: backend.preguntas,
     publicadaEn: backend.publicadaEn,
@@ -293,6 +300,8 @@ export async function listarActividades(claseId: string): Promise<Actividad[]> {
         titulo: fila.titulo,
         descripcion: null,
         recompensaMonedas: fila.recompensaMonedas,
+        totalPuntos: fila.totalPuntos,
+        modoCalificacion: fila.modoCalificacion,
         estado: fila.estado,
         preguntas: [],
         publicadaEn: fila.publicadaEn,
