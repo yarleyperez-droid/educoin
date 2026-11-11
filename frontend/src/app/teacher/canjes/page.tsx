@@ -42,7 +42,10 @@ import {
   listarPendientes,
   rechazarCanje,
 } from "@/features/teacher/api/canjes";
-import { BadgeEstadoCanje } from "@/features/billetera/componentes/badge-estado-canje";
+import {
+  BadgeEstadoCanje,
+  textoCostoCanje,
+} from "@/features/billetera/componentes/badge-estado-canje";
 import type {
   CanjeListado,
   Meta,
@@ -79,7 +82,7 @@ const BOTONES_CONFIRMACION: Readonly<Record<AccionUI, string>> = {
 /** Toast de éxito por acción resuelta. */
 const MENSAJES_EXITO: Readonly<Record<AccionUI, string>> = {
   aprobar: "Canje aprobado. Ya puedes marcarlo como entregado.",
-  rechazar: "Canje rechazado. Las monedas fueron devueltas al estudiante.",
+  rechazar: "Canje rechazado: se devolvieron monedas y stock.",
   entregar: "Canje entregado.",
 };
 
@@ -314,7 +317,7 @@ export default function ColaCanjesPage() {
                         <p className="text-slate-700">{fila.nombreItem}</p>
                       </td>
                       <td className="px-4 py-3 text-slate-700">
-                        {fila.costoMonedas} monedas
+                        {textoCostoCanje(fila.estado, fila.costoMonedas)}
                       </td>
                       <td className="px-4 py-3 text-slate-600">
                         {formatearFecha(fila.solicitadoEn)}

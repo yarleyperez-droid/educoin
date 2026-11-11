@@ -58,6 +58,36 @@ export function etiquetaEstadoCanje(estado: EstadoCanje): string {
   return PRESENTACION[estado].etiqueta;
 }
 
+/**
+ * Texto del costo de un canje según su estado (CA 2 y 3 de H7.3).
+ *
+ * Hace explícito el efecto del estado sobre las monedas, para que el
+ * estudiante no confunda monedas **reservadas** (aún no disponibles) con
+ * monedas **devueltas** (reversión ya acreditada) ni con el gasto
+ * definitivo de un canje entregado:
+ * - `pending` / `approved` → reservadas (descontadas del saldo, sin
+ *   decisión final);
+ * - `rejected` / `reversed` → devueltas (el trigger `fn_reverse_redemption`
+ *   ya acreditó el movimiento `reversal`);
+ * - `delivered` / `completed` → gasto definitivo.
+ *
+ * @param estado Estado real del canje (`redemption_status`).
+ * @param costo Costo congelado en monedas (`cost_coins`).
+ * @returns Texto visible, p. ej. `"30 monedas reservadas"`.
+ */
+export function textoCostoCanje(estado: EstadoCanje, costo: number): string {
+  switch (estado) {
+    case "pending":
+    case "approved":
+      return `${costo} monedas reservadas`;
+    case "rejected":
+    case "reversed":
+      return `${costo} monedas devueltas`;
+    default:
+      return `${costo} monedas`;
+  }
+}
+
 /** Props del badge de estado de un canje. */
 export interface BadgeEstadoCanjeProps {
   /** Estado real del canje (`redemption_status`). */

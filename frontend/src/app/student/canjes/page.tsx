@@ -26,7 +26,10 @@ import {
   MENSAJE_ERROR_GENERICO,
 } from "@/components/ui";
 import { listarMisCanjes } from "@/features/billetera/api/canje";
-import { BadgeEstadoCanje } from "@/features/billetera/componentes/badge-estado-canje";
+import {
+  BadgeEstadoCanje,
+  textoCostoCanje,
+} from "@/features/billetera/componentes/badge-estado-canje";
 import type {
   CanjeListado,
   Meta,
@@ -146,6 +149,12 @@ export default function MisCanjesPage() {
         </Link>
       </div>
 
+      <p className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+        Las monedas de un canje pendiente ya quedan <strong>reservadas</strong>:
+        se descuentan de tu saldo disponible y solo se devuelven si el profesor
+        rechaza la solicitud.
+      </p>
+
       <div className="w-full rounded-2xl border border-slate-200 bg-white p-6 shadow-sm sm:p-8">
         {cargando && <EstadoCarga mensaje="Cargando tus canjes…" />}
 
@@ -193,7 +202,7 @@ export default function MisCanjesPage() {
                         </p>
                       </td>
                       <td className="px-4 py-3 text-slate-700">
-                        {canje.costoMonedas} monedas
+                        {textoCostoCanje(canje.estado, canje.costoMonedas)}
                       </td>
                       <td className="px-4 py-3 text-slate-600">
                         {formatearFecha(canje.solicitadoEn)}
