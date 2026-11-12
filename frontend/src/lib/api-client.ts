@@ -557,10 +557,12 @@ export const api = {
  * **en plano** (H3.1/H3.3): mismos verbos y serialización JSON que
  * {@link api}, pero sobre {@link apiRequestPlano} (sin exigir envelope).
  *
- * Cobertura deliberada: `get`, `post`, `put` y `patch` — los verbos que
- * usan las fachadas de clases, actividades y entregas (el `PUT` es el
- * autosave del borrador de H3.4). El borrado (`DELETE /activities/:id`)
- * responde `204` y va por {@link api}.delete, que ya normaliza ese caso.
+ * Cobertura deliberada: `get`, `post`, `put`, `patch` y `delete` — los
+ * verbos que usan las fachadas de clases, actividades, entregas e ítems
+ * (el `PUT` es el autosave del borrador de H3.4; el `DELETE` es el
+ * borrado lógico de ítems de H10.2, que responde el DTO en plano).
+ * El borrado de actividades (`DELETE /activities/:id`) responde `204` y va
+ * por {@link api}.delete, que ya normaliza ese caso.
  */
 export const apiPlano = {
   /**
@@ -606,4 +608,14 @@ export const apiPlano = {
     cuerpo: unknown,
     init?: Omit<RequestInit, "method" | "body">,
   ) => apiRequestPlano<T>(ruta, { ...init, method: "PATCH", body: JSON.stringify(cuerpo) }),
+
+  /**
+   * Realiza una petición DELETE devolviendo la respuesta en plano.
+   *
+   * Añadido en H10.2: `DELETE /items/:id` (borrado lógico del catálogo de
+   * ítems) responde el `ItemDto` actualizado en plano (200), ni `{ data }`
+   * ni `204`, así que va por {@link apiRequestPlano}.
+   */
+  delete: <T>(ruta: string, init?: Omit<RequestInit, "method" | "body">) =>
+    apiRequestPlano<T>(ruta, { ...init, method: "DELETE" }),
 };
