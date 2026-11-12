@@ -199,7 +199,8 @@ CREATE INDEX idx_submissions_enrollment ON submissions(enrollment_id);
 
 -- ---------------------------------------------------------------------
 -- 9. redeemable_items — catálogo de recompensas canjeables por clase
---    · grade_bonus    : exige grade_points (puntos de nota acreditados)
+--    · grade_bonus    : exige grade_points (puntos de nota acreditados),
+--                       acotados al rango 0.1–0.5 décimas (H10.1)
 --    · fun_activity   : actividad lúdica, no aporta puntos de nota
 --    · stock NULL = ilimitado
 --    · auto_approve = TRUE → el canje se aprueba solo (H7.2, §2.6 de
@@ -213,7 +214,9 @@ CREATE TABLE redeemable_items (
     description  TEXT,
     type         item_type NOT NULL,
     cost_coins   INT NOT NULL CHECK (cost_coins > 0),
-    grade_points NUMERIC(4,2) CHECK (grade_points IS NULL OR grade_points > 0),
+    grade_points NUMERIC(4,2)
+        CONSTRAINT ck_item_grade_points_rango
+        CHECK (grade_points IS NULL OR (grade_points >= 0.1 AND grade_points <= 0.5)),
     stock        INT CHECK (stock IS NULL OR stock >= 0),
     auto_approve BOOLEAN NOT NULL DEFAULT FALSE,
     status       item_status NOT NULL DEFAULT 'active',

@@ -447,4 +447,107 @@ describe('Catálogo de ítems canjeables (e2e)', () => {
     });
     expect(respuesta.status).toBe(400);
   });
+
+  // H10.1: los bonos de nota solo aceptan 0.1–0.5 décimas.
+  describe('rango de grade_bonus 0.1–0.5 (H10.1 / T10.1.2)', () => {
+    /** Crea un grade_bonus y borra el ítem resultante (fixtures propios). */
+    const altaBonus = async (gradePoints: number, nombre: string) => {
+      const respuesta = await alta(tokenProfesor, {
+        classId: Number(idClasePropia),
+        name: nombre,
+        type: 'grade_bonus',
+        costCoins: 100,
+        gradePoints,
+      });
+      if (respuesta.status === 201) {
+        await prisma.redeemable_items.delete({
+          where: { id: BigInt(respuesta.body.id) },
+        });
+      }
+      return respuesta;
+    };
+
+    it('T10.1.2: 0.09 y 0.51 → 422 con mensaje claro; 0.1 y 0.5 → 201', async () => {
+      const MENSAJE_RANGO =
+        'Los puntos de nota (grade_points) deben estar entre 0.1 y 0.5 décimas.';
+
+      const bajo = await altaBonus(0.09, 'Bono debajo del rango H10.1');
+      expect(bajo.status).toBe(422);
+      expect(bajo.body.message).toBe(MENSAJE_RANGO);
+
+      const alto = await altaBonus(0.51, 'Bono encima del rango H10.1');
+      expect(alto.status).toBe(422);
+      expect(alto.body.message).toBe(MENSAJE_RANGO);
+
+      const minimo = await altaBonus(0.1, 'Bono límite mínimo H10.1');
+      expect(minimo.status).toBe(201);
+      expect(minimo.body.gradePoints).toBe(0.1);
+
+      const maximo = await altaBonus(0.5, 'Bono límite máximo H10.1');
+      expect(maximo.status).toBe(201);
+      expect(maximo.body.gradePoints).toBe(0.5);
+    });
+
+    it('T10.1.2: el PATCH respeta la frontera (0.51 → 422, 0.1 → 200)', async () => {
+      const fueraDeRango = await httpServer
+        .patch(`/api/v1/items/${idItemBonus}`)
+        .set('Authorization', `Bearer ${tokenProfesor}`)
+        .send({ gradePoints: 0.51 });
+      expect(fueraDeRango.status).toBe(422);
+      expect(fueraDeRango.body.message).toBe(
+        'Los puntos de nota (grade_points) deben estar entre 0.1 y 0.5 décimas.',
+      );
+
+      const limite = await httpServer
+        .patch(`/api/v1/items/${idItemBonus}`)
+        .set('Authorization', `Bearer ${tokenProfesor}`)
+        .send({ gradePoints: 0.1 });
+      expect(limite.status).toBe(200);
+      expect(limite.body.gradePoints).toBe(0.1);
+
+      // Se restaura el valor original del fixture (0.5).
+      const restaurado = await httpServer
+        .patch(`/api/v1/items/${idItemBonus}`)
+        .set('Authorization', `Bearer ${tokenProfesor}`)
+        .send({ gradePoints: 0.5 });
+      expect(restaurado.status).toBe(200);
+    });
+
+    it('T10.1.2: los tipos siguen invariables (fun_activity con puntos y bonus sin puntos → 422)', async () => {
+      const funConPuntos = await alta(tokenProfesor, {
+        classId: Number(idClasePropia),
+        name: 'Fun con puntos H10.1',
+        type: 'fun_activity',
+        costCoins: 10,
+        stock: 1,
+        gradePoints: 0.3,
+      });
+      expect(funConPuntos.status).toBe(422);
+      expect(funConPuntos.body.message).toBe(
+        'La actividad lúdica (fun_activity) no admite grade_points.',
+      );
+
+      const bonusSinPuntos = await alta(tokenProfesor, {
+        classId: Number(idClasePropia),
+        name: 'Bonus sin puntos H10.1',
+        type: 'grade_bonus',
+        costCoins: 100,
+      });
+      expect(bonusSinPuntos.status).toBe(422);
+      expect(bonusSinPuntos.body.message).toBe(
+        'El bono de nota (grade_bonus) requiere grade_points.',
+      );
+    });
+
+    it('CA 4: el CHECK de BD rechaza escrituras fuera de la API (red de seguridad)', async () => {
+      await expect(
+        prisma.$executeRaw`
+          INSERT INTO redeemable_items
+            (class_id, name, type, cost_coins, grade_points, stock)
+          VALUES
+            (${Number(idClasePropia)}, 'Bono fuera de rango CHECK',
+             'grade_bonus', 10, 0.90, NULL)`,
+      ).rejects.toThrow(/ck_item_grade_points_rango/);
+    });
+  });
 });

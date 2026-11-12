@@ -3,7 +3,8 @@
  *
  * Separadas del service para probarlas sin BD (mismo esquema que
  * `evaluarCanje` en `redemptions/canje.util.ts`). La BD tiene CHECKs
- * (`cost_coins > 0`, `stock >= 0`, `grade_bonus` exige `grade_points`),
+ * (`cost_coins > 0`, `stock >= 0`, rango `grade_points` 0.1–0.5 (H10.1),
+ * `grade_bonus` exige `grade_points`),
  * pero una violación de CHECK llegaría como P2004 **sin mapear** en el
  * filtro global → 500; por eso TODA regla de tipo se decide AQUÍ, antes
  * de tocar la BD, y el service la traduce a **422** (CA 1, 2, 4 y
@@ -89,7 +90,8 @@ export type EvaluacionItem =
  * Orden (la primera que aplica manda):
  * 1. Costo: entero > 0 (siempre, cualquier tipo).
  * 2. `fun_activity`: exige `stock` entero ≥ 0 y prohíbe `gradePoints`.
- * 3. `grade_bonus`: exige `gradePoints` > 0 y prohíbe `stock`.
+ * 3. `grade_bonus`: exige `gradePoints` en el rango 0.1–0.5 (H10.1) y
+ *    prohíbe `stock`.
  *
  * @param datos Tipo, costo, puntos y stock ya combinados (merge en PATCH).
  * @returns Si es válido o el motivo de rechazo (→ 422 en español).
@@ -131,10 +133,12 @@ export function evaluarItemPorTipo(datos: DatosItem): EvaluacionItem {
       motivo: 'El bono de nota (grade_bonus) requiere grade_points.',
     };
   }
-  if (!(datos.gradePoints > 0)) {
+  // H10.1: cada artículo equivale a entre 0.1 y 0.5 décimas de nota.
+  if (!(datos.gradePoints >= 0.1 && datos.gradePoints <= 0.5)) {
     return {
       valido: false,
-      motivo: 'grade_points debe ser un número mayor que 0.',
+      motivo:
+        'Los puntos de nota (grade_points) deben estar entre 0.1 y 0.5 décimas.',
     };
   }
   if (datos.stock !== null && datos.stock !== undefined) {

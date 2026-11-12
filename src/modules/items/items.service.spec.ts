@@ -134,6 +134,70 @@ describe('ItemsService.crear — validación por tipo (T4.1.2)', () => {
   });
 });
 
+describe('ItemsService — rango de bonos de nota 0.1–0.5 (H10.1 / T10.1.2)', () => {
+  it.each([
+    [0.09, 'por debajo'],
+    [0.51, 'por encima'],
+  ])('grade_bonus con gradePoints %s (%s del rango) → 422', async (puntos) => {
+    await expect(
+      service.crear({ ...altaGradeBonus, gradePoints: puntos }, PROFESOR),
+    ).rejects.toThrow(UnprocessableEntityException);
+    await expect(
+      service.crear({ ...altaGradeBonus, gradePoints: puntos }, PROFESOR),
+    ).rejects.toThrow(
+      'Los puntos de nota (grade_points) deben estar entre 0.1 y 0.5 décimas.',
+    );
+    expect(create).not.toHaveBeenCalled();
+  });
+
+  it.each([0.1, 0.5])(
+    'los límites del rango se aceptan: grade_bonus con gradePoints %s → crea',
+    async (puntos) => {
+      const dto = await service.crear(
+        { ...altaGradeBonus, gradePoints: puntos },
+        PROFESOR,
+      );
+      expect(create).toHaveBeenCalledTimes(1);
+      expect(dto.gradePoints).toBe(puntos);
+    },
+  );
+
+  it('PATCH fuera de rango (merge con ítem existente) → 422 y no actualiza', async () => {
+    findUnique.mockResolvedValue({
+      ...itemCreado,
+      type: 'grade_bonus',
+      cost_coins: 100,
+      grade_points: 0.5,
+      stock: null,
+    });
+    const dto: ActualizarItemDto = { gradePoints: 0.09 };
+
+    await expect(service.actualizar('10', dto, PROFESOR)).rejects.toThrow(
+      UnprocessableEntityException,
+    );
+    expect(update).not.toHaveBeenCalled();
+  });
+
+  it('fun_activity con gradePoints (aunque esté en rango) sigue rechazado → 422', async () => {
+    await expect(
+      service.crear(
+        { ...altaFunActivity, gradePoints: 0.3 } as never,
+        PROFESOR,
+      ),
+    ).rejects.toThrow(
+      'La actividad lúdica (fun_activity) no admite grade_points.',
+    );
+    expect(create).not.toHaveBeenCalled();
+  });
+
+  it('grade_bonus sin gradePoints sigue rechazado → 422', async () => {
+    await expect(
+      service.crear({ ...altaGradeBonus, gradePoints: undefined }, PROFESOR),
+    ).rejects.toThrow('El bono de nota (grade_bonus) requiere grade_points.');
+    expect(create).not.toHaveBeenCalled();
+  });
+});
+
 describe('ItemsService — propiedad 403 uniforme (CA 3)', () => {
   it('clase ajena o inexistente (NotFound de AutorizacionService) → 403 con el mensaje único', async () => {
     verificarPertenencia.mockRejectedValue(
