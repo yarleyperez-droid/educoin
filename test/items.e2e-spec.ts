@@ -279,6 +279,12 @@ describe('Catálogo de ítems canjeables (e2e)', () => {
     const nombres = propia.body.map((i: { name: string }) => i.name);
     expect(nombres).toEqual(expect.arrayContaining([NOMBRE_FUN, NOMBRE_BONUS]));
     expect(propia.body.every((i: { status: string }) => i.status !== 'deleted')).toBe(true);
+    // H10.3 / T10.3.1: el DTO del catálogo expone el nombre de la clase.
+    expect(
+      propia.body.every(
+        (i: { className: string }) => i.className === 'Mathematics 10A',
+      ),
+    ).toBe(true);
   });
 
   it('T5.7.2: el estudiante inscrito lista los ítems active de sus clases (sin classId)', async () => {
@@ -303,6 +309,13 @@ describe('Catálogo de ítems canjeables (e2e)', () => {
     expect(
       respuesta.body.every(
         (i: { classId: string }) => i.classId === String(idClasePropia),
+      ),
+    ).toBe(true);
+    // H10.3 / T10.3.1: el listado incluye el nombre de la clase para
+    // agrupar por materia sin consultas extra.
+    expect(
+      respuesta.body.every(
+        (i: { className: string }) => i.className === 'Mathematics 10A',
       ),
     ).toBe(true);
   });

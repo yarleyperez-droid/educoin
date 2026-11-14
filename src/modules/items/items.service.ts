@@ -77,6 +77,9 @@ export class ItemsService {
         stock: dto.stock ?? null,
         auto_approve: dto.autoApprove ?? false,
       },
+      // H10.3 / T10.3.1: el DTO de respuesta siempre lleva el nombre de
+      // la clase (el estudiante agrupa por materia sin consultas extra).
+      include: { classes: { select: { name: true } } },
     });
     return aItemRespuesta(item);
   }
@@ -112,6 +115,8 @@ export class ItemsService {
         status: { not: 'deleted' },
       },
       orderBy: { id: 'asc' },
+      // H10.3 / T10.3.1: nombre de la clase en cada fila del catálogo.
+      include: { classes: { select: { name: true } } },
     });
     return items.map((fila) => aItemRespuesta(fila));
   }
@@ -120,7 +125,8 @@ export class ItemsService {
    * Camino estudiante del listado (T5.7.2): los `redeemable_items`
    * `active` de las clases donde el estudiante tiene inscripción
    * `active`. El desglose por inscripción lo decide la BD (tabla
-   * `enrollments`); aquí no se recalcula nada.
+   * `enrollments`); aquí no se recalcula nada. Desde T10.3.1 cada fila
+   * trae el nombre de la clase (join) para agrupar por materia.
    *
    * @param classId Clase opcional a acotar (debe estar inscrita).
    * @param usuario Estudiante autenticado.
@@ -155,6 +161,8 @@ export class ItemsService {
           : { class_id: { in: idsClases } }),
       },
       orderBy: { id: 'asc' },
+      // H10.3 / T10.3.1: nombre de la clase en cada fila del catálogo.
+      include: { classes: { select: { name: true } } },
     });
     return items.map((fila) => aItemRespuesta(fila));
   }
@@ -211,6 +219,9 @@ export class ItemsService {
         ...(dto.status !== undefined && { status: dto.status }),
         ...(dto.autoApprove !== undefined && { auto_approve: dto.autoApprove }),
       },
+      // H10.3 / T10.3.1: el DTO de respuesta siempre lleva el nombre de
+      // la clase (el estudiante agrupa por materia sin consultas extra).
+      include: { classes: { select: { name: true } } },
     });
     return aItemRespuesta(item);
   }
@@ -231,6 +242,7 @@ export class ItemsService {
     const item = await this.prisma.redeemable_items.update({
       where: { id: BigInt(id) },
       data: { status: 'deleted' },
+      include: { classes: { select: { name: true } } },
     });
     return aItemRespuesta(item);
   }

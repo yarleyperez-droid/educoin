@@ -9,9 +9,10 @@
  *    mismo criterio que el fix de fixtures 1454163).
  * 2. Resolver la actividad del seed correctamente → 120 monedas
  *    (`fn_award_coins` al auto-calificar).
- * 3. **CA 2:** en `/student/canje`, canjear el ítem de 100 monedas del
- *    seed → confirmación con costo/saldo/stock → éxito → el saldo se
- *    refresca desde la API en **20** al instante.
+ * 3. **CA 2:** en `/student/canjes` (tienda por materia, H10.3), entrar a
+ *    la materia del seed, canjear el ítem de 100 monedas → confirmación
+ *    con costo/saldo/stock → éxito → el saldo se refresca desde la API en
+ *    **20** al instante.
  * 4. **CA 3:** intentar el ítem de 50 monedas con solo 20 → la
  *    previsualización del backend marca `puedeCanjear=false` con su
  *    motivo, el botón queda deshabilitado y el saldo permanece en 20.
@@ -25,7 +26,7 @@
  * del ítem divertido del seed. Es fixture de test, no producción.
  *
  * Selectores por accesibilidad sobre los textos reales de las vistas de
- * H5.7 (`/student/canje`, `/student/actividades/1`).
+ * H5.7 (`/student/canjes`, `/student/actividades/1`).
  */
 
 import { execFileSync } from "node:child_process";
@@ -180,8 +181,14 @@ test("Canje exitoso descuenta al instante y canje sin saldo muestra el error sin
     timeout: 15_000,
   });
 
-  // 3) CA 2: abrir la tienda y verificar el saldo recién ganado.
-  await page.goto("/student/canje");
+  // 3) CA 2: abrir la tienda por materia y verificar el saldo recién ganado.
+  await page.goto("/student/canjes");
+  // H10.3: primero las materias inscritas; entrar a la del seed.
+  const tarjetaMateria = page
+    .getByRole("button", { name: "Ver artículos de Mathematics 10A" });
+  await expect(tarjetaMateria).toBeVisible({ timeout: 15_000 });
+  await tarjetaMateria.click();
+
   await expect(page.getByTestId("saldo-canje")).toHaveText(
     String(RECOMPENSA_ACTIVIDAD),
     { timeout: 15_000 },
@@ -202,10 +209,12 @@ test("Canje exitoso descuenta al instante y canje sin saldo muestra el error sin
   );
   await expect(confirmacion.getByRole("button", { name: "Confirmar canje" })).toBeEnabled();
 
-  // Confirmar: el canje es instantáneo (H4.4) y el saldo visible se
-  // refresca contra la API con el nuevo valor (el front no recalcula).
+  // Confirmar: el canje nace PENDING (flujo revisable, H7.3): las monedas
+  // quedan reservadas y el saldo visible se refresca contra la API con el
+  // nuevo valor (el front no recalcula). El panel muestra el estado real
+  // ("Solicitud enviada"), no un "Canje realizado" instantáneo.
   await confirmacion.getByRole("button", { name: "Confirmar canje" }).click();
-  await expect(page.getByText("Canje realizado", { exact: false })).toBeVisible({
+  await expect(page.getByText("Solicitud enviada", { exact: false })).toBeVisible({
     timeout: 15_000,
   });
   await expect(page.getByTestId("saldo-canje")).toHaveText(
@@ -221,6 +230,7 @@ test("Canje exitoso descuenta al instante y canje sin saldo muestra el error sin
   await expect(tarjetaDivertida).toBeVisible();
   await tarjetaDivertida.getByRole("button", { name: "Canjear" }).click();
   await expect(confirmacion).toBeVisible();
+  await expect(confirmacion).toContainText(`${COSTO_DIVERTIDO} monedas`);
   await expect(
     confirmacion.getByRole("button", { name: "Confirmar canje" }),
   ).toBeDisabled();

@@ -10,9 +10,10 @@
  *    `graded` → `fn_award_coins` acredita 120 monedas exactamente 1 vez
  *    (la anti-recalificación con 409 está cubierta en
  *    `calificacion-monedas.spec.ts`, no se repite aquí).
- * 3. El estudiante abre `/student/canje`: saldo 120 → canjea el ítem de
- *    100 monedas del seed → confirmación con costo/saldo → éxito → el
- *    saldo se refresca desde la API en **20** al instante.
+ * 3. El estudiante abre `/student/canjes` (tienda por materia, H10.3),
+ *    entra a la materia del seed: saldo 120 → canjea el ítem de 100
+ *    monedas → confirmación con costo/saldo → éxito → el saldo se
+ *    refresca desde la API en **20** al instante.
  *
  * Presupuesto de refresh (`POST /auth/refresh`, throttler 5/min por IP):
  * solo 2 recargas con sesión (actividad inicial y tienda final); el
@@ -267,7 +268,13 @@ test("Hito: entrega bajo umbral → el profesor aprueba → 120 monedas → canj
     "**/student",
   );
 
-  await page.goto("/student/canje");
+  await page.goto("/student/canjes");
+  // H10.3: primero las materias inscritas; entrar a la del seed.
+  const tarjetaMateria = page
+    .getByRole("button", { name: `Ver artículos de ${NOMBRE_CLASE_SEED}` });
+  await expect(tarjetaMateria).toBeVisible({ timeout: 15_000 });
+  await tarjetaMateria.click();
+
   await expect(page.getByTestId("saldo-canje")).toHaveText(
     String(RECOMPENSA_ACTIVIDAD),
     { timeout: 15_000 },
@@ -287,7 +294,10 @@ test("Hito: entrega bajo umbral → el profesor aprueba → 120 monedas → canj
   ).toBeEnabled();
   await confirmacion.getByRole("button", { name: "Confirmar canje" }).click();
 
-  await expect(page.getByText("Canje realizado", { exact: false })).toBeVisible({
+  // El canje nace PENDING (flujo revisable, H7.3): las monedas quedan
+  // reservadas y el saldo visible se refresca contra la API con el nuevo
+  // valor. El panel muestra el estado real ("Solicitud enviada").
+  await expect(page.getByText("Solicitud enviada", { exact: false })).toBeVisible({
     timeout: 15_000,
   });
   await expect(page.getByTestId("saldo-canje")).toHaveText(
