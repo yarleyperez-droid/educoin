@@ -1,4 +1,7 @@
-import type { class_status } from '../../../generated/prisma/client';
+import type {
+  class_status,
+  enrollment_status,
+} from '../../../generated/prisma/client';
 
 /**
  * Datos de la clase que SALEN hacia el cliente (AGENTS.md §8: nunca se
@@ -25,6 +28,20 @@ export class ClaseRespuestaDto {
 export class ClaseCreadaRespuestaDto {
   mensaje!: string;
   clase!: ClaseRespuestaDto;
+}
+
+/**
+ * Respuesta de POST /api/v1/classes/join: confirma la unión del
+ * estudiante con su inscripción recién creada. SIN el código de unión:
+ * es redundante (el cliente acaba de enviarlo) y sigue la misma postura
+ * de seguridad que ClaseListadoDto de no exponerlo. Solo id y nombre de
+ * la clase: nada de teacher_id, organization_id ni contadores (mínima
+ * exposición, AGENTS.md §8).
+ */
+export class UnirseClaseRespuestaDto {
+  mensaje!: string;
+  clase!: { id: string; nombre: string };
+  inscripcion!: { estado: enrollment_status; inscritoEn: string };
 }
 
 /**

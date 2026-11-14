@@ -1,12 +1,102 @@
 @import "tailwindcss";
 
+/*
+ * Tokens de marca de EduCoin (landing pública y paneles).
+ *
+ * Fuente visual: identidad de marca `brand-identity/educoin/brand/`
+ * (brand-guidelines.md v1.0 + tokens/design-tokens.css). Se exponen en el
+ * namespace `--color-*` de Tailwind 4 para que la landing y los paneles
+ * compartan la misma paleta sin repetir valores hex en cada className.
+ *
+ * Paleta de marca (proporción 60% neutros · 30% índigo · 10% oro/verde):
+ * - Índigo Mérito  `#4F46E5` (primario)  → indigo-600
+ * - Índigo Profundo `#1E1B4B` (institucional) → indigo-900 (sobrescrito abajo)
+ * - Oro Educoin    `#F59E0B` (recompensa) → amber-500
+ * - Oro Destello   `#FBBF24` (dark mode)  → amber-400
+ * - Ámbar Académico `#B45309` (oro texto) → amber-700
+ * - Verde Ascenso  `#10B981` (éxito)      → emerald-500
+ * - Pizarra Nocturna `#0F172A` (texto)    → slate-900
+ * - Papel Alabastro `#F8FAFC` (lienzo)    → slate-50
+ *
+ * Reglas de la guía aplicadas:
+ * - Texto sobre oro = Pizarra Nocturna o Índigo Profundo (nunca blanco).
+ * - Todo texto dorado sobre claro usa Ámbar Académico `#B45309` (5.02:1,
+ *   AA); Oro Educoin `#F59E0B` solo en fondos, iconos, bordes y números
+ *   grandes, nunca en texto de cuerpo.
+ * - `--color-success` usa emerald-700 `#047857` (5.9:1 sobre blanco, AA)
+ *   para texto; Verde Ascenso `#10B981` es para badges/fondos (emerald-500).
+ * - `--color-muted` = slate-500 `#64748B` (4.76:1 sobre blanco, AA).
+ */
+@theme {
+  /* Oro (recompensas) — escala amber de la marca. */
+  --color-gold: #f59e0b; /* Oro Educoin: fondos, iconos, bordes, números grandes */
+  --color-gold-bg: #fef3c7; /* amber-100 */
+  --color-gold-border: #fbbf24; /* Oro Destello (amber-400) */
+  --color-gold-ink: #b45309; /* Ámbar Académico: oro de texto (AA) */
+
+  /* Neutros — Pizarra Nocturna / Papel Alabastro. */
+  --color-ink: #0f172a; /* slate-900 */
+  --color-ink2: #334155; /* slate-700 */
+  --color-muted: #64748b; /* slate-500 (4.76:1 sobre blanco) */
+  --color-surface: #ffffff;
+  --color-page: #f8fafc; /* Papel Alabastro (slate-50) */
+  --color-edge: #e2e8f0; /* slate-200 */
+
+  /* Índigo (primario) — Índigo Mérito / Profundo. */
+  --color-accent: #4f46e5; /* Índigo Mérito (indigo-600) */
+  --color-accent-bg: #eef2ff; /* indigo-50 */
+  --color-accent-strong: #4338ca; /* indigo-700 */
+
+  /* Verde (éxito) — Verde Ascenso (fondo: emerald-500; texto: emerald-700). */
+  --color-success: #047857; /* emerald-700 (5.9:1 sobre blanco, AA) */
+  --color-success-bg: #d1fae5; /* emerald-100 */
+
+  /*
+   * Peligro/error: la identidad de marca no define color de peligro; se
+   * conserva el rojo semántico ya auditado (7.07:1 sobre blanco, AA).
+   */
+  --color-danger: #a32d2d;
+  --color-danger-bg: #fcebeb;
+
+  /*
+   * Índigo Profundo de marca `#1E1B4B` para `indigo-900` (Tailwind usa
+   * `#312E81`; la guía define el paso 900 como Índigo Profundo).
+   */
+  --color-indigo-900: #1e1b4b;
+
+  /* Radios y sombra del sistema de diseño. */
+  --radius-card: 10px;
+  --radius-panel: 16px;
+  --shadow-suave: 0 1px 3px rgba(0, 0, 0, 0.08), 0 1px 2px rgba(0, 0, 0, 0.04);
+}
+
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --background: #f8fafc; /* Papel Alabastro (lienzo de marca) */
+  --foreground: #0f172a; /* Pizarra Nocturna */
+
+  /*
+   * Tokens de estado del kit UI (H5.2 / PRO-283), alineados a la escala de
+   * marca (design-tokens.css).
+   */
+  --success: #047857; /* emerald-700 (5.9:1 sobre blanco) */
+  --success-bg: #d1fae5; /* emerald-100 */
+  --danger: #a32d2d; /* 7.07:1 sobre blanco (sin rojo en la identidad) */
+  --danger-bg: #fcebeb;
+  --muted: #64748b; /* slate-500 (4.76:1 sobre blanco) */
 }
 
 body {
   background: var(--background);
   color: var(--foreground);
   font-family: var(--font-geist-sans), system-ui, sans-serif;
+}
+
+/*
+ * Anclas del nav de la landing (`#como-funciona`, `#ecosistema`, …):
+ * scroll suave, respetando `prefers-reduced-motion`.
+ */
+@media (prefers-reduced-motion: no-preference) {
+  html {
+    scroll-behavior: smooth;
+  }
 }

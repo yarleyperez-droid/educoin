@@ -51,6 +51,20 @@ const config: Config = {
     'apps/**/*.(t|j)s',
   ],
   coverageDirectory: './coverage',
+  /**
+   * Piso de cobertura unitaria (H6.3 / T6.3.4): ~1 pp bajo el medido en
+   * la implementación (60.98 / 54.44 / 63.12 / 61.64) para no castigar
+   * refactorizaciones legítimas, pero hacer fallar al PR que la baje.
+   * Se evalúa con `pnpm test:cov` (es lo que corre el CI).
+   */
+  coverageThreshold: {
+    global: {
+      statements: 60,
+      branches: 53,
+      functions: 61,
+      lines: 60,
+    },
+  },
   testEnvironment: 'node',
 };
 

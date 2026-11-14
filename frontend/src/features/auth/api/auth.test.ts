@@ -12,7 +12,8 @@
  *   refresh (un 401 en `auth/login` son credenciales malas, no sesión
  *   vencida);
  * - logout que limpia el estado local aunque el backend falle;
- * - el mock documentado de `cambiarContrasena` (H2.2 pendiente).
+ * - el cambio real de contraseña (H2.2): `POST auth/cambiar-contrasena` con
+ *   el DTO del backend y el refresh de sesión posterior.
  *
  * Entorno: Vitest corre en **node** (sin DOM, ver `vitest.config.mts`), por
  * lo que `document.cookie` se simula con un doble cuyo accessor registra cada
@@ -368,7 +369,7 @@ describe("leerSesionActual", () => {
   });
 });
 
-describe("cambiarContrasena (MOCK documentado: H2.2 pendiente)", () => {
+describe("cambiarContrasena (endpoint real H2.2 + refresh)", () => {
   /** Establece una sesión vigente de est.perez en la cookie (vía login stub). */
   async function iniciarSesionEstudiante(): Promise<void> {
     fetchStub.mockResolvedValueOnce(
@@ -380,6 +381,14 @@ describe("cambiarContrasena (MOCK documentado: H2.2 pendiente)", () => {
     });
   }
 
+  /** Cuerpo del `201` de refresh tras el cambio (flag ya en false). */
+  const SESION_REFRESCADA = {
+    accessToken: "jwt-acceso-estudiante-tras-cambio",
+    tipoToken: "Bearer" as const,
+    expiraEn: "15m",
+    usuario: { ...USUARIO_ESTUDIANTE_BACKEND, debeCambiarContrasena: false },
+  };
+
   it("sin sesión activa: ApiError 401", async () => {
     const error = await capturarError(
       cambiarContrasena({ actual: "Estudiante123!", nueva: "NuevaClave123!" }),
@@ -390,7 +399,7 @@ describe("cambiarContrasena (MOCK documentado: H2.2 pendiente)", () => {
     expect((error as ApiError).message).toBe(MENSAJE_SESION_INVALIDA);
   });
 
-  it("contraseña actual vacía: ApiError 400 (guarda defensiva del mock)", async () => {
+  it("contraseña actual vacía: ApiError 400 (guarda defensiva de UX)", async () => {
     await iniciarSesionEstudiante();
 
     const error = await capturarError(
@@ -402,6 +411,7 @@ describe("cambiarContrasena (MOCK documentado: H2.2 pendiente)", () => {
     expect((error as ApiError).message).toBe(
       MENSAJE_CONTRASENA_ACTUAL_INCORRECTA,
     );
+    expect(fetchStub).toHaveBeenCalledTimes(1);
   });
 
   it("nueva contraseña de menos de 8 caracteres: ApiError 422", async () => {
@@ -414,6 +424,7 @@ describe("cambiarContrasena (MOCK documentado: H2.2 pendiente)", () => {
     expect(error).toBeInstanceOf(ApiError);
     expect((error as ApiError).status).toBe(422);
     expect((error as ApiError).message).toBe(MENSAJE_NUEVA_MUY_CORTA);
+    expect(fetchStub).toHaveBeenCalledTimes(1);
   });
 
   it("nueva contraseña igual a la actual: ApiError 422", async () => {
@@ -429,23 +440,48 @@ describe("cambiarContrasena (MOCK documentado: H2.2 pendiente)", () => {
     expect(error).toBeInstanceOf(ApiError);
     expect((error as ApiError).status).toBe(422);
     expect((error as ApiError).message).toBe(MENSAJE_NUEVA_IGUAL_A_ACTUAL);
+    expect(fetchStub).toHaveBeenCalledTimes(1);
   });
 
-  it("éxito: sesión con flag false y cookie reescrita (sin llamar al backend)", async () => {
+  it("éxito: llama a POST auth/cambiar-contrasena, refresca y deja el flag en false", async () => {
     await iniciarSesionEstudiante();
-    const llamadasPrevias = fetchStub.mock.calls.length;
+    fetchStub.mockResolvedValueOnce(respuestaJson(204));
+    fetchStub.mockResolvedValueOnce(respuestaJson(201, SESION_REFRESCADA));
 
     const sesion = await cambiarContrasena({
       actual: "Estudiante123!",
       nueva: "NuevaClave2026!",
     });
 
+    // 2) POST auth/cambiar-contrasena con el DTO real del backend (H2.2).
+    const [urlCambio, initCambio] = fetchStub.mock.calls[1] as [
+      URL,
+      RequestInit,
+    ];
+    expect(urlCambio.href).toBe(`${URL_API}/auth/cambiar-contrasena`);
+    expect(initCambio.method).toBe("POST");
+    expect(initCambio.credentials).toBe("include");
+    expect(JSON.parse(initCambio.body as string)).toEqual({
+      contrasenaActual: "Estudiante123!",
+      contrasenaNueva: "NuevaClave2026!",
+    });
+
+    // 3) POST auth/refresh para firmar un token sin el flag de cambio.
+    const [urlRefresh, initRefresh] = fetchStub.mock.calls[2] as [
+      URL,
+      RequestInit,
+    ];
+    expect(urlRefresh.href).toBe(`${URL_API}/auth/refresh`);
+    expect(initRefresh.method).toBe("POST");
+    expect(fetchStub).toHaveBeenCalledTimes(3);
+
+    // Sesión devuelta con el flag ya en false (payload del refresh).
     expect(sesion.id).toBe("3");
     expect(sesion.role).toBe("student");
     expect(sesion.debeCambiarContrasena).toBe(false);
 
-    // El mock NO llama al backend (H2.2 no existe): solo reescribe la cookie.
-    expect(fetchStub.mock.calls.length).toBe(llamadasPrevias);
+    // Access token nuevo (el viejo traía debeCambiarContrasena: true).
+    expect(getAccessToken()).toBe("jwt-acceso-estudiante-tras-cambio");
 
     // Cookie reescrita con el flag en false (última asignación)…
     const valorCookie = crearCookieSesion(sesion);
@@ -462,5 +498,54 @@ describe("cambiarContrasena (MOCK documentado: H2.2 pendiente)", () => {
 
     // La sesión vigente (lectura de la vista) también refleja el cambio.
     expect(leerSesionActual()).toEqual(sesion);
+  });
+
+  it("si el refresh falla tras el cambio, marca la cookie local en false y limpia el token", async () => {
+    await iniciarSesionEstudiante();
+    fetchStub.mockResolvedValueOnce(respuestaJson(204));
+    fetchStub.mockResolvedValueOnce(
+      respuestaJson(500, {
+        statusCode: 500,
+        message: "Error interno del servidor.",
+      }),
+    );
+
+    const sesion = await cambiarContrasena({
+      actual: "Estudiante123!",
+      nueva: "NuevaClave2026!",
+    });
+
+    // El cambio SÍ se hizo en el backend: el middleware no debe bloquear.
+    expect(sesion.debeCambiarContrasena).toBe(false);
+    expect(leerSesionActual()?.debeCambiarContrasena).toBe(false);
+
+    // Sin token en memoria: la siguiente petición reintentará el refresh.
+    expect(getAccessToken()).toBeNull();
+  });
+
+  it("contraseña actual rechazada por el backend: ApiError 401 con su mensaje", async () => {
+    await iniciarSesionEstudiante();
+
+    const CUERPO_401_ACTUAL = {
+      statusCode: 401,
+      message: "La contraseña actual es incorrecta.",
+      error: "Unauthorized",
+    };
+
+    // Cambio → 401; api-client refresca (201) y reintenta una vez → 401 otra vez.
+    fetchStub.mockResolvedValueOnce(respuestaJson(401, CUERPO_401_ACTUAL));
+    fetchStub.mockResolvedValueOnce(respuestaJson(201, SESION_REFRESCADA));
+    fetchStub.mockResolvedValueOnce(respuestaJson(401, CUERPO_401_ACTUAL));
+
+    const error = await capturarError(
+      cambiarContrasena({
+        actual: "ClaveViejaIncorrecta!",
+        nueva: "NuevaClave2026!",
+      }),
+    );
+
+    expect(error).toBeInstanceOf(ApiError);
+    expect((error as ApiError).status).toBe(401);
+    expect((error as ApiError).message).toBe("La contraseña actual es incorrecta.");
   });
 });

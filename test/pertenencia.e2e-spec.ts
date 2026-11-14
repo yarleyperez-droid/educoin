@@ -37,6 +37,17 @@ class ControladorPrueba {
   entrega(): { ok: boolean } {
     return { ok: true };
   }
+
+  /**
+   * Regla 'actividad' (la usa la cola de calificación del profesor,
+   * GET /activities/:id/submissions/queue): teacher → la clase de la
+   * actividad es suya; student → nunca.
+   */
+  @PerteneceA('actividad', 'id')
+  @Get('actividades/:id')
+  actividad(): { ok: boolean } {
+    return { ok: true };
+  }
 }
 
 const LOGIN_ADMIN = { usuarioOEmail: 'admin', contrasena: 'Admin123!' };
@@ -158,6 +169,30 @@ describe('Pertenencia de recursos (e2e, datos del seed)', () => {
     const respuesta = await httpServer
       .get('/api/v1/prueba-pertenencia/entregas/999')
       .set('Authorization', `Bearer ${tokenEstudiante}`);
+    expect(respuesta.status).toBe(404);
+    expect(respuesta.body.message).toBe(MENSAJE_RECURSO_NO_ENCONTRADO);
+  });
+
+  it('el profesor accede a su actividad (actividad 1 = Challenge 1, clase de prof.lopez)', async () => {
+    const respuesta = await httpServer
+      .get('/api/v1/prueba-pertenencia/actividades/1')
+      .set('Authorization', `Bearer ${tokenProfesor}`);
+    expect(respuesta.status).toBe(200);
+    expect(respuesta.body.ok).toBe(true);
+  });
+
+  it('el estudiante NO accede por la regla actividad (es solo del profesor dueño)', async () => {
+    const respuesta = await httpServer
+      .get('/api/v1/prueba-pertenencia/actividades/1')
+      .set('Authorization', `Bearer ${tokenEstudiante}`);
+    expect(respuesta.status).toBe(404);
+    expect(respuesta.body.message).toBe(MENSAJE_RECURSO_NO_ENCONTRADO);
+  });
+
+  it('actividad inexistente: el mismo 404 de una ajena (anti-enumeración)', async () => {
+    const respuesta = await httpServer
+      .get('/api/v1/prueba-pertenencia/actividades/999')
+      .set('Authorization', `Bearer ${tokenProfesor}`);
     expect(respuesta.status).toBe(404);
     expect(respuesta.body.message).toBe(MENSAJE_RECURSO_NO_ENCONTRADO);
   });

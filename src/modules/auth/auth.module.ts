@@ -3,7 +3,6 @@ import { ConfigService } from '@nestjs/config';
 import { APP_GUARD } from '@nestjs/core';
 import { JwtModule } from '@nestjs/jwt';
 import { PassportModule } from '@nestjs/passport';
-import { ThrottlerModule } from '@nestjs/throttler';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { PertenenciaGuard } from '../../common/guards/pertenencia.guard';
@@ -11,13 +10,7 @@ import { AutorizacionModule } from '../autorizacion/autorizacion.module';
 import { expiracionASegundos } from './cookies';
 import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
-import {
-  AuthThrottlerGuard,
-  LIMITE_INTENTOS,
-  THROTTLER_LOGIN,
-  THROTTLER_REFRESH,
-  VENTANA_RATE_LIMIT_MS,
-} from './guards/auth-throttler.guard';
+import { AuthThrottlerGuard } from './guards/auth-throttler.guard';
 import { LocalStrategy } from './strategies/local.strategy';
 
 /**
@@ -26,25 +19,14 @@ import { LocalStrategy } from './strategies/local.strategy';
  * AuthService) y exporta los guards para que el resto de módulos puedan
  * proteger sus endpoints con @UseGuards(JwtAuthGuard, RolesGuard).
  *
- * Rate limiting (anti-automatización): ThrottlerModule con dos throttlers
- * nombrados por IP — 'login' y 'refresh' — de 5 intentos por minuto cada
- * uno, con contadores independientes y almacenamiento en memoria.
+ * Rate limiting (anti-automatización): las opciones de ThrottlerModule
+ * ('login' y 'refresh', 5 intentos/min por IP) se centralizaron en
+ * RateLimitModule (H6.1, único forRoot por exigencia de la librería);
+ * AuthThrottlerGuard sigue aquí y las inyecta desde THROTTLER_OPTIONS.
  */
 @Module({
   imports: [
     AutorizacionModule,
-    ThrottlerModule.forRoot([
-      {
-        name: THROTTLER_LOGIN,
-        limit: LIMITE_INTENTOS,
-        ttl: VENTANA_RATE_LIMIT_MS,
-      },
-      {
-        name: THROTTLER_REFRESH,
-        limit: LIMITE_INTENTOS,
-        ttl: VENTANA_RATE_LIMIT_MS,
-      },
-    ]),
     PassportModule,
     JwtModule.registerAsync({
       inject: [ConfigService],

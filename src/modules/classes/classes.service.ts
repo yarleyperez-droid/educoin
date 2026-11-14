@@ -1,7 +1,9 @@
 import {
   BadRequestException,
+  ConflictException,
   Injectable,
   NotFoundException,
+  UnprocessableEntityException,
   UnauthorizedException,
 } from '@nestjs/common';
 import { Prisma } from '../../generated/prisma/client';
@@ -18,16 +20,22 @@ import {
 import type { ActualizarClaseDto } from './dto/actualizar-clase.dto';
 import type { BuscarClasesQueryDto } from './dto/buscar-clases.dto';
 import type { ListarEstudiantesQueryDto } from './dto/listar-estudiantes.dto';
+import type { ListarInscripcionesQueryDto } from './dto/listar-inscripciones.dto';
 import type {
   ClaseCreadaRespuestaDto,
   ClaseListadoDto,
   ClaseRespuestaDto,
   ListadoClasesDto,
+  UnirseClaseRespuestaDto,
 } from './dto/clase-respuesta.dto';
 import type {
   EstudianteInscritoDto,
   ListadoEstudiantesDto,
 } from './dto/estudiante-inscrito-respuesta.dto';
+import type {
+  InscripcionListadoDto,
+  ListadoInscripcionesDto,
+} from './dto/inscripcion-respuesta.dto';
 
 /**
  * Mensaje de éxito de la creación: se arma con el código de unión real
@@ -41,6 +49,17 @@ export const mensajeClaseCreada = (codigo: string): string =>
 /** 400 cuando el PATCH no lleva ningún campo para actualizar. */
 export const MENSAJE_ACTUALIZACION_VACIA =
   'Debes enviar al menos un campo para actualizar: nombre o estado.';
+
+/** Mensaje de éxito de POST /classes/join (H3.2): la unión del estudiante. */
+export const mensajeUnidoAClase = (nombreClase: string): string =>
+  `Te has unido a la clase ${nombreClase}. Ya puedes resolver sus actividades.`;
+
+/** 409 al unirse con una inscripción previa status='active' (CA 3). */
+export const MENSAJE_YA_INSCRIPTO = 'Ya estás inscrito en esta clase.';
+
+/** 422 al unirse con una inscripción previa withdrawn/blocked (CA 4). */
+export const MENSAJE_INSCRIPCION_NO_ACTIVA =
+  'No puedes unirte de nuevo: tu inscripción en esta clase no está activa. Consulta a tu profesor.';
 
 /** Campos leídos de la tabla classes (AGENTS.md §5: nombres reales de la BD). */
 interface ClaseCreada {
@@ -94,6 +113,17 @@ interface InscripcionEncontrada {
   };
 }
 
+/** Inscripción leída con los datos básicos de la clase. */
+interface InscripcionDelEstudiante {
+  id: bigint;
+  status: enrollment_status;
+  enrolled_at: Date;
+  classes: {
+    id: bigint;
+    name: string;
+  };
+}
+
 @Injectable()
 export class ClassesService {
   constructor(
@@ -141,6 +171,121 @@ export class ClassesService {
   }
 
   /**
+   * Une al estudiante autenticado a la clase cuyo código comparte (H3.2).
+   *
+   * Las reglas de inscripción VIVEN EN LA BD y aquí jamás se
+   * reimplementan (AGENTS.md §lógica crítica en la BD):
+   * - `uq_enrollment` (UNIQUE class_id, student_id) → cualquier carrera
+   *   entre dos joins concurrentes termina en P2002 → filtro global → 409.
+   * - `fn_validate_enrollment` → REJECT si el estudiante y el profesor de
+   *   la clase no comparten organización: P0001 → filtro global → 422.
+   *
+   * Las pre-validaciones previas al INSERT existen SOLO para traducir a
+   * mensajes amables lo que la BD rechazaría de forma cruda (patrón
+   * "valida antes → error amable"): código inexistente o clase no activa
+   * → 404 anti-enumeración; inscripción previa `active` → 409; inscripción
+   * previa `withdrawn`/`blocked` → 422 (la BD no puede producir ese 422:
+   * el UNIQUE chocaría primero con 409, por eso el estado se pre-valida
+   * en el backend y NO se reactiva la fila).
+   */
+  async unirse(
+    codigo: string,
+    usuario: UsuarioAutenticado,
+  ): Promise<UnirseClaseRespuestaDto> {
+    let idEstudiante: bigint;
+    try {
+      idEstudiante = BigInt(usuario.id);
+    } catch {
+      throw new UnauthorizedException('No autenticado o sesión expirada.');
+    }
+
+    // Defensa en profundidad (espejo de crear): el token pudo firmarse
+    // antes de que el estudiante fuera desactivado o cambiara de rol.
+    const estudiante = await this.prisma.users.findFirst({
+      where: { id: idEstudiante, role: 'student', is_active: true },
+      select: { id: true },
+    });
+    if (estudiante === null) {
+      throw new NotFoundException(MENSAJE_RECURSO_NO_ENCONTRADO);
+    }
+
+    // El código se busca sin scope de organización a propósito: si la
+    // clase pertenece a otra org, el INSERT dispara el trigger
+    // fn_validate_enrollment → 422 (regla de la BD, no se duplica aquí).
+    // Solo clases activas: archivada e inexistente responden igual
+    // (anti-enumeración, coherente con el listado estudiante).
+    const clase = await this.prisma.classes.findFirst({
+      where: { code: codigo, status: 'active' },
+      select: { id: true, name: true },
+    });
+    if (clase === null) {
+      throw new NotFoundException(MENSAJE_RECURSO_NO_ENCONTRADO);
+    }
+
+    // Pre-validación de la inscripción previa (CA 3 / CA 4).
+    const previa = await this.prisma.enrollments.findFirst({
+      where: { class_id: clase.id, student_id: idEstudiante },
+      select: { status: true },
+    });
+    if (previa !== null) {
+      if (previa.status === 'active') {
+        throw new ConflictException(MENSAJE_YA_INSCRIPTO);
+      }
+      // withdrawn | blocked: no se reactiva; el estudiante debe hablar
+      // con su profesor. (El enum real no tiene 'paused'.)
+      throw new UnprocessableEntityException(MENSAJE_INSCRIPCION_NO_ACTIVA);
+    }
+
+    // status nace en 'active' por DEFAULT de la BD (nunca se envía).
+    const inscripcion = await this.prisma.enrollments.create({
+      data: { class_id: clase.id, student_id: idEstudiante },
+      select: { status: true, enrolled_at: true },
+    });
+
+    return {
+      mensaje: mensajeUnidoAClase(clase.name),
+      clase: { id: clase.id.toString(), nombre: clase.name },
+      inscripcion: {
+        estado: inscripcion.status,
+        inscritoEn: inscripcion.enrolled_at.toISOString(),
+      },
+    };
+  }
+
+  /**
+   * Devuelve la ficha completa de una clase OWN del profesor para el
+   * detalle del panel (T5.6.4). Es el único endpoint que expone el
+   * `codigo` de unión a la vista de detalle: el listado de búsqueda lo
+   * omite a propósito (ver ClaseListadoDto) para que nadie pueda
+   * auto-inscribirse sin que el profesor comparta el código.
+   *
+   * Segunda capa de pertenencia (AGENTS.md §8): el guard HTTP ya filtró
+   * las clases ajenas con 404, y aquí se re-verifica con
+   * AutorizacionService (que además descarta ids no numéricos con el
+   * mismo 404 estándar). El NotFoundException del final es defensa en
+   * profundidad: entre la comprobación de pertenencia y la lectura la
+   * clase pudo desaparecer y el cliente debe recibir el 404 estándar en
+   * lugar de un error de mapeo sobre una fila ausente.
+   */
+  async obtener(
+    id: string,
+    usuario: UsuarioAutenticado,
+  ): Promise<ClaseRespuestaDto> {
+    await this.autorizacion.verificarPertenencia('clase', id, usuario);
+
+    const clase = await this.prisma.classes.findFirst({
+      where: { id: BigInt(id) },
+      select: CAMPOS_CLASE,
+    });
+
+    if (clase === null) {
+      throw new NotFoundException(MENSAJE_RECURSO_NO_ENCONTRADO);
+    }
+
+    return this.aClaseRespuesta(clase);
+  }
+
+  /**
    * Edita parcialmente una clase del profesor autenticado: nombre y/o
    * estado ('archived' archiva, 'active' reactiva). Segunda capa de
    * pertenencia (AGENTS.md §8): re-verifica con AutorizacionService la
@@ -181,10 +326,17 @@ export class ClassesService {
   }
 
   /**
-   * Busca clases por nombre con pg_trgm: coincide por similitud de
-   * trigramas (operador %, tolera errores de tipeo) o por subcadena
-   * (ILIKE, cubre términos cortos cuya similitud cae bajo el umbral
-   * 0.3); ambos caminos usan el índice GIN idx_classes_name_trgm.
+   * Lista o busca clases según el texto `q`.
+   *
+   * - **Sin `q`**: lista todas las clases visibles para el rol (para
+   *   `teacher`, las suyas propias; para `student`, las activas de su
+   *   organización; para `admin`, todas), ordenadas por fecha de creación
+   *   descendente. Esto permite al panel docente mostrar su resumen de
+   *   clases sin depender de un texto de búsqueda.
+   * - **Con `q`**: coincide por similitud de trigramas (operador %, tolera
+   *   errores de tipeo) o por subcadena (ILIKE, cubre términos cortos cuya
+   *   similitud cae bajo el umbral 0.3); ambos caminos usan el índice GIN
+   *   idx_classes_name_trgm y ordenan por similitud descendente.
    *
    * La pertenencia del profesor NO se resuelve con @PerteneceA (ese
    * guard valida un recurso individual por :id de ruta y una búsqueda
@@ -203,29 +355,55 @@ export class ClassesService {
   ): Promise<ListadoClasesDto> {
     const page = dto.page ?? 1;
     const limit = dto.limit ?? 20;
-    const patron = `%${this.escaparLike(dto.q)}%`;
     const condicion = this.condicionPorRol(usuario);
     const offset = (page - 1) * limit;
+    const hayTexto = dto.q !== undefined && dto.q.trim() !== '';
 
-    const filas = await this.prisma.$queryRaw<FilaClaseEncontrada[]>(Prisma.sql`
-      SELECT c.id, c.name, c.status, c.created_at, u.first_name, u.last_name
-      FROM classes c
-      JOIN users u ON u.id = c.teacher_id
-      WHERE (c.name % ${dto.q} OR c.name ILIKE ${patron})
-        AND ${condicion}
-      ORDER BY similarity(c.name, ${dto.q}) DESC, c.name ASC
-      LIMIT ${limit} OFFSET ${offset}
-    `);
+    let filas: FilaClaseEncontrada[];
+    let conteo: { total: bigint | number | string }[];
 
-    const conteo = await this.prisma.$queryRaw<
-      { total: bigint | number | string }[]
-    >(Prisma.sql`
-      SELECT count(*) AS total
-      FROM classes c
-      JOIN users u ON u.id = c.teacher_id
-      WHERE (c.name % ${dto.q} OR c.name ILIKE ${patron})
-        AND ${condicion}
-    `);
+    if (hayTexto) {
+      const texto = (dto.q ?? '').trim();
+      const patron = `%${this.escaparLike(texto)}%`;
+
+      filas = await this.prisma.$queryRaw<FilaClaseEncontrada[]>(Prisma.sql`
+        SELECT c.id, c.name, c.status, c.created_at, u.first_name, u.last_name
+        FROM classes c
+        JOIN users u ON u.id = c.teacher_id
+        WHERE (c.name % ${texto} OR c.name ILIKE ${patron})
+          AND ${condicion}
+        ORDER BY similarity(c.name, ${texto}) DESC, c.name ASC
+        LIMIT ${limit} OFFSET ${offset}
+      `);
+
+      conteo = await this.prisma.$queryRaw<
+        { total: bigint | number | string }[]
+      >(Prisma.sql`
+        SELECT count(*) AS total
+        FROM classes c
+        JOIN users u ON u.id = c.teacher_id
+        WHERE (c.name % ${texto} OR c.name ILIKE ${patron})
+          AND ${condicion}
+      `);
+    } else {
+      filas = await this.prisma.$queryRaw<FilaClaseEncontrada[]>(Prisma.sql`
+        SELECT c.id, c.name, c.status, c.created_at, u.first_name, u.last_name
+        FROM classes c
+        JOIN users u ON u.id = c.teacher_id
+        WHERE ${condicion}
+        ORDER BY c.created_at DESC, c.name ASC
+        LIMIT ${limit} OFFSET ${offset}
+      `);
+
+      conteo = await this.prisma.$queryRaw<
+        { total: bigint | number | string }[]
+      >(Prisma.sql`
+        SELECT count(*) AS total
+        FROM classes c
+        JOIN users u ON u.id = c.teacher_id
+        WHERE ${condicion}
+      `);
+    }
 
     return {
       data: filas.map((fila) => this.aClaseListado(fila)),
@@ -308,6 +486,68 @@ export class ClassesService {
       estudianteId: inscripcion.users.id.toString(),
       username: inscripcion.users.username,
       nombre: `${inscripcion.users.first_name} ${inscripcion.users.last_name}`,
+      estado: inscripcion.status,
+      inscritoEn: inscripcion.enrolled_at.toISOString(),
+    };
+  }
+
+  /**
+   * Lista las inscripciones activas del estudiante autenticado (GET
+   * /api/v1/enrollments). El guard HTTP (`@Roles('student')`) ya filtró
+   * el rol; aquí se restringe por `student_id`, se exige inscripción
+   * `active` y clase `active`, y se devuelve `{ data, meta }` paginado.
+   *
+   * No se re-verifica pertenencia por id: es una colección del usuario
+   * autenticado, misma postura que `buscar` para student. No expone
+   * códigos de unión, monedas ni datos del profesor.
+   */
+  async listarInscripciones(
+    dto: ListarInscripcionesQueryDto,
+    usuario: UsuarioAutenticado,
+  ): Promise<ListadoInscripcionesDto> {
+    const estudianteId = BigInt(usuario.id);
+    const page = dto.page ?? 1;
+    const limit = dto.limit ?? 50;
+
+    const where = {
+      student_id: estudianteId,
+      status: 'active' as const,
+      classes: { status: 'active' as const },
+    };
+
+    const [filas, total] = await Promise.all([
+      this.prisma.enrollments.findMany({
+        where,
+        select: {
+          id: true,
+          status: true,
+          enrolled_at: true,
+          classes: { select: { id: true, name: true } },
+        },
+        orderBy: { enrolled_at: 'desc' },
+        skip: (page - 1) * limit,
+        take: limit,
+      }),
+      this.prisma.enrollments.count({ where }),
+    ]);
+
+    return {
+      data: filas.map((i) =>
+        this.aInscripcionListado(i as InscripcionDelEstudiante),
+      ),
+      meta: { total, page, limit },
+    };
+  }
+
+  private aInscripcionListado(
+    inscripcion: InscripcionDelEstudiante,
+  ): InscripcionListadoDto {
+    return {
+      id: inscripcion.id.toString(),
+      clase: {
+        id: inscripcion.classes.id.toString(),
+        nombre: inscripcion.classes.name,
+      },
       estado: inscripcion.status,
       inscritoEn: inscripcion.enrolled_at.toISOString(),
     };
