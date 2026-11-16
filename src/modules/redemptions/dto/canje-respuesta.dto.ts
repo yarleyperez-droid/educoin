@@ -71,7 +71,7 @@ export class ResolucionCanjeDto {
 
 /**
  * Fila de los listados paginados de canjes (cola del profesor e historial
- * del estudiante; H7.2 / T7.2.4-T7.2.5).
+ * del estudiante; H7.2 / T7.2.4-T7.2.5 + H10.4 / T10.4.1: trazabilidad).
  */
 export class CanjeListadoDto {
   id!: string;
@@ -81,6 +81,14 @@ export class CanjeListadoDto {
   estado!: redemption_status;
   /** ISO del `redeemed_at` (instante de la solicitud). */
   solicitadoEn!: string;
+  /**
+   * Nombre visible de quien resolvió el canje (`resolved_by` unido con
+   * `users`); `null` si aún está `pending` o es un legado sin resolución.
+   * NUNCA viaja el id interno `resolved_by` (H10.4 · CA 4).
+   */
+  resueltoPor!: string | null;
+  /** ISO del `resolved_at` (instante de la aprobación/rechazo); `null` si aún no se resuelve. */
+  resueltoEn!: string | null;
 }
 
 /** Meta de la paginación estándar `{ data, meta }`. */

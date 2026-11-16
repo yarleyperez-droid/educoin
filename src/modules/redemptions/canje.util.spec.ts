@@ -150,18 +150,69 @@ describe('aCanjeListado (cola del profesor / historial del estudiante)', () => {
     item_name: 'Trivia game in class',
     student_first_name: 'Ana',
     student_last_name: 'Pérez',
+    resolved_at: null,
+    resolver_first_name: null,
+    resolver_last_name: null,
   };
 
-  it('mapea id como string, nombre completo y fecha ISO', () => {
-    const dto = aCanjeListado(fila);
-
-    expect(dto).toEqual({
+  it('mapea id como string, nombre completo y fecha ISO (sin resolver: null)', () => {
+    expect(aCanjeListado(fila)).toEqual({
       id: '42',
       nombreEstudiante: 'Ana Pérez',
       nombreItem: 'Trivia game in class',
       costoMonedas: 30,
       estado: 'pending',
       solicitadoEn: '2026-10-15T12:00:00.000Z',
+      resueltoPor: null,
+      resueltoEn: null,
     });
+  });
+
+  it('expone el nombre visible del resolvente y su fecha (H10.4 / T10.4.1)', () => {
+    const dto = aCanjeListado({
+      ...fila,
+      status: 'approved' as const,
+      resolved_at: new Date('2026-10-16T08:45:00Z'),
+      resolver_first_name: 'Paula',
+      resolver_last_name: 'Cano',
+    });
+
+    expect(dto.resueltoPor).toBe('Paula Cano');
+    expect(dto.resueltoEn).toBe('2026-10-16T08:45:00.000Z');
+  });
+
+  it('nunca expone el id interno del resolvente (H10.4 · CA 4)', () => {
+    const dto = aCanjeListado({
+      ...fila,
+      status: 'rejected' as const,
+      resolved_at: new Date('2026-10-16T08:45:00Z'),
+      resolver_first_name: 'Paula',
+      resolver_last_name: 'Cano',
+    });
+
+    expect(dto.resueltoPor).toBe('Paula Cano');
+    expect(JSON.stringify(dto)).not.toContain('resolved_by');
+    expect(JSON.stringify(dto)).not.toContain('password_hash');
+    expect(JSON.stringify(dto)).not.toContain('is_correct');
+    expect(JSON.stringify(dto)).not.toContain('expected_answer');
+  });
+
+  it('tolera un resolvente con solo apellido o solo nombre', () => {
+    expect(
+      aCanjeListado({
+        ...fila,
+        resolved_at: new Date('2026-10-16T08:45:00Z'),
+        resolver_first_name: null,
+        resolver_last_name: 'Cano',
+      }).resueltoPor,
+    ).toBe('Cano');
+    expect(
+      aCanjeListado({
+        ...fila,
+        resolved_at: new Date('2026-10-16T08:45:00Z'),
+        resolver_first_name: 'Paula',
+        resolver_last_name: null,
+      }).resueltoPor,
+    ).toBe('Paula');
   });
 });

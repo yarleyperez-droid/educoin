@@ -21,7 +21,10 @@
  * **vacío** ("No hay canjes pendientes") y **error** con reintento. El
  * badge de estado vive en `features/billetera/componentes/`
  * (`badge-estado-canje`): una sola fuente de etiquetas para
- * `redemption_status`, compartida con "Mis canjes" del estudiante.
+ * `redemption_status`, compartida con "Mis canjes" del estudiante. La
+ * **línea de tiempo de trazabilidad** (`linea-tiempo-canje`, H10.4 /
+ * T10.4.2) también es compartida: solicitudes resueltas en esta sesión
+ * muestran el recorrido con el resolvente y sus fechas.
  *
  * Historia de extracción: hasta H10.1 este contenido ERA la página
  * `/teacher/canjes`; con H10.2 la ventana pasa a ser la tienda del
@@ -52,10 +55,12 @@ import {
   BadgeEstadoCanje,
   textoCostoCanje,
 } from "@/features/billetera/componentes/badge-estado-canje";
+import { LineaTiempoCanje } from "@/features/billetera/componentes/linea-tiempo-canje";
 import type {
   CanjeListado,
   Meta,
 } from "@/features/billetera/contrato/canje";
+import { leerSesionActual } from "@/features/auth/api/auth";
 import { ApiError } from "@/lib/api-client";
 
 /** Tamaño de página fijo de la cola (el backend acepta 1–100). */
@@ -237,11 +242,23 @@ export function ColaCanjes() {
 
       mostrar(MENSAJES_EXITO[accion], "exito");
 
+      // Trazabilidad al instante (H10.4 / T10.4.2): el resolvente es el
+      // profesor autenticado y la fecha la devuelve la resolución.
+      const sesion = leerSesionActual();
+      const resolvente = sesion
+        ? `${sesion.nombre} ${sesion.apellido}`.trim()
+        : null;
+
       setFilas((actuales) =>
         actuales
           .map((actual) =>
             actual.id === resolucion.id
-              ? { ...actual, estado: resolucion.estado }
+              ? {
+                  ...actual,
+                  estado: resolucion.estado,
+                  resueltoEn: resolucion.resueltoEn,
+                  resueltoPor: resolvente,
+                }
               : actual,
           )
           .filter(
@@ -283,7 +300,7 @@ export function ColaCanjes() {
         {error === null && !cargando && filas.length > 0 && (
           <>
             <div className="overflow-x-auto rounded-xl border border-slate-200">
-              <table className="w-full min-w-[44rem] text-sm">
+              <table className="w-full min-w-[52rem] text-sm">
                 <thead>
                   <tr className="border-b border-slate-200 bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
                     <th scope="col" className="px-4 py-3 font-medium">
@@ -300,6 +317,9 @@ export function ColaCanjes() {
                     </th>
                     <th scope="col" className="px-4 py-3 font-medium">
                       Estado
+                    </th>
+                    <th scope="col" className="px-4 py-3 font-medium">
+                      Trazabilidad
                     </th>
                     <th scope="col" className="px-4 py-3 font-medium">
                       Acciones
@@ -325,6 +345,9 @@ export function ColaCanjes() {
                       </td>
                       <td className="px-4 py-3">
                         <BadgeEstadoCanje estado={fila.estado} />
+                      </td>
+                      <td className="px-4 py-3">
+                        <LineaTiempoCanje canje={fila} />
                       </td>
                       <td className="px-4 py-3">
                         <div className="flex flex-wrap gap-2">

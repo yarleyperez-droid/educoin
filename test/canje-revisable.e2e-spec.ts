@@ -12,6 +12,7 @@ import {
   MENSAJE_SIN_PERMISO_RESOLVER,
 } from './../src/modules/redemptions/redemptions.service';
 import { PrismaService } from './../src/prisma/prisma.service';
+import { auditarSinSecretos } from './helpers/auditoria-respuestas';
 
 /**
  * Canje revisable (H7.2 / PRO-447) contra la BD REAL: el contrato de
@@ -64,6 +65,10 @@ interface FilaCola {
   costoMonedas: number;
   estado: string;
   solicitadoEn: string;
+  /** Nombre visible del resolvente (H10.4 / T10.4.1); null si no se resolvió. */
+  resueltoPor: string | null;
+  /** ISO del resolved_at; null si no se resolvió. */
+  resueltoEn: string | null;
 }
 
 describe('Canje revisable — flujo de resolución (e2e, fixtures aislados)', () => {
@@ -350,6 +355,9 @@ describe('Canje revisable — flujo de resolución (e2e, fixtures aislados)', ()
     expect(await saldoDe(inscripcionId)).toBe(saldoAntes - 30);
     expect(await stockDe(itemManualId)).toBe((stockAntes ?? 0) - 1);
     expect(await movimientosDe(canjePendienteId)).toEqual(['spending']);
+
+    // T10.4.3: la creación nunca filtra secretos.
+    auditarSinSecretos(respuesta.body, 'crear canje (pending)');
   });
 
   it('2. sin saldo → 422 `Saldo insuficiente` sin crear fila', async () => {
@@ -407,6 +415,9 @@ describe('Canje revisable — flujo de resolución (e2e, fixtures aislados)', ()
       where: { enrollment_id: inscripcionId },
     });
     expect(movimientosDespues).toBe(movimientosAntes);
+
+    // T10.4.3: la resolución (aprobar) nunca filtra secretos.
+    auditarSinSecretos(respuesta.body, 'resolver canje (approve)');
   });
 
   it('5. rechazar → rejected con saldo/stock exactamente iguales al previo y 1 solo reversal', async () => {
@@ -454,6 +465,9 @@ describe('Canje revisable — flujo de resolución (e2e, fixtures aislados)', ()
     expect(fila?.resolved_by).toBe(profesorId);
     expect(fila?.resolved_at).not.toBeNull();
     expect(fila?.reversed_at).toBeNull();
+
+    // T10.4.3: la resolución (rechazar) nunca filtra secretos.
+    auditarSinSecretos(respuesta.body, 'resolver canje (reject)');
   });
 
   it('6. entregar → delivered sin movimientos nuevos', async () => {
@@ -470,6 +484,9 @@ describe('Canje revisable — flujo de resolución (e2e, fixtures aislados)', ()
       where: { enrollment_id: inscripcionId },
     });
     expect(movimientosDespues).toBe(movimientosAntes);
+
+    // T10.4.3: la resolución (entregar) nunca filtra secretos.
+    auditarSinSecretos(respuesta.body, 'resolver canje (deliver)');
   });
 
   it('7. doble resolución → 409 `El canje ya fue resuelto`', async () => {
@@ -560,6 +577,9 @@ describe('Canje revisable — flujo de resolución (e2e, fixtures aislados)', ()
       expect(typeof fila.nombreItem).toBe('string');
       expect(fila.costoMonedas).toBe(30);
       expect(typeof fila.solicitadoEn).toBe('string');
+      // H10.4 / T10.4.1: un pendiente todavía no tiene resolvente.
+      expect(fila.resueltoPor).toBeNull();
+      expect(fila.resueltoEn).toBeNull();
     }
     // Orden FIFO por solicitud (redeemed_at ASC).
     const instantes = filas.map((fila) => Date.parse(fila.solicitadoEn));
@@ -583,6 +603,9 @@ describe('Canje revisable — flujo de resolución (e2e, fixtures aislados)', ()
       .set('Authorization', `Bearer ${tokenEstudiante}`);
     expect(estudiante.status).toBe(403);
     expect(estudiante.body.message).toBe(MENSAJE_SIN_ROL);
+
+    // T10.4.3: el listado de la cola nunca filtra secretos.
+    auditarSinSecretos(pagina1.body, 'listar cola (GET /pending)');
   });
 
   it('11. auto_approve → nace approved, fuera de la cola y sin movimientos extra', async () => {
@@ -648,6 +671,24 @@ describe('Canje revisable — flujo de resolución (e2e, fixtures aislados)', ()
     );
     expect(ids).not.toContain(canjeEstudianteDosId); // solo los suyos
     expect(propios.body.meta.total).toBe(7);
+
+    // H10.4 / T10.4.1: trazabilidad del resolvente en el historial.
+    const porId = new Map(filas.map((fila) => [fila.id, fila]));
+    const entregado = porId.get(canjePendienteId);
+    const rechazado = porId.get(canjeRechazoId);
+    const auto = porId.get(canjeAutoId);
+    const pendiente = porId.get(canjeBloqueoId);
+    expect(entregado?.resueltoPor).toBe('Paula Cano'); // nombre visible
+    expect(entregado?.resueltoEn).not.toBeNull();
+    expect(rechazado?.resueltoPor).toBe('Paula Cano');
+    expect(rechazado?.resueltoEn).not.toBeNull();
+    expect(auto?.resueltoPor).toBe('Paula Cano'); // auto-aprobado por su profesor
+    expect(auto?.resueltoEn).not.toBeNull();
+    expect(pendiente?.resueltoPor).toBeNull();
+    expect(pendiente?.resueltoEn).toBeNull();
+    // Nunca viajan ids internos de auditoría ni secretos (CA 4 · T10.4.3).
+    expect(JSON.stringify(propios.body)).not.toContain('resolved_by');
+    auditarSinSecretos(propios.body, 'listar historial (GET /mine)');
 
     // Orden por solicitud descendente (más recientes primero).
     const instantes = filas.map((fila) => Date.parse(fila.solicitadoEn));

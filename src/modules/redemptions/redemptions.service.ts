@@ -436,15 +436,21 @@ export class RedemptionsService {
     const offset = (page - 1) * limit;
     const idProfesor = BigInt(usuario.id);
 
+    // El resolvente se une solo por nombre visible (H10.4 / T10.4.1): el
+    // id `resolved_by` queda interno; para pendientes y legados sin
+    // resolución el LEFT JOIN deja los campos en null.
     const filas = await this.prisma.$queryRaw<FilaCanjeListado[]>(Prisma.sql`
-      SELECT r.id, r.cost_coins, r.status, r.redeemed_at,
+      SELECT r.id, r.cost_coins, r.status, r.redeemed_at, r.resolved_at,
              i.name AS item_name,
              u.first_name AS student_first_name,
-             u.last_name AS student_last_name
+             u.last_name AS student_last_name,
+             ru.first_name AS resolver_first_name,
+             ru.last_name AS resolver_last_name
       FROM redemptions r
       JOIN enrollments e ON e.id = r.enrollment_id
       JOIN users u ON u.id = e.student_id
       JOIN redeemable_items i ON i.id = r.item_id
+      LEFT JOIN users ru ON ru.id = r.resolved_by
       WHERE r.status = 'pending'
         AND e.class_id IN (SELECT c.id FROM classes c WHERE c.teacher_id = ${idProfesor})
       ORDER BY r.redeemed_at ASC, r.id ASC
@@ -491,15 +497,20 @@ export class RedemptionsService {
     const offset = (page - 1) * limit;
     const idEstudiante = BigInt(usuario.id);
 
+    // Igual que la cola (H10.4 / T10.4.1): resolvente solo como nombre
+    // visible; un estudiante ve SU historial con la trazabilidad completa.
     const filas = await this.prisma.$queryRaw<FilaCanjeListado[]>(Prisma.sql`
-      SELECT r.id, r.cost_coins, r.status, r.redeemed_at,
+      SELECT r.id, r.cost_coins, r.status, r.redeemed_at, r.resolved_at,
              i.name AS item_name,
              u.first_name AS student_first_name,
-             u.last_name AS student_last_name
+             u.last_name AS student_last_name,
+             ru.first_name AS resolver_first_name,
+             ru.last_name AS resolver_last_name
       FROM redemptions r
       JOIN enrollments e ON e.id = r.enrollment_id
       JOIN users u ON u.id = e.student_id
       JOIN redeemable_items i ON i.id = r.item_id
+      LEFT JOIN users ru ON ru.id = r.resolved_by
       WHERE e.student_id = ${idEstudiante}
       ORDER BY r.redeemed_at DESC, r.id DESC
       LIMIT ${limit} OFFSET ${offset}

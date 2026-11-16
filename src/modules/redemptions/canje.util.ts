@@ -187,6 +187,11 @@ export function aCanjeRespuesta(
 /**
  * Fila de los listados paginados de canjes (cola del profesor e historial
  * del estudiante), tal como sale de la consulta SQL (nombres ya unidos).
+ *
+ * La trazabilidad del resolvente (H10.4 / T10.4.1) llega por el
+ * `LEFT JOIN users ru ON ru.id = r.resolved_by`: para un canje `pending`
+ * (cola del profesor) o un legado sin resolución no hay fila, y los
+ * campos llegan `null`.
  */
 export interface FilaCanjeListado {
   id: bigint | number;
@@ -196,12 +201,18 @@ export interface FilaCanjeListado {
   item_name: string;
   student_first_name: string;
   student_last_name: string;
+  resolved_at: Date | string | null;
+  resolver_first_name: string | null;
+  resolver_last_name: string | null;
 }
 
 /**
- * Mapea una fila del listado de canjes (H7.2 / T7.2.4-T7.2.5).
+ * Mapea una fila del listado de canjes (H7.2 / T7.2.4-T7.2.5 + H10.4 /
+ * T10.4.1: trazabilidad del resolvente).
  *
- * IDs como `string` y fechas en ISO (AGENTS.md §7).
+ * IDs como `string` y fechas en ISO (AGENTS.md §7). Del resolvente SOLO
+ * sale el nombre visible (resueltoPor): el id interno `resolved_by` jamás
+ * se expone (CA 4 de H10.4).
  *
  * @param fila Fila cruda de la consulta paginada.
  * @returns DTO de fila listo para responder.
@@ -214,5 +225,13 @@ export function aCanjeListado(fila: FilaCanjeListado): CanjeListadoDto {
     costoMonedas: Number(fila.cost_coins),
     estado: fila.status,
     solicitadoEn: new Date(fila.redeemed_at).toISOString(),
+    resueltoPor:
+      fila.resolver_first_name === null && fila.resolver_last_name === null
+        ? null
+        : `${fila.resolver_first_name ?? ''} ${fila.resolver_last_name ?? ''}`.trim(),
+    resueltoEn:
+      fila.resolved_at === null
+        ? null
+        : new Date(fila.resolved_at).toISOString(),
   };
 }

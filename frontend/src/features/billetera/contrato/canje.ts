@@ -125,6 +125,13 @@ export interface CanjeListado {
   estado: EstadoCanje;
   /** ISO del `redeemed_at` (instante de la solicitud). */
   solicitadoEn: string;
+  /**
+   * Nombre visible de quien resolvió el canje (H10.4 / T10.4.1); `null`
+   * si aún está `pending` o es un legado sin resolución.
+   */
+  resueltoPor: string | null;
+  /** ISO del `resolved_at`; `null` si aún no se resuelve. */
+  resueltoEn: string | null;
 }
 
 /** Meta de la paginación estándar (`MetaCanjeDto`). */
