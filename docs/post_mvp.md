@@ -8,7 +8,7 @@
 > proponer el cambio de esquema (SQL + especificación + diagrama) y esperar aprobación.
 > No referirse a estas tablas/columnas/funciones como si ya existieran (AGENTS.md §10, punto 2).
 >
-> **Fuente de verdad de la ejecución:** Linear (workspace projectsU, team Integrator). Este documento concentra el backlog y los planes de las épicas E7 (Parte II) y E8 (Parte III); el estado diario (asignaciones, avance) vive en los issues de Linear.
+> **Fuente de verdad de la ejecución:** Linear (workspace projectsU, team Integrator). Este documento concentra el backlog y los planes de las épicas E7 a E10 (Partes II–V); el estado diario (asignaciones, avance) vive en los issues de Linear.
 >
 > **Ficha técnica oficial:** `docs/EduCoin.md` (Plan de Dirección Técnica v1.0). La trazabilidad completa de requisitos → estado está en **§0** de la Parte I.
 >
@@ -126,6 +126,23 @@ Cobertura de cada requisito de la ficha oficial respecto a lo planificado:
 - **Estado del plan:** **planificado y en ejecución** como épica E7 con las historias H7.1–H7.5 —
   ver **Parte II** de este documento. Issues en Linear (PRO-422…PRO-440).
 
+### 5.1 Tienda de canjes por clase — ✅ Planificado (épica E10)
+
+- **Qué:** que la ventana **Canjes** del sidebar sea la tienda de cada clase. El profesor publica
+  artículos por clase (bonos de nota de **0.1–0.5 décimas** o actividades lúdicas) con su **costo en
+  EduCoins**; el estudiante entra a cada una de sus materias inscritas y canjea lo publicado, con
+  historial y trazabilidad para reclamos.
+- **Origen:** necesidad operativa del canje revisable (E7): la lista plana de ítems no dice en qué
+  materia se puede usar cada artículo ni quién lo publicó.
+- **Estado MVP:** `/student/canje` lista **todos** los ítems activos de todas las clases; el profesor
+  no tiene UI para administrar su catálogo (solo la API de H4.1).
+- **Impacto:** `CHECK` de rango 0.1–0.5 en `redeemable_items.grade_points` y validación de DTO;
+  exposición de `resolved_by`/`resolved_at` en la API. **Sin tablas ni columnas nuevas**: se reutiliza
+  `redeemable_items.class_id` (un artículo pertenece a una clase).
+- **Prioridad:** 🟡 Media.
+- **Estado del plan:** **planificado** como épica E10 con las historias H10.1–H10.5 —
+  ver **Parte V** de este documento. Issues en Linear (PRO-504…PRO-522), en los ciclos S9–S11.
+
 ### 6. Tablas y objetos del diseño original (pre-MVP)
 
 | Ítem | Qué aporta | Impacto | Prioridad |
@@ -207,7 +224,8 @@ Cobertura de cada requisito de la ficha oficial respecto a lo planificado:
 | 2026-10-15 | Unificación con el plan post-MVP (`plan-historias.md`, fusionado como Parte II y eliminado como archivo suelto). §1.1 y §7 actualizados (stack, pnpm y UI resueltos en el MVP); §5 marcado como planificado (E7); nuevo §8 Notificaciones; §4 marca el hueco de planificación de minijuegos. |
 | 2026-10-15 | Trazabilidad contra la ficha técnica oficial (`docs/EduCoin.md`): nueva §0 con la tabla requisito→estado; §4 actualiza su origen (ficha, Dev 2 + Dev 3); nuevos §10 (editor KaTeX del profesor) y §11 (responsive design). |
 | 2026-10-15 | Épica E8 aprobada por el PO: minijuegos como pregunta de actividad (piloto `ordenar_frase` + `memoria`, auto-calificado en backend, sin pistas desbloqueables). §0 y §4 actualizados a "planificado"; nueva **Parte III** con el plan completo. |
-| 2026-10-15 | Replanificación post-MVP y publicación en Linear: fechas corregidas para iniciar el 26 oct; creadas épicas E7, E8 y E9 como proyectos de Linear; historias PRO-447…PRO-458 y subtareas PRO-459…PRO-503 publicadas con asignaciones, estimaciones y prefijos de sprint; nueva **Parte IV** para E9.
+| 2026-10-15 | Replanificación post-MVP y publicación en Linear: fechas corregidas para iniciar el 26 oct; creadas épicas E7, E8 y E9 como proyectos de Linear; historias PRO-447…PRO-458 y subtareas PRO-459…PRO-503 publicadas con asignaciones, estimaciones y prefijos de sprint; nueva **Parte IV** para E9. |
+| 2026-11-11 | Épica **E10 — Tienda de canjes por clase** publicada en Linear como Project con las historias PRO-504…PRO-508 y las tareas PRO-509…PRO-522, repartidas en los ciclos S9–S11; nuevo §5.1 del backlog y nueva **Parte V** con el plan completo. La tienda vive dentro de la ventana Canjes de ambos roles (sin rutas nuevas). Para no sobrecargar los carriles, **E8 (minijuegos) se desplaza de S9–S12 a S13–S16** (Parte III) y E9 se mantiene en S12–S13 (Parte IV). |
 
 ---
 
@@ -875,13 +893,13 @@ Cobertura de cada requisito de la ficha oficial respecto a lo planificado:
 
 ## Parte III — Plan: Épica E8 · Minijuegos como pregunta de actividad
 
-> Épica **aprobada y pendiente de publicación** en Linear (team Integrator / workspace projectsU). Esta sección es la referencia del plan; el estado diario estará en los issues de Linear. Piloto: `ordenar_frase` + `memoria`. **Sin pistas desbloqueables** (decisión del PO, 2026-10-15).
+> Épica **aprobada y publicada** en Linear (team Integrator / workspace projectsU). Esta sección es la referencia del plan; el estado diario está en los issues de Linear. Piloto: `ordenar_frase` + `memoria`. **Sin pistas desbloqueables** (decisión del PO, 2026-10-15).
 
 ### Resumen
 - Objetivo: que el profesor pueda añadir preguntas de tipo minijuego (`ordenar_frase`, `memoria`) a sus actividades y el estudiante las responda jugando, con auto-calificación en backend que jamás expone la solución.
 - Equipo: 3 personas — Front (tú), Backend (jhon), TBD/QA (julian).
 - Enfoque de división: flujo de trabajo + spike de esquema — porque el valor está en la cadena esquema → API → juegos → E2E, y las UIs se construyen en paralelo.
-- Sprint: 1 semana, arranque **16 nov** (E7 cierra 15 nov; continúa la numeración de sprints del MVP).
+- Sprint: 4 semanas, arranque **14 dic** (desplazada de S9–S12 para dejar S9–S11 a la épica E10 — tienda de canjes por clase; ver Parte V).
 - Capacidad por carril: 6 pts front · 8 pts back · 6 pts QA por sprint.
 - Hitos: ninguno.
 - Suposiciones:
@@ -889,22 +907,21 @@ Cobertura de cada requisito de la ficha oficial respecto a lo planificado:
   - El piloto cubre solo `ordenar_frase` y `memoria`; el enum y el modelo de datos quedan preparados para los 5 tipos restantes (`crucigrama`, `sopa_letras`, `emparejar`, `arrastrar_soltar`, `adivina_palabra`).
   - El minijuego es **una pregunta de `questions[]`** con auto-calificación al estilo `test`/`completion`; monedas y calificación usan la ruta existente de H3.4/H3.6 sin cambios de flujo.
   - El backend aún no tiene los módulos de actividades/entregas (H3.3/H3.4/H3.6, sprint S3 del MVP); H8.3 se integra con el **pipeline de grading que entreguen esas historias**.
-  - Las fechas de fin de año (S3: 23–29 dic y S4: 30 dic–5 ene) son un riesgo: si el equipo toma vacaciones, las sprints se corren a enero sin reordenar historias ni dependencias.
+  - Las fechas de fin de año (S15: 28 dic–4 ene y S16: 4–11 ene) son un riesgo: si el equipo toma vacaciones, las sprints se corren a enero sin reordenar historias ni dependencias.
   - El link pregunta-minijuego se resuelve por `(activity_id, question_position)` apuntando al `position` del ítem `minigame` dentro de `questions` JSONB (el spike H8.1 puede proponer otro mecanismo si lo justifica).
   - IDs continúan la secuencia del plan: E8, H8.x, T8.x.x.
 
 ### Sprints
 | Sprint | Fechas | Meta del sprint | Historias | Carga (Front·Back·QA) |
 |---|---|---|---|---|
-| S9 | 16–22 nov | El esquema de minijuegos está aprobado y el profesor crea preguntas minijuego en su editor | H8.1, H8.2 | 5·2·0 |
-| S10 | 23–29 nov | La API sirve el tablero jugable sin solución y auto-califica la respuesta del estudiante | H8.3 | 0·5·1 |
-| S11 | 30 nov–6 dic | El estudiante juega `ordenar_frase` y `memoria` dentro de una actividad publicada | H8.4 | 5·0·0 |
-| S12 | 7–13 dic | El flujo completo actividad-con-minijuego pasa en la suite E2E; el profesor ya puede insertar ecuaciones KaTeX en enunciados | H8.5, H9.1 | 3·0·5 |
-| S13 | 14–20 dic | Los paneles admin, profesor y estudiante pasan la auditoría responsive | H9.2 | 5·0·2 |
+| S13 | 14–21 dic | El esquema de minijuegos está aprobado y habilita el editor del profesor de S14 | H8.1 | 0·2·0 |
+| S14 | 21–28 dic | El profesor crea preguntas minijuego y la API sirve el tablero jugable sin solución | H8.2, H8.3 | 5·5·1 |
+| S15 | 28 dic–4 ene | El estudiante juega `ordenar_frase` y `memoria` dentro de una actividad publicada | H8.4 | 5·0·0 |
+| S16 | 4–11 ene | El flujo completo actividad-con-minijuego pasa en la suite E2E | H8.5 | 0·0·5 |
 
 ### E8 — Minijuegos como pregunta de actividad (piloto ordenar_frase + memoria)
 - Resumen: preguntas de tipo minijuego dentro de las actividades existentes: el profesor las crea con su configuración y solución, el estudiante las juega y el backend las auto-califica sin exponer la solución.
-- Sprints que la abarcan: S9, S10, S11, S12
+- Sprints que la abarcan: S13, S14, S15, S16
 
 #### Descripción de la épica
 **Objetivo de negocio:** gamificar la práctica dentro de las actividades para que el estudiante demuestre conocimiento activo (reconstruir un proceso, emparejar pares) en lugar de solo reconocer opciones, cumpliendo el requisito de la ficha técnica (`docs/EduCoin.md` §2.2 y §2.3) sin tocar el flujo de calificación ni de monedas existente.
@@ -924,7 +941,7 @@ Cobertura de cada requisito de la ficha oficial respecto a lo planificado:
 
 **Criterio de éxito:** el profesor publica una actividad con preguntas minijuego; el estudiante las resuelve jugando; la entrega se auto-califica con el puntaje correcto; el payload del estudiante no contiene en ningún punto la solución (auditable); el recorrido completo pasa en la suite E2E.
 
-**Riesgos y suposiciones:** el link `(activity_id, question_position)` entre la fila y el JSONB es el riesgo de integridad principal (un minigame huérfano o apuntando a una pregunta que ya no es `minigame`); el shuffle del tablero debe ocurrir en backend para que el frontend no pueda inferir el orden; el calendario de fin de año puede correr S3/S4 a enero.
+**Riesgos y suposiciones:** el link `(activity_id, question_position)` entre la fila y el JSONB es el riesgo de integridad principal (un minigame huérfano o apuntando a una pregunta que ya no es `minigame`); el shuffle del tablero debe ocurrir en backend para que el frontend no pueda inferir el orden; el calendario de fin de año puede correr S15/S16 a enero.
 
 **Dependencias con otras épicas:** E5/E6 del MVP — H3.3 (GET de actividad del estudiante), H3.4/H3.6 (envío y grading de entregas, aún en el sprint S3 del MVP), H5.6 (editor de actividades, T5.6.2) y H5.8 (cuestionario, spec 019 — el aviso "se resuelve de otra forma" es el punto de sustitución de T8.4.1). Ninguna dependencia con E7.
 
@@ -933,7 +950,7 @@ Cobertura de cada requisito de la ficha oficial respecto a lo planificado:
 - Prioridad: 1
 - Estimación: 2
 - Carga: 0·2·0
-- Sprint: S1
+- Sprint: S13
 - Rol sugerido: Backend (jhon)
 - Bloqueada por: —
 
@@ -1035,14 +1052,14 @@ Cobertura de cada requisito de la ficha oficial respecto a lo planificado:
 - Prioridad: 1
 - Estimación: 5
 - Carga: 5·0·0
-- Sprint: S1
+- Sprint: S14
 - Rol sugerido: Front (tú)
 - Bloqueada por: —
 
 #### Descripción de la historia
 **Como** profesor, **quiero** añadir preguntas de tipo minijuego a mi actividad con su configuración y solución, **para que** mis estudiantes practiquen de forma interactiva dentro del mismo cuestionario.
 
-**Contexto:** el editor de H5.6/T5.6.2 ya acepta `type: 'minigame'` en zod pero sin UI (spec 015: "file y minigame quedan tipados en zod pero sin UI"). Esta historia añade el formulario y los builders de configuración de los 2 tipos del piloto. Se construye **contra el contrato de H8.1** (patrón de E7: las UIs de S1 trabajan sobre el contrato propuesto y se ajustan tras la aprobación si cambia).
+**Contexto:** el editor de H5.6/T5.6.2 ya acepta `type: 'minigame'` en zod pero sin UI (spec 015: "file y minigame quedan tipados en zod pero sin UI"). Esta historia añade el formulario y los builders de configuración de los 2 tipos del piloto. Se construye **contra el contrato de H8.1** (patrón de E7: las UIs de S14 trabajan sobre el contrato propuesto y se ajustan tras la aprobación si cambia).
 
 **Alcance**
 - Incluye: selector de tipo minijuego dentro del editor de preguntas; builder `ordenar_frase` (lista de piezas en orden correcto); builder `memoria` (editor de pares); validación de que no se publique un minijuego sin solución; extensión del esquema zod de `features/teacher/contrato/actividades.ts` con `config`/`solution` por tipo.
@@ -1156,7 +1173,7 @@ Cobertura de cada requisito de la ficha oficial respecto a lo planificado:
 - Prioridad: 1
 - Estimación: 5
 - Carga: 0·5·1
-- Sprint: S2
+- Sprint: S14
 - Rol sugerido: Backend (jhon)
 - Bloqueada por: H8.1
 
@@ -1207,7 +1224,7 @@ Cobertura de cada requisito de la ficha oficial respecto a lo planificado:
 
 **Dependencias:** esquema aprobado de H8.1; módulo de actividades de H3.3 (en desarrollo en el MVP S3).
 
-**Notas:** si H3.3 aún no está listo al empezar S2, implementar el hook en el servicio que quede de referencia y dejar el punto de inserción documentado (patrón usado en MVP T2.3.3).
+**Notas:** si H3.3 aún no está listo al empezar S14, implementar el hook en el servicio que quede de referencia y dejar el punto de inserción documentado (patrón usado en MVP T2.3.3).
 
 ##### T8.3.2 — Proyección jugable en el GET del estudiante
 - Etiquetas: tarea, backend
@@ -1280,7 +1297,7 @@ Cobertura de cada requisito de la ficha oficial respecto a lo planificado:
 - Prioridad: 1
 - Estimación: 5
 - Carga: 5·0·0
-- Sprint: S3
+- Sprint: S15
 - Rol sugerido: Front (tú), con apoyo backend puntual
 - Bloqueada por: H8.2, H8.3
 
@@ -1400,7 +1417,7 @@ Cobertura de cada requisito de la ficha oficial respecto a lo planificado:
 - Prioridad: 1
 - Estimación: 5
 - Carga: 0·0·5
-- Sprint: S4
+- Sprint: S16
 - Rol sugerido: TBD/QA (julian)
 - Bloqueada por: H8.3, H8.4
 
@@ -1498,13 +1515,13 @@ Cobertura de cada requisito de la ficha oficial respecto a lo planificado:
 ### Resumen
 - Objetivo: cumplir al 100% la ficha técnica cubriendo el editor KaTeX para enunciados del profesor (§2.2) y el responsive design mobile-first (§2.3).
 - Equipo: 3 personas — Front (tú), Backend (jhon), TBD/QA (julian).
-- Sprint: 1 semana, continuación inmediata de E8.
+- Sprint: 2 semanas (S12–S13). E8 se desplazó a S13–S16 para dejar S9–S11 a la tienda de canjes (ver Partes III y V); E9 corre en paralelo desde S12.
 - Capacidad por carril: 6 pts front · 8 pts back · 6 pts QA por sprint.
 
 ### Sprints
 | Sprint | Fechas | Meta del sprint | Historias | Carga (Front·Back·QA) |
 |---|---|---|---|---|
-| S12 | 7–13 dic | El profesor puede insertar ecuaciones KaTeX en los enunciados mientras la suite E2E de minijuegos cierra | H8.5, H9.1 | 3·0·5 |
+| S12 | 7–13 dic | El profesor puede insertar ecuaciones KaTeX en los enunciados | H9.1 | 3·0·0 |
 | S13 | 14–20 dic | Los paneles admin, profesor y estudiante pasan la auditoría responsive | H9.2 | 5·0·2 |
 
 ### E9 — Cierre de ficha técnica (KaTeX + responsive)
@@ -1611,3 +1628,454 @@ Cobertura de cada requisito de la ficha oficial respecto a lo planificado:
 - **T9.2.3 — Ajustar layout responsive del panel del estudiante** · frontend · Bloqueada por: T9.2.1
 - **T9.2.4 — Ajustar layout responsive del panel de admin** · frontend · Bloqueada por: T9.2.1
 - **T9.2.5 — Verificación final responsive** · qa · Bloqueada por: T9.2.2, T9.2.3, T9.2.4
+
+---
+
+## Parte V — Plan: Épica E10 · Tienda de canjes por clase
+
+> Épica publicada en Linear (team Integrator / workspace projectsU) como **Project E10**,
+> historias **PRO-504…PRO-508** y tareas **PRO-509…PRO-522**, repartidas en los ciclos S9, S10 y S11.
+
+### Resumen
+- Objetivo: convertir la ventana **Canjes** del sidebar en la **tienda por clase**: el profesor publica artículos (bonos de nota de **0.1 a 0.5 décimas** o actividades lúdicas) con su **costo en EduCoins**, y el estudiante entra a cada una de sus materias para ver y canjear lo publicado, con historial y trazabilidad para reclamos.
+- Equipo: 3 personas — Front (yarley), Backend (jhon), TBD/QA (julian).
+- Enfoque de división: **flujo de trabajo** con una habilitadora corta (H10.1) que fija el rango 0.1–0.5 antes de construir las dos tiendas.
+- Sprint: 3 semanas (S9–S11), inmediatamente después de E7. Para no sobrecargar los carriles, **E8 se desplaza a S13–S16** (ver Parte III).
+- Capacidad por carril: 6 pts front · 8 pts back · 6 pts QA por sprint.
+- Numeración: continúa la secuencia del MVP (S9 en adelante). Los títulos en Linear llevan el prefijo `[S9·01]`, `[S10·02]`, etc.
+- Hitos: ninguno.
+- Suposiciones:
+  - La tienda **no crea rutas nuevas**: vive dentro de la ventana **Canjes** que ya existe en ambos roles (`/teacher/canjes` con la cola de H7.4 y `/student/canjes` con el historial de H7.3).
+  - Un artículo pertenece a **una clase** (`redeemable_items.class_id` es `NOT NULL`). Compartir un artículo entre clases exigiría una tabla puente y queda fuera de alcance.
+  - El canje de la tienda reutiliza el flujo revisable de E7 (`pending → approved → delivered`), no el canje instantáneo del MVP.
+  - `redeemable_items.grade_points` ya existe (`NUMERIC(4,2)`): la regla 0.1–0.5 es un `CHECK` más validación de DTO, **sin columnas nuevas**.
+  - La vista plana `/student/canje` (H5.7) se consolida dentro de Canjes en H10.3; no se mantiene como ruta paralela.
+
+### Sprints
+| Sprint | Fechas | Meta del sprint | Historias | Carga (Front·Back·QA) |
+|---|---|---|---|---|
+| S9 | 16–23 nov | El rango 0.1–0.5 queda blindado en BD y API, y el profesor ya administra los artículos de cada clase desde Canjes | H10.1, H10.2 | 5·2·0 |
+| S10 | 23–30 nov | El estudiante ve sus materias y canjea desde cada una; el historial muestra quién resolvió y cuándo | H10.3, H10.4 | 5·3·0 |
+| S11 | 30 nov–7 dic | La tienda completa (publicar → canjear → entregar) pasa de extremo a extremo en CI | H10.5 | 0·0·3 |
+
+### E10 — Tienda de canjes por clase
+- Resumen: catálogo de artículos por clase, publicado por el profesor y canjeado por los estudiantes inscritos, dentro de la ventana Canjes de ambos roles.
+- Sprints que la abarcan: S9, S10, S11
+
+#### Descripción de la épica
+**Objetivo de negocio:** que el canje deje de ser una lista plana de ítems y pase a ser una tienda organizada por materia, donde el profesor decide qué se puede canjear en su clase y a qué costo, y el estudiante elige con claridad.
+
+**Alcance**
+- Incluye: regla de conversión 0.1–0.5 décimas por bono de nota; tienda del profesor con selector de sus clases y alta/edición/archivado de artículos (décimas, costo en EduCoins, stock, aprobación automática); tienda del estudiante con materias inscritas → artículos de esa clase → canje; historial con resolvente y fechas; suite E2E del recorrido.
+- No incluye: catálogo compartido entre clases, búsqueda global de artículos, filtros avanzados, notificaciones (ver §8), pagos con moneda real, escalas de nota configurables por organización.
+
+**Usuarios involucrados:** profesor (publica y resuelve), estudiante (canjea y consulta su historial).
+
+**Historias que la componen**
+- H10.1 — Regla de conversión 0.1–0.5 para bonos de nota
+- H10.2 — Tienda del profesor en Canjes: artículos por clase
+- H10.3 — Tienda del estudiante en Canjes: materias y artículos
+- H10.4 — Historial y trazabilidad de canjes para reclamos
+- H10.5 — Suite E2E de la tienda por clase
+
+**Criterio de éxito:** un profesor publica un bono de 0.3 con su costo en EduCoins en una clase; un estudiante inscrito lo ve **solo en esa materia**, lo canjea, el profesor lo aprueba y lo entrega; el historial muestra quién resolvió y cuándo; saldo y stock quedan consistentes y la suite E2E lo demuestra.
+
+**Riesgos y suposiciones:** el rango 0.1–0.5 debe aplicarse también a datos existentes (si algún ítem tiene más de 0.5, la migración falla y hay que decidir el ajuste con el PO); el aislamiento por clase es el riesgo de seguridad principal (un estudiante no debe ver ni canjear artículos de otra clase); la tienda del estudiante depende de que la API exponga el nombre de la clase junto al artículo (T10.3.1); E10 ocupa S9–S11, por lo que **E8 se desplaza a S13–S16** y el orden entre ambas épicas es reversible si el PO prioriza minijuegos.
+
+**Dependencias con otras épicas:** E4 — Economía y canje del MVP (H4.1 API de ítems, H4.4 canje) y E7 — Canje con aprobación del profesor (H7.2–H7.4), ya publicadas en Linear.
+
+### H10.1 — Regla de conversión 0.1–0.5 para bonos de nota
+- Etiquetas: historia, backend, base-de-datos, reglas-de-negocio
+- Prioridad: 2
+- Estimación: 2
+- Carga: 0·2·0
+- Sprint: S9
+- Rol sugerido: Backend (jhon)
+- Bloqueada por: —
+- Linear: PRO-504 (tareas PRO-509, PRO-510)
+
+#### Descripción de la historia
+**Como** profesor, **quiero** que el sistema solo acepte bonos de nota entre 0.1 y 0.5 décimas, **para que** ningún artículo de la tienda otorgue más nota de la permitida.
+
+**Contexto:** hoy `redeemable_items.grade_points` es `NUMERIC(4,2)` con `CHECK (grade_points IS NULL OR grade_points > 0)`, así que acepta hasta 99.99, y el DTO solo valida `@IsNumber()`. La tienda necesita una regla explícita.
+
+**Alcance**
+- Incluye: `CHECK` de rango en BD, validación en `CrearItemDto`/`ActualizarItemDto`, mensaje de error en español y pruebas de los cuatro límites.
+- No incluye: escala configurable por organización (decisión futura), cambios en `fun_activity`.
+
+**Criterios de aceptación**
+- [ ] **Escenario 1 — Fuera de rango:** Dado un `gradePoints` menor que 0.1 o mayor que 0.5, cuando se envía `POST /items` o `PATCH /items/:id`, entonces responde `422` con mensaje claro en español.
+- [ ] **Escenario 2 — Límites:** Dados 0.1 y 0.5, cuando se envían, entonces se aceptan; con 0.09 y 0.51 se rechazan.
+- [ ] **Escenario 3 — Tipos:** Dado `grade_bonus`, cuando falta `gradePoints`, entonces sigue respondiendo `422`; dado `fun_activity` con `gradePoints`, entonces sigue rechazado.
+- [ ] **Escenario 4 — Red de seguridad:** Dado un `INSERT` por fuera de la API, cuando el valor está fuera de rango, entonces el `CHECK` de la BD lo impide.
+
+**Reglas de negocio y datos:** cada artículo equivale a **N décimas (0.1–0.5)** y **M monedas**; el profesor define ambos valores al publicarlo. `grade_points` se mantiene como `NUMERIC(4,2)`.
+
+**Conversación (por aclarar con el Product Owner):** ¿qué hacer si un ítem existente supera 0.5 al aplicar la migración (recortar, archivar o pedir ajuste manual)?
+
+**Definition of Ready**
+- [x] Cumple INVEST
+- [x] Criterios de aceptación claros
+- [x] Estimada
+- [x] Dependencias identificadas
+- [x] Valor claro para el usuario o el negocio
+
+#### Tareas
+##### T10.1.1 — Migración y validación del rango 0.1–0.5
+- Etiquetas: tarea, backend, base-de-datos
+- Bloqueada por: —
+- Linear: PRO-509
+
+**Objetivo:** que la regla de 0.1 a 0.5 viva en la BD y en la API.
+
+**Qué hacer**
+1. Migración: reemplazar `CHECK (grade_points IS NULL OR grade_points > 0)` por un `CHECK` de rango 0.1–0.5.
+2. Validar en `CrearItemDto`/`ActualizarItemDto` (`@Min(0.1)`/`@Max(0.5)`) con mensaje en español.
+3. Reflejar el cambio en `db/001_schema.sql` (fuente de verdad) y en `prisma/schema.prisma`.
+
+**Hecho cuando**
+- [ ] Un `gradePoints` fuera de rango responde `422` y el esquema del repo refleja el `CHECK`.
+
+##### T10.1.2 — Pruebas de límites (0.09 / 0.1 / 0.5 / 0.51)
+- Etiquetas: tarea, testing, backend
+- Bloqueada por: T10.1.1
+- Linear: PRO-510
+
+**Objetivo:** fijar la frontera exacta de la regla.
+
+**Qué hacer**
+1. Unitarios del DTO/service con 0.09, 0.1, 0.5 y 0.51.
+2. E2E de `POST /items` y `PATCH /items/:id` en los cuatro valores.
+3. Caso `fun_activity` con `gradePoints` (rechazado) y `grade_bonus` sin puntos (`422`).
+
+**Hecho cuando**
+- [ ] Los cuatro límites y los dos casos de tipo pasan en CI.
+
+### H10.2 — Tienda del profesor en Canjes: artículos por clase
+- Etiquetas: historia, frontend, crud
+- Prioridad: 2
+- Estimación: 5
+- Carga: 5·0·0
+- Sprint: S9
+- Rol sugerido: Front (yarley)
+- Bloqueada por: H10.1, H7.4, H4.1
+- Linear: PRO-505 (tareas PRO-511, PRO-512, PRO-513)
+
+#### Descripción de la historia
+**Como** profesor, **quiero** publicar y administrar los artículos de cada una de mis clases desde la ventana Canjes, **para que** mis estudiantes sepan qué pueden canjear y a qué costo.
+
+**Contexto:** la ventana Canjes del sidebar hoy solo muestra la cola de solicitudes pendientes (H7.4). Pasa a ser la tienda: selector de mis clases, dentro de cada clase sus artículos y la cola de pendientes en una pestaña aparte. La API de ítems ya existe (H4.1); falta la UI.
+
+**Alcance**
+- Incluye: selector de clases (las que el profesor tiene o crea), listado de artículos por clase con estado, alta/edición/archivado y la pestaña de solicitudes pendientes existente.
+- No incluye: catálogo compartido entre clases (cada artículo pertenece a una clase), imágenes de artículo, ordenamiento manual.
+
+**Criterios de aceptación**
+- [ ] **Escenario 1 — Solo mis clases:** Dado un profesor autenticado, cuando abre Canjes, entonces ve únicamente sus clases y, dentro de cada una, sus artículos (activos y archivados).
+- [ ] **Escenario 2 — Publicar:** Dado el formulario de artículo, cuando ingresa nombre, descripción, décimas (0.1–0.5), costo en EduCoins, stock y aprobación automática, entonces el artículo aparece en la tienda de esa clase.
+- [ ] **Escenario 3 — Editar y archivar:** Dado un artículo existente, cuando lo edita o lo archiva, entonces el cambio se refleja y los errores de validación se muestran en español.
+- [ ] **Escenario 4 — Cola intacta:** Dada la pestaña de solicitudes, cuando el profesor aprueba, rechaza o entrega, entonces la cola de H7.4 sigue funcionando.
+- [ ] **Escenario 5 — Estados:** Dada cualquier vista con datos, entonces existen estados de carga, vacío y error, y el layout es responsive y accesible.
+
+**Reglas de negocio y datos:** el costo en EduCoins y las décimas son obligatorios para `grade_bonus`; el stock solo aplica a `fun_activity`; archivar es borrado lógico (`status = 'deleted'`).
+
+**Conversación (por aclarar con el Product Owner):** ¿el profesor puede reutilizar un artículo en varias clases (duplicar) o debe crearlo de nuevo en cada una?
+
+**Definition of Ready**
+- [x] Cumple INVEST
+- [x] Criterios de aceptación claros
+- [x] Estimada
+- [x] Dependencias identificadas
+- [x] Valor claro para el usuario o el negocio
+
+#### Tareas
+##### T10.2.1 — Selector de clases y estructura de la tienda del profesor
+- Etiquetas: tarea, frontend
+- Bloqueada por: —
+- Linear: PRO-511
+
+**Objetivo:** que Canjes muestre las clases del profesor como tiendas.
+
+**Qué hacer**
+1. En `/teacher/canjes`, añadir el selector de clases del profesor (las que tiene o crea).
+2. Listar los artículos de la clase elegida con estado, costo y décimas.
+3. Separar en pestañas "Tienda" y "Solicitudes" (la cola de H7.4 se conserva).
+4. Estados de carga, vacío y error.
+
+**Hecho cuando**
+- [ ] El profesor navega sus clases y ve solo sus artículos.
+
+##### T10.2.2 — Formulario de artículo (décimas, EduCoins, stock, auto-aprobación)
+- Etiquetas: tarea, frontend
+- Bloqueada por: T10.2.1
+- Linear: PRO-512
+
+**Objetivo:** publicar un artículo completo desde la tienda.
+
+**Qué hacer**
+1. Formulario con nombre, descripción, tipo, décimas (0.1–0.5), costo en EduCoins, stock y aprobación automática.
+2. Validación en cliente y mensajes del backend en español.
+3. Usar la API existente de `/items` (H4.1), sin duplicar reglas.
+
+**Hecho cuando**
+- [ ] El artículo creado aparece en la tienda de la clase con los valores ingresados.
+
+##### T10.2.3 — Editar, archivar y pestaña de solicitudes pendientes
+- Etiquetas: tarea, frontend
+- Bloqueada por: T10.2.2
+- Linear: PRO-513
+
+**Objetivo:** administrar el catálogo sin perder la cola de resolución.
+
+**Qué hacer**
+1. Editar un artículo y archivarlo (borrado lógico existente).
+2. Confirmación antes de archivar.
+3. Verificar que la pestaña "Solicitudes" sigue aprobando/rechazando/entregando (H7.4).
+
+**Hecho cuando**
+- [ ] Editar y archivar se refleja en la tienda y la cola sigue operativa.
+
+### H10.3 — Tienda del estudiante en Canjes: materias y artículos
+- Etiquetas: historia, frontend, flujo-de-trabajo
+- Prioridad: 2
+- Estimación: 5
+- Carga: 5·0·0
+- Sprint: S10
+- Rol sugerido: Front (yarley)
+- Bloqueada por: H10.2, H7.3
+- Linear: PRO-506 (tareas PRO-514, PRO-515, PRO-516)
+
+#### Descripción de la historia
+**Como** estudiante, **quiero** ver en Canjes las materias a las que estoy inscrito y entrar a cada una para canjear los artículos que publicó mi profesor, **para** elegir con claridad qué bono o actividad quiero.
+
+**Contexto:** hoy `/student/canje` muestra una lista plana de todos los ítems activos de todas las clases, y `/student/canjes` es solo el historial. La tienda agrupa por materia en una sola ventana: materias → artículos → canje, con el historial en una pestaña.
+
+**Alcance**
+- Incluye: lista de materias inscritas con conteo de artículos disponibles, vista de artículos de la materia (décimas, costo, stock), canje con la previsualización existente y pestaña "Mis canjes".
+- No incluye: búsqueda global de artículos ni filtros avanzados (decisión futura), favoritos.
+
+**Criterios de aceptación**
+- [ ] **Escenario 1 — Mis materias:** Dado un estudiante autenticado, cuando abre Canjes, entonces ve las clases donde tiene inscripción activa.
+- [ ] **Escenario 2 — Artículos de la materia:** Dada una materia, cuando entra, entonces solo aparecen los artículos activos de esa clase, con sus décimas y su costo en EduCoins.
+- [ ] **Escenario 3 — Canje:** Dado un artículo con saldo suficiente, cuando confirma el canje, entonces se crea en `pending` y se descuentan saldo y stock.
+- [ ] **Escenario 4 — Historial:** Dada la pestaña "Mis canjes", entonces conserva el historial con estados y costo (H7.3).
+- [ ] **Escenario 5 — Estados:** Dada cualquier vista con datos, entonces existen estados de carga, vacío y error, y el layout es responsive.
+
+**Reglas de negocio y datos:** solo se listan artículos `active` de clases con inscripción `active` del estudiante; el canje pasa por la previsualización y el flujo revisable de E7.
+
+**Conversación (por aclarar con el Product Owner):** ¿la tienda debe mostrar artículos agotados (stock 0) como no canjeables o esconderlos?
+
+**Definition of Ready**
+- [x] Cumple INVEST
+- [x] Criterios de aceptación claros
+- [x] Estimada
+- [x] Dependencias identificadas
+- [x] Valor claro para el usuario o el negocio
+
+#### Tareas
+##### T10.3.1 — Contrato: nombre de la clase en el listado de artículos
+- Etiquetas: tarea, backend, contrato
+- Bloqueada por: —
+- Linear: PRO-514
+
+**Objetivo:** que el estudiante pueda agrupar por materia sin consultas extra.
+
+**Qué hacer**
+1. Extender el listado de ítems (o el endpoint de clases del estudiante) con el nombre de la clase.
+2. Mantener los DTOs de salida explícitos y sin campos internos.
+3. Tests del mapeo.
+
+**Hecho cuando**
+- [ ] La API devuelve clase y artículos listos para agrupar.
+
+##### T10.3.2 — Vista de materias del estudiante
+- Etiquetas: tarea, frontend
+- Bloqueada por: T10.3.1
+- Linear: PRO-515
+
+**Objetivo:** que Canjes muestre las materias inscritas.
+
+**Qué hacer**
+1. En `/student/canjes`, listar las clases con inscripción activa y el conteo de artículos disponibles.
+2. Estados de carga, vacío y error.
+3. Responsive.
+
+**Hecho cuando**
+- [ ] El estudiante ve sus materias con artículos disponibles.
+
+##### T10.3.3 — Artículos de la materia, canje y pestaña Mis canjes
+- Etiquetas: tarea, frontend
+- Bloqueada por: T10.3.2
+- Linear: PRO-516
+
+**Objetivo:** canjear desde la materia y conservar el historial.
+
+**Qué hacer**
+1. Vista de artículos de la materia con décimas, costo y stock.
+2. Reutilizar la previsualización y el canje del flujo revisable (H7).
+3. Pestaña "Mis canjes" con estados y costo (H7.3).
+
+**Hecho cuando**
+- [ ] El canje hecho desde la materia aparece como `pending` en "Mis canjes".
+
+### H10.4 — Historial y trazabilidad de canjes para reclamos
+- Etiquetas: historia, backend, seguridad, flujo-de-trabajo
+- Prioridad: 2
+- Estimación: 3
+- Carga: 0·3·0
+- Sprint: S10
+- Rol sugerido: Backend (jhon)
+- Bloqueada por: H7.2, H7.3, H7.4
+- Linear: PRO-507 (tareas PRO-517, PRO-518, PRO-519)
+
+#### Descripción de la historia
+**Como** estudiante y profesor, **quiero** ver quién resolvió cada canje y cuándo, **para** atender reclamos con evidencia.
+
+**Contexto:** la BD ya guarda `resolved_by` y `resolved_at` (H7.2), pero la API no los expone: el historial y la cola solo muestran estado y fecha de solicitud.
+
+**Alcance**
+- Incluye: nombre del resolvente y fechas de solicitud/resolución/entrega en `GET /redemptions/mine` y `/pending`, y una línea de tiempo en la UI.
+- No incluye: exportación de reportes ni notificaciones.
+
+**Criterios de aceptación**
+- [ ] **Escenario 1 — Datos completos:** Dadas las respuestas de historial y cola, cuando se consultan, entonces incluyen `resueltoPor` (nombre visible) y las fechas del canje.
+- [ ] **Escenario 2 — Línea de tiempo:** Dada la UI de ambas vistas, entonces muestra solicitado → resuelto → entregado.
+- [ ] **Escenario 3 — Autorización:** Dado un estudiante, solo ve sus canjes; dado un profesor, solo los de sus clases (`403`/`404` en caso contrario).
+- [ ] **Escenario 4 — Sin filtraciones:** Dadas las respuestas, cuando se auditan, entonces no aparece `password_hash` ni ningún campo interno (`auditarSinSecretos`).
+
+**Reglas de negocio y datos:** `resolved_by` referencia `users`; se expone solo el nombre visible, nunca el id interno de auditoría ni el hash. Los canjes sin resolver muestran las fechas como nulas.
+
+**Conversación (por aclarar con el Product Owner):** ¿el estudiante puede ver el nombre del profesor que rechazó un canje o solo el estado y la fecha?
+
+**Definition of Ready**
+- [x] Cumple INVEST
+- [x] Criterios de aceptación claros
+- [x] Estimada
+- [x] Dependencias identificadas
+- [x] Valor claro para el usuario o el negocio
+
+#### Tareas
+##### T10.4.1 — DTO con resolvente y fechas
+- Etiquetas: tarea, backend, contrato
+- Bloqueada por: —
+- Linear: PRO-517
+
+**Objetivo:** exponer la auditoría que la BD ya guarda.
+
+**Qué hacer**
+1. Añadir `resueltoPor` (nombre visible) y las fechas de solicitud, resolución y entrega a `GET /redemptions/mine` y `/pending`.
+2. Unir con `users` para el nombre; nunca exponer ids internos de auditoría.
+3. Tests del mapeo y de permisos.
+
+**Hecho cuando**
+- [ ] Ambas respuestas traen resolvente y fechas.
+
+##### T10.4.2 — Línea de tiempo del canje en ambas vistas
+- Etiquetas: tarea, frontend
+- Bloqueada por: T10.4.1
+- Linear: PRO-518
+
+**Objetivo:** que el reclamo se pueda revisar de un vistazo.
+
+**Qué hacer**
+1. Componente de línea de tiempo: solicitado → resuelto → entregado.
+2. Usarlo en "Mis canjes" y en la cola del profesor.
+3. Fechas en formato local y estados vacíos.
+
+**Hecho cuando**
+- [ ] Ambas vistas muestran el recorrido completo del canje.
+
+##### T10.4.3 — Auditoría de secretos en las respuestas de canje
+- Etiquetas: tarea, testing, seguridad
+- Bloqueada por: T10.4.1
+- Linear: PRO-519
+
+**Objetivo:** garantizar que la trazabilidad no filtre datos internos.
+
+**Qué hacer**
+1. Aplicar `auditarSinSecretos` a las respuestas de la suite de canje (crear, resolver, listar).
+2. Cubrir `password_hash`, `is_correct` y `expected_answer`.
+
+**Hecho cuando**
+- [ ] La suite falla si aparece un campo prohibido.
+
+### H10.5 — Suite E2E de la tienda por clase
+- Etiquetas: historia, testing, qa, hito
+- Prioridad: 2
+- Estimación: 3
+- Carga: 0·0·3
+- Sprint: S11
+- Rol sugerido: TBD/QA (julian)
+- Bloqueada por: H10.2, H10.3, H10.4
+- Linear: PRO-508 (tareas PRO-520, PRO-521, PRO-522)
+
+#### Descripción de la historia
+**Como** equipo de QA, **quiero** una suite E2E del recorrido completo de la tienda, **para** liberar la épica con evidencia de que saldo y stock quedan consistentes.
+
+**Contexto:** H7.5 cubre el flujo de resolución; esta suite cubre el recorrido nuevo: publicación por clase → visibilidad solo para los inscritos → canje → resolución.
+
+**Alcance**
+- Incluye: escenario feliz, aislamiento entre clases y registro en CI.
+- No incluye: rendimiento ni pruebas multi-navegador.
+
+**Criterios de aceptación**
+- [ ] **Escenario 1 — Publicar:** Dado un profesor, cuando publica un bono de 0.3 con costo en EduCoins en su clase, entonces queda disponible solo en esa clase.
+- [ ] **Escenario 2 — Canjear:** Dado un estudiante inscrito, cuando entra a la materia y canjea, entonces saldo y stock se descuentan y el canje nace `pending`.
+- [ ] **Escenario 3 — Resolver:** Dado el profesor, cuando aprueba y entrega, entonces saldo y stock quedan consistentes en BD.
+- [ ] **Escenario 4 — Aislamiento:** Dado un estudiante de otra clase, cuando intenta ver o canjear el artículo, entonces recibe `404`/`403`.
+- [ ] **Escenario 5 — Regresión:** Dada la suite, cuando se abre un PR o se hace push a `develop`, entonces corre en CI.
+
+**Reglas de negocio y datos:** fixtures aislados por corrida (organización sintética, limpieza en `afterAll` respetando el orden de FKs); nunca sobre datos reales.
+
+**Conversación (por aclarar con el Product Owner):** ninguna.
+
+**Definition of Ready**
+- [x] Cumple INVEST
+- [x] Criterios de aceptación claros
+- [x] Estimada
+- [x] Dependencias identificadas
+- [x] Valor claro para el usuario o el negocio
+
+#### Tareas
+##### T10.5.1 — Fixtures de la tienda por clase
+- Etiquetas: tarea, testing
+- Bloqueada por: —
+- Linear: PRO-520
+
+**Objetivo:** datos reproducibles para la suite.
+
+**Qué hacer**
+1. Crear profesor, dos estudiantes de clases distintas, clases y artículos con décimas y costo.
+2. Limpieza en `afterAll` respetando el orden de FKs.
+
+**Hecho cuando**
+- [ ] La suite arranca en limpio y no deja residuos.
+
+##### T10.5.2 — Escenario feliz: publicar → canjear → entregar
+- Etiquetas: tarea, testing
+- Bloqueada por: T10.5.1
+- Linear: PRO-521
+
+**Objetivo:** certificar el recorrido completo.
+
+**Qué hacer**
+1. Profesor publica un bono de 0.3 con costo en EduCoins.
+2. Estudiante inscrito lo ve en su materia y lo canjea.
+3. Profesor aprueba y entrega; verificar saldo, stock y estado en BD.
+
+**Hecho cuando**
+- [ ] El recorrido pasa y saldo/stock quedan consistentes.
+
+##### T10.5.3 — Aislamiento entre clases y registro en CI
+- Etiquetas: tarea, testing, qa
+- Bloqueada por: T10.5.2
+- Linear: PRO-522
+
+**Objetivo:** cubrir el riesgo de ver artículos ajenos.
+
+**Qué hacer**
+1. Estudiante de otra clase no ve el artículo y no puede canjearlo (`404`/`403`).
+2. Registrar la suite en el flujo de CI (`pnpm test:e2e`).
+
+**Hecho cuando**
+- [ ] El aislamiento pasa y la suite corre en cada PR.
