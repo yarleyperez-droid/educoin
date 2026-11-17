@@ -7,7 +7,9 @@
  * ordenados por `solicitadoEn` descendente) con el **estado real** de cada
  * uno (`redemption_status` ampliado: pending/approved/delivered/rejected +
  * legados completed/reversed) mediante el badge compartido
- * `BadgeEstadoCanje` (una sola fuente de etiquetas, AGENTS.md §8).
+ * `BadgeEstadoCanje` (una sola fuente de etiquetas, AGENTS.md §8), y la
+ * **línea de tiempo de trazabilidad** (H10.4 / T10.4.2):
+ * solicitado → resuelto → entregado, con el resolvente y sus fechas.
  *
  * Estados de UI cubiertos con el kit H5.2 (`@/components/ui`): **carga**,
  * **vacío** ("Aún no tienes canjes") y **error** con reintento. La
@@ -30,6 +32,7 @@ import {
   BadgeEstadoCanje,
   textoCostoCanje,
 } from "@/features/billetera/componentes/badge-estado-canje";
+import { LineaTiempoCanje } from "@/features/billetera/componentes/linea-tiempo-canje";
 import type {
   CanjeListado,
   Meta,
@@ -164,7 +167,7 @@ export function MisCanjes({ alIrATienda }: PropsMisCanjes) {
         {error === null && !cargando && canjes.length > 0 && (
           <>
             <div className="overflow-x-auto rounded-xl border border-slate-200">
-              <table className="w-full min-w-[36rem] text-sm">
+              <table className="w-full min-w-[44rem] text-sm">
                 <thead>
                   <tr className="border-b border-slate-200 bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
                     <th scope="col" className="px-4 py-3 font-medium">
@@ -178,6 +181,9 @@ export function MisCanjes({ alIrATienda }: PropsMisCanjes) {
                     </th>
                     <th scope="col" className="px-4 py-3 font-medium">
                       Estado
+                    </th>
+                    <th scope="col" className="px-4 py-3 font-medium">
+                      Trazabilidad
                     </th>
                   </tr>
                 </thead>
@@ -197,6 +203,9 @@ export function MisCanjes({ alIrATienda }: PropsMisCanjes) {
                       </td>
                       <td className="px-4 py-3">
                         <BadgeEstadoCanje estado={canje.estado} />
+                      </td>
+                      <td className="px-4 py-3">
+                        <LineaTiempoCanje canje={canje} />
                       </td>
                     </tr>
                   ))}

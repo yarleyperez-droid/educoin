@@ -77,7 +77,10 @@ const FILA_LISTADO = {
   item_name: 'Bono de 0.3 en el examen',
   student_first_name: 'Ana',
   student_last_name: 'López',
-};
+  resolved_at: null,
+  resolver_first_name: null,
+  resolver_last_name: null,
+} as const;
 
 const queryRaw = jest.fn<Promise<unknown[]>, [unknown]>();
 const create = jest.fn<Promise<unknown>, [unknown]>();
@@ -389,6 +392,8 @@ describe('colaPendientes', () => {
           costoMonedas: 30,
           estado: 'pending',
           solicitadoEn: '2026-11-10T12:00:00.000Z',
+          resueltoPor: null,
+          resueltoEn: null,
         },
       ],
       meta: { total: 1, page: 1, limit: 20 },
@@ -419,6 +424,36 @@ describe('historial', () => {
     expect(listado.data).toHaveLength(2);
     expect(listado.data[1].estado).toBe('rejected');
     expect(listado.meta.total).toBe(2);
+  });
+
+  it('expone la trazabilidad del resolvente en los canjes resueltos (H10.4 / T10.4.1)', async () => {
+    encolar(
+      [
+        {
+          ...FILA_LISTADO,
+          status: 'delivered',
+          resolved_at: new Date('2026-11-10T12:05:00Z'),
+          resolver_first_name: 'Paula',
+          resolver_last_name: 'Cano',
+        },
+      ],
+      [{ total: 1 }],
+    );
+
+    const listado = await service.historial({ page: 1, limit: 20 }, ESTUDIANTE);
+
+    expect(listado.data[0]).toEqual({
+      id: '7',
+      nombreEstudiante: 'Ana López',
+      nombreItem: 'Bono de 0.3 en el examen',
+      costoMonedas: 30,
+      estado: 'delivered',
+      solicitadoEn: '2026-11-10T12:00:00.000Z',
+      resueltoPor: 'Paula Cano',
+      resueltoEn: '2026-11-10T12:05:00.000Z',
+    });
+    // Nunca viajan ids internos de auditoría (CA 4).
+    expect(JSON.stringify(listado)).not.toContain('resolved_by');
   });
 
   it('normaliza el total cuando la BD no devuelve filas de conteo', async () => {
