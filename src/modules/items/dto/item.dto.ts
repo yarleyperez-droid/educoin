@@ -153,6 +153,13 @@ export class ListarItemsQueryDto {
 export class ItemDto {
   id!: string;
   classId!: string;
+  /**
+   * Nombre de la clase del ítem (H10.3 / T10.3.1): el listado lo incluye
+   * para que el estudiante agrupe por materia sin consultas extra. La
+   * consulta del catálogo siempre hace el join con `classes`; queda
+   * `string | null` en el tipo para tolerar filas crudas sin el join.
+   */
+  className!: string | null;
   name!: string;
   description!: string | null;
   type!: item_type;

@@ -23,6 +23,8 @@ import type { ItemDto } from './dto/item.dto';
 export interface FilaItemCatalogo {
   id: bigint | number;
   class_id: bigint | number;
+  /** Join opcional con la clase (H10.3 / T10.3.1: nombre para agrupar). */
+  classes?: { name: string } | null;
   name: string;
   description: string | null;
   type: item_type;
@@ -49,6 +51,7 @@ export function aItemRespuesta(fila: FilaItemCatalogo): ItemDto {
   return {
     id: String(fila.id),
     classId: String(fila.class_id),
+    className: fila.classes?.name ?? null,
     name: fila.name,
     description: fila.description,
     type: fila.type,

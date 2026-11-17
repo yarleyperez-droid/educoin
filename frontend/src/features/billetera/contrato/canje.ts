@@ -44,6 +44,8 @@ export type EstadoCanje =
 export interface ItemCanje {
   id: string;
   claseId: string;
+  /** Nombre de la clase del ítem (`className` del DTO, H10.3/T10.3.1). */
+  claseNombre: string;
   name: string;
   description: string | null;
   type: TipoItem;

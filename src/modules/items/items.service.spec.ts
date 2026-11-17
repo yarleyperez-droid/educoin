@@ -25,6 +25,7 @@ const PROFESOR: UsuarioAutenticado = {
 const itemCreado = {
   id: 10n,
   class_id: 1n,
+  classes: { name: 'Mathematics 10A' },
   name: 'Trivia game in class',
   description: null,
   type: 'fun_activity' as const,
@@ -94,6 +95,8 @@ describe('ItemsService.crear — validación por tipo (T4.1.2)', () => {
     expect(dto.stock).toBe(5);
     expect(dto.costCoins).toBe(50);
     expect(dto.status).toBe('active');
+    // H10.3 / T10.3.1: el DTO lleva el nombre de la clase (join).
+    expect(dto.className).toBe('Mathematics 10A');
   });
 
   it('CA 2: alta válida de grade_bonus con grade_points → crea', async () => {
@@ -268,10 +271,28 @@ describe('ItemsService.listar — camino estudiante (T5.7.2)', () => {
     expect(findMany).toHaveBeenCalledWith({
       where: { status: 'active', class_id: { in: [1n, 2n] } },
       orderBy: { id: 'asc' },
+      include: { classes: { select: { name: true } } },
     });
     expect(items).toHaveLength(1);
     expect(items[0].id).toBe('10');
     expect(items[0].status).toBe('active');
+    // H10.3 / T10.3.1: cada fila trae el nombre de su clase (join).
+    expect(items[0].className).toBe('Mathematics 10A');
+  });
+
+  it('sin classId: el nombre de la clase viene del join (T10.3.1)', async () => {
+    findManyInscripciones.mockResolvedValue([{ class_id: 1n }]);
+    findMany.mockResolvedValue([
+      itemCreado,
+      { ...itemCreado, id: 11n, classes: { name: 'Physics 11B' } },
+    ]);
+
+    const items = await service.listar({}, ESTUDIANTE);
+
+    expect(items.map((item) => item.className)).toEqual([
+      'Mathematics 10A',
+      'Physics 11B',
+    ]);
   });
 
   it('sin inscripciones activas: devuelve [] sin consultar el catálogo', async () => {
@@ -304,6 +325,7 @@ describe('ItemsService.listar — camino estudiante (T5.7.2)', () => {
     expect(findMany).toHaveBeenCalledWith({
       where: { status: 'active', class_id: 1n },
       orderBy: { id: 'asc' },
+      include: { classes: { select: { name: true } } },
     });
     expect(verificarPertenencia).not.toHaveBeenCalled();
   });
@@ -317,6 +339,7 @@ describe('ItemsService.listar — camino estudiante (T5.7.2)', () => {
     expect(findMany).toHaveBeenCalledWith({
       where: { class_id: 1n, status: { not: 'deleted' } },
       orderBy: { id: 'asc' },
+      include: { classes: { select: { name: true } } },
     });
     expect(findManyInscripciones).not.toHaveBeenCalled();
   });

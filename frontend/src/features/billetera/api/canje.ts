@@ -38,6 +38,8 @@ import type {
 interface ItemBackend {
   id: string;
   classId: string;
+  /** Nombre de la clase (join del backend, H10.3 / T10.3.1). */
+  className: string | null;
   name: string;
   description: string | null;
   type: ItemCanje["type"];
@@ -57,6 +59,7 @@ function aItemCanje(backend: ItemBackend): ItemCanje {
   return {
     id: String(backend.id),
     claseId: String(backend.classId),
+    claseNombre: backend.className ?? "",
     name: backend.name,
     description: backend.description,
     type: backend.type,

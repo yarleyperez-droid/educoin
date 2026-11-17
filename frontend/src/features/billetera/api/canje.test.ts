@@ -33,6 +33,7 @@ const URL_API = "http://localhost:3000/api/v1";
 const ITEM_BACKEND = {
   id: "2",
   classId: "1",
+  className: "Mathematics 10A",
   name: "Trivia game in class",
   description: "Fun minigame session during class",
   type: "fun_activity",
@@ -115,6 +116,7 @@ describe("listarItems", () => {
       {
         id: "2",
         claseId: "1",
+        claseNombre: "Mathematics 10A",
         name: "Trivia game in class",
         description: "Fun minigame session during class",
         type: "fun_activity",
@@ -124,6 +126,14 @@ describe("listarItems", () => {
       },
     ]);
     expect(String(vi.mocked(fetch).mock.calls[0]?.[0])).toBe(`${URL_API}/items`);
+  });
+
+  it("mapea className ausente a cadena vacía sin romper la vista", async () => {
+    responder(200, [{ ...ITEM_BACKEND, className: null }]);
+
+    const items = await listarItems();
+
+    expect(items[0]?.claseNombre).toBe("");
   });
 
   it("propaga ApiError (403 de clase sin inscripción)", async () => {
