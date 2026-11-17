@@ -45,6 +45,9 @@ import {
 /** Id de la actividad publicada del seed (`activities.id = 1`). */
 const ID_ACTIVIDAD_SEED = "1";
 
+/** Título de esa actividad (`activities.title`), para distinguirla en la lista. */
+const TITULO_ACTIVIDAD_SEED = "Challenge 1";
+
 /** Inscripción de est.perez en la clase de esa actividad (`enrollments.id = 1`). */
 const ID_INSCRIPCION_SEED = 1;
 
@@ -243,7 +246,13 @@ test("Hito: entrega bajo umbral → el profesor aprueba → 120 monedas → canj
     .fill("Mathematics");
   await page.getByRole("button", { name: "Buscar" }).click();
   await page.getByRole("link", { name: NOMBRE_CLASE_SEED }).click();
-  await page.getByRole("link", { name: "Ver entregas" }).click();
+  // La clase puede tener más actividades (corridas previas): se entra por
+  // la del seed, cuyo "Ver entregas" apunta a la cola que este test usa.
+  await page
+    .getByRole("listitem")
+    .filter({ hasText: TITULO_ACTIVIDAD_SEED })
+    .getByRole("link", { name: "Ver entregas" })
+    .click();
   await page.waitForURL(/\/entregas$/);
 
   await page.getByLabel("Estado", { exact: true }).selectOption("submitted");
@@ -297,7 +306,9 @@ test("Hito: entrega bajo umbral → el profesor aprueba → 120 monedas → canj
   // El canje nace PENDING (flujo revisable, H7.3): las monedas quedan
   // reservadas y el saldo visible se refresca contra la API con el nuevo
   // valor. El panel muestra el estado real ("Solicitud enviada").
-  await expect(page.getByText("Solicitud enviada", { exact: false })).toBeVisible({
+  // El heading del panel (no getByText: el toast "Solicitud enviada:
+  // pendiente…" matchea el mismo substring y el modo estricto falla).
+  await expect(page.getByRole("heading", { name: "Solicitud enviada" })).toBeVisible({
     timeout: 15_000,
   });
   await expect(page.getByTestId("saldo-canje")).toHaveText(

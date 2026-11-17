@@ -214,7 +214,9 @@ test("Canje exitoso descuenta al instante y canje sin saldo muestra el error sin
   // nuevo valor (el front no recalcula). El panel muestra el estado real
   // ("Solicitud enviada"), no un "Canje realizado" instantáneo.
   await confirmacion.getByRole("button", { name: "Confirmar canje" }).click();
-  await expect(page.getByText("Solicitud enviada", { exact: false })).toBeVisible({
+  // El heading del panel (no getByText: el toast "Solicitud enviada:
+  // pendiente…" matchea el mismo substring y el modo estricto falla).
+  await expect(page.getByRole("heading", { name: "Solicitud enviada" })).toBeVisible({
     timeout: 15_000,
   });
   await expect(page.getByTestId("saldo-canje")).toHaveText(
