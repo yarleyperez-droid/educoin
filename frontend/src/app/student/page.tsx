@@ -20,8 +20,13 @@ import {
   IconTrophy,
   IconCalendar,
 } from "@/components/ui";
-import { obtenerSaldo } from "@/features/billetera/api/billetera";
+import { obtenerHistorial, obtenerSaldo } from "@/features/billetera/api/billetera";
 import { unirseAClase } from "@/features/billetera/api/unirse";
+import {
+  GraficaProgreso,
+  type BarraProgreso,
+  resumenMensualGanancias,
+} from "@/features/billetera/componentes/grafica-progreso";
 import type { SaldoBilletera } from "@/features/billetera/contrato/billetera";
 import { listarPublicadas } from "@/features/estudiante/api/actividades-estudiante";
 import { listarInscripciones } from "@/features/estudiante/api/inscripciones";
@@ -38,14 +43,6 @@ interface ActividadReciente {
   publicadaEn: string | null;
 }
 
-const barrasProgreso = [
-  { mes: "Nov", valor: 60 },
-  { mes: "Dic", valor: 90 },
-  { mes: "Ene", valor: 120 },
-  { mes: "Feb", valor: 100 },
-  { mes: "Mar", valor: 140, activa: true },
-];
-
 function formatearFechaPublicacion(iso: string | null): string {
   if (iso === null) return "Recientemente publicada";
   return new Date(iso).toLocaleDateString("es-ES", {
@@ -58,6 +55,7 @@ function formatearFechaPublicacion(iso: string | null): string {
 export default function StudentPage() {
   const { mostrar } = useToast();
   const [saldo, setSaldo] = useState<SaldoBilletera | null>(null);
+  const [barras, setBarras] = useState<BarraProgreso[]>([]);
   const [actividades, setActividades] = useState<ActividadReciente[]>([]);
   const [cargando, setCargando] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -70,9 +68,12 @@ export default function StudentPage() {
 
     async function cargarTodo(): Promise<void> {
       try {
-        const [saldoNuevo, inscripcionesRespuesta] = await Promise.all([
+        const [saldoNuevo, inscripcionesRespuesta, historial] = await Promise.all([
           obtenerSaldo(),
           listarInscripciones(),
+          // shortcut: solo la primera página (100) de movimientos; suficiente
+          // para la gráfica mientras un estudiante no supere esa cifra.
+          obtenerHistorial(1, 100),
         ]);
 
         const activas = inscripcionesRespuesta.data.filter(
@@ -106,6 +107,7 @@ export default function StudentPage() {
 
         if (vigente) {
           setSaldo(saldoNuevo);
+          setBarras(resumenMensualGanancias(historial.data));
           setActividades(recientes);
           setError(null);
         }
@@ -355,19 +357,7 @@ export default function StudentPage() {
               Ver todo
             </Link>
           </div>
-          <div className='mt-4 flex h-40 items-end justify-between gap-2'>
-            {barrasProgreso.map((barra) => (
-              <div key={barra.mes} className='flex flex-1 flex-col items-center gap-2'>
-                <div
-                  className={`w-full max-w-[2rem] rounded-t-lg ${
-                    barra.activa ? 'bg-indigo-600' : 'bg-indigo-200'
-                  }`}
-                  style={{ height: `${barra.valor}%` }}
-                />
-                <span className='text-xs font-medium text-slate-500'>{barra.mes}</span>
-              </div>
-            ))}
-          </div>
+          <GraficaProgreso barras={barras} compacta />
           <p className='mt-4 text-xs text-slate-500'>
             Total: <span className='font-semibold text-slate-900'>{ganadas} EduCoins</span>
           </p>

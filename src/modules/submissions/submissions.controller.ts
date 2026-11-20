@@ -39,6 +39,7 @@ import type {
   EntregaBorradorRespuestaDto,
   EntregaCreadaRespuestaDto,
   EntregaDetalleProfesorDto,
+  EntregaEstudianteFilaDto,
   EntregaRespuestaDto,
   ListadoEntregasDto,
 } from './dto/entrega-respuesta.dto';
@@ -107,11 +108,25 @@ export class SubmissionsController {
   @Roles('student')
   @PerteneceA('actividadVisible', 'id')
   @Get('activities/:id/submissions')
-  miEntrega(
-    @Param('id') id: string,
+  miEntrega(    @Param('id') id: string,
     @UsuarioActual() usuario: UsuarioAutenticado,
   ): Promise<EntregaBorradorRespuestaDto | EntregaRespuestaDto> {
     return this.submissionsService.miEntrega(id, usuario);
+  }
+
+  /**
+   * ESTADOS DE LAS ENTREGAS del estudiante en una de sus inscripciones
+   * (GET /enrollments/:inscripcionId/submissions): con esto "Mis
+   * Actividades" filtra las resueltas y las pendientes sin pedir la
+   * entrega de cada actividad una por una. Solo la inscripción propia.
+   */
+  @Roles('student')
+  @Get('enrollments/:inscripcionId/submissions')
+  misEntregas(
+    @Param('inscripcionId') inscripcionId: string,
+    @UsuarioActual() usuario: UsuarioAutenticado,
+  ): Promise<EntregaEstudianteFilaDto[]> {
+    return this.submissionsService.misEntregas(inscripcionId, usuario);
   }
 
   @Roles('student')

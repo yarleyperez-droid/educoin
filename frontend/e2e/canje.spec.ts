@@ -201,7 +201,7 @@ test("Canje exitoso descuenta al instante y canje sin saldo muestra el error sin
   // Seleccionar el ítem de 100 monedas: la confirmación congela costo,
   // saldo y stock ANTES de descontar (CA 2).
   await tarjetaBono.getByRole("button", { name: "Canjear" }).click();
-  const confirmacion = page.getByRole("region", { name: "Confirmar canje" });
+  const confirmacion = page.getByRole("dialog", { name: "Confirmar canje" });
   await expect(confirmacion).toBeVisible();
   await expect(confirmacion).toContainText(`${COSTO_BONO} monedas`);
   await expect(confirmacion).toContainText(
@@ -222,6 +222,9 @@ test("Canje exitoso descuenta al instante y canje sin saldo muestra el error sin
   await expect(page.getByTestId("saldo-canje")).toHaveText(
     String(RECOMPENSA_ACTIVIDAD - COSTO_BONO),
   );
+
+  // El resultado vive en el diálogo: se cierra para volver al catálogo.
+  await page.getByRole("button", { name: "Seguir canjeando" }).click();
 
   // 4) CA 3: con el saldo restante, el ítem de 50 monedas no es canjeable.
   // La previsualización del backend responde `puedeCanjear=false` con su

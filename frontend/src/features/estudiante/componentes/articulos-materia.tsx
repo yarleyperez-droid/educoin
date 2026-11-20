@@ -26,6 +26,7 @@ import { useState } from "react";
 import {
   EstadoCarga,
   EstadoVacio,
+  Modal,
   mensajeDeErrorApi,
   useToast,
 } from "@/components/ui";
@@ -180,6 +181,12 @@ export function ArticulosMateria({
     setPreview(null);
   }
 
+  /** Cierra el diálogo y limpia la selección y el resultado. */
+  function cerrarDialogo(): void {
+    cancelar();
+    setResultado(null);
+  }
+
   /**
    * Confirma el canje y muestra su **estado real** (H7.3: `pending` o
    * `approved` con auto-aprobación), forzando además el refresco de
@@ -237,41 +244,92 @@ export function ArticulosMateria({
         </p>
       )}
 
-      {/* Resultado del último canje: estado REAL (H7.3), no "Canje realizado". */}
-      {resultado !== null && (
-        <section
-          aria-label="Resultado del canje"
-          className={`rounded-md border p-4 ${
-            resultado.estado === "approved"
-              ? "border-emerald-200 bg-emerald-50"
-              : "border-indigo-200 bg-indigo-50"
-          }`}
-        >
-          <h3 className="text-sm font-semibold text-slate-900">
-            {tituloResultado(resultado)}
-          </h3>
-          <p className="mt-1 text-sm text-slate-700">
-            {descripcionResultado(resultado)}
-          </p>
-          <div className="mt-3 flex flex-wrap gap-3">
-            <button
-              type="button"
-              onClick={alVerMisCanjes}
-              data-testid="ver-mis-canjes"
-              className="rounded-md bg-slate-900 px-3 py-1.5 text-xs font-medium text-white hover:bg-slate-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-500 focus-visible:ring-offset-2"
-            >
-              Ver mis canjes
-            </button>
-            <button
-              type="button"
-              onClick={() => setResultado(null)}
-              className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50"
-            >
-              Seguir canjeando
-            </button>
-          </div>
-        </section>
-      )}
+      {/* Confirmación y resultado del canje: siempre en un diálogo, no al pie de la página. */}
+      <Modal
+        abierto={seleccion !== null || resultado !== null}
+        titulo={
+          resultado !== null ? tituloResultado(resultado) : TEXTO_CONFIRMAR
+        }
+        alCerrar={cerrarDialogo}
+        acciones={
+          resultado !== null ? (
+            <>
+              <button
+                type="button"
+                onClick={alVerMisCanjes}
+                data-testid="ver-mis-canjes"
+                className="rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-indigo-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2"
+              >
+                Ver mis canjes
+              </button>
+              <button
+                type="button"
+                onClick={cerrarDialogo}
+                className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50"
+              >
+                Seguir canjeando
+              </button>
+            </>
+          ) : (
+            <>
+              <button
+                type="button"
+                onClick={() => void confirmar()}
+                disabled={preview?.puedeCanjear !== true || canjeando}
+                className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white enabled:hover:bg-indigo-700 disabled:opacity-40"
+              >
+                {canjeando ? "Canjeando…" : TEXTO_CONFIRMAR}
+              </button>
+              <button
+                type="button"
+                onClick={cerrarDialogo}
+                disabled={canjeando}
+                className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 enabled:hover:bg-slate-50 disabled:opacity-40"
+              >
+                {TEXTO_CANCELAR}
+              </button>
+            </>
+          )
+        }
+      >
+        {resultado !== null ? (
+          <p className="text-sm text-slate-700">{descripcionResultado(resultado)}</p>
+        ) : cargandoPreview ? (
+          <EstadoCarga mensaje="Verificando costo y saldo…" />
+        ) : (
+          preview !== null && (
+            <>
+              <dl className="space-y-1 text-sm text-slate-700">
+                <div className="flex justify-between">
+                  <dt>Ítem</dt>
+                  <dd className="font-medium">{preview.item.nombre}</dd>
+                </div>
+                <div className="flex justify-between">
+                  <dt>Costo</dt>
+                  <dd>{preview.item.costoMonedas} monedas</dd>
+                </div>
+                <div className="flex justify-between">
+                  <dt>Tu saldo</dt>
+                  <dd>{preview.saldo.monedasDisponibles} monedas</dd>
+                </div>
+                <div className="flex justify-between">
+                  <dt>Stock</dt>
+                  <dd>{formatearStock(preview.item.stock)}</dd>
+                </div>
+              </dl>
+
+              {!preview.puedeCanjear && (
+                <p
+                  role="alert"
+                  className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm font-medium text-amber-800"
+                >
+                  {preview.motivo ?? "No puedes canjear este ítem."}
+                </p>
+              )}
+            </>
+          )
+        )}
+      </Modal>
 
       {items.length === 0 && (
         <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm sm:p-8">
@@ -312,7 +370,7 @@ export function ArticulosMateria({
                     <button
                       type="button"
                       onClick={() => void seleccionar(item)}
-                      className="rounded-md bg-slate-900 px-3 py-1.5 text-xs font-medium text-white hover:bg-slate-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-500 focus-visible:ring-offset-2"
+                      className="rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-indigo-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2"
                     >
                       Canjear
                     </button>
@@ -324,71 +382,6 @@ export function ArticulosMateria({
         </div>
       )}
 
-      {seleccion !== null && (
-        <section
-          className="rounded-md border border-slate-300 bg-slate-50 p-4"
-          aria-label="Confirmar canje"
-        >
-          <h3 className="text-sm font-semibold text-slate-900">
-            Confirmar canje
-          </h3>
-
-          {cargandoPreview && (
-            <EstadoCarga mensaje="Verificando costo y saldo…" />
-          )}
-
-          {preview !== null && !cargandoPreview && (
-            <>
-              <dl className="mt-3 space-y-1 text-sm text-slate-700">
-                <div className="flex justify-between">
-                  <dt>Ítem</dt>
-                  <dd className="font-medium">{preview.item.nombre}</dd>
-                </div>
-                <div className="flex justify-between">
-                  <dt>Costo</dt>
-                  <dd>{preview.item.costoMonedas} monedas</dd>
-                </div>
-                <div className="flex justify-between">
-                  <dt>Tu saldo</dt>
-                  <dd>{preview.saldo.monedasDisponibles} monedas</dd>
-                </div>
-                <div className="flex justify-between">
-                  <dt>Stock</dt>
-                  <dd>{formatearStock(preview.item.stock)}</dd>
-                </div>
-              </dl>
-
-              {!preview.puedeCanjear && (
-                <p
-                  role="alert"
-                  className="mt-3 text-sm font-medium text-red-700"
-                >
-                  {preview.motivo ?? "No puedes canjear este ítem."}
-                </p>
-              )}
-
-              <div className="mt-4 flex gap-3">
-                <button
-                  type="button"
-                  onClick={() => void confirmar()}
-                  disabled={!preview.puedeCanjear || canjeando}
-                  className="rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white enabled:hover:bg-slate-700 disabled:opacity-40"
-                >
-                  {canjeando ? "Canjeando…" : TEXTO_CONFIRMAR}
-                </button>
-                <button
-                  type="button"
-                  onClick={cancelar}
-                  disabled={canjeando}
-                  className="rounded-md border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 enabled:hover:bg-slate-50 disabled:opacity-40"
-                >
-                  {TEXTO_CANCELAR}
-                </button>
-              </div>
-            </>
-          )}
-        </section>
-      )}
     </div>
   );
 }

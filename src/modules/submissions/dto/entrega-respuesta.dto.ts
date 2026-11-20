@@ -191,6 +191,18 @@ export class EntregaDetalleProfesorDto {
 }
 
 /**
+ * Fila mínima para que la vista "Mis Actividades" sepa qué actividades ya
+ * resolvió (GET /api/v1/enrollments/:inscripcionId/submissions). Sin
+ * respuestas ni veredictos: solo el estado de la entrega.
+ */
+export class EntregaEstudianteFilaDto {
+  actividadId!: string;
+  estado!: submission_status;
+  /** Momento del envío (ISO 8601); null en el borrador. */
+  entregadoEn!: string | null;
+}
+
+/**
  * Respuesta de POST /api/v1/activities/:id/submissions/:entregaId/calificar:
  * confirma la transición (graded/rejected) y devuelve la entrega tal
  * como queda — con lo que el trigger escribió (monedas, graded_at).

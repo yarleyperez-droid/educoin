@@ -10,20 +10,19 @@ import {
   IconProgress,
   IconTrophy,
 } from "@/components/ui";
-import { obtenerSaldo } from "@/features/billetera/api/billetera";
+import { obtenerHistorial, obtenerSaldo } from "@/features/billetera/api/billetera";
+import {
+  GraficaProgreso,
+  type BarraProgreso,
+  resumenMensualGanancias,
+  tendenciaMensual,
+} from "@/features/billetera/componentes/grafica-progreso";
 import type { SaldoBilletera } from "@/features/billetera/contrato/billetera";
 import { ApiError } from "@/lib/api-client";
 
-const barrasProgreso = [
-  { mes: "Nov", valor: 60 },
-  { mes: "Dic", valor: 90 },
-  { mes: "Ene", valor: 120 },
-  { mes: "Feb", valor: 100 },
-  { mes: "Mar", valor: 140, activa: true },
-];
-
 export default function ProgresoPage() {
   const [saldo, setSaldo] = useState<SaldoBilletera | null>(null);
+  const [barras, setBarras] = useState<BarraProgreso[]>([]);
   const [cargando, setCargando] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [recarga, setRecarga] = useState(0);
@@ -33,9 +32,16 @@ export default function ProgresoPage() {
 
     async function cargar(): Promise<void> {
       try {
-        const saldoNuevo = await obtenerSaldo();
+        // shortcut: máximo 100 movimientos; con historiales mayores la
+        // gráfica de meses viejos puede quedar corta. Subir el tope o pedir
+        // un endpoint agregado cuando alguien supere esa cifra.
+        const [saldoNuevo, historial] = await Promise.all([
+          obtenerSaldo(),
+          obtenerHistorial(1, 100),
+        ]);
         if (vigente) {
           setSaldo(saldoNuevo);
+          setBarras(resumenMensualGanancias(historial.data));
           setError(null);
         }
       } catch (e) {
@@ -80,6 +86,15 @@ export default function ProgresoPage() {
   const ganadas = saldo?.monedasGanadas ?? 0;
   const gastadas = saldo?.monedasGastadas ?? 0;
   const disponibles = saldo?.monedasDisponibles ?? 0;
+
+  const tendencia = tendenciaMensual(barras);
+  const mejorMes = barras.reduce(
+    (mejor, barra) => (barra.valor > mejor.valor ? barra : mejor),
+    barras[0] ?? { mes: "—", valor: 0, activa: false },
+  );
+  const ganadoEnPeriodo = barras.reduce((total, barra) => total + barra.valor, 0);
+  const promedio =
+    barras.length > 0 ? Math.round(ganadoEnPeriodo / barras.length) : 0;
 
   return (
     <div className='space-y-6'>
@@ -147,35 +162,29 @@ export default function ProgresoPage() {
             </h2>
             <p className='text-xs text-slate-500'>Últimos 5 meses</p>
           </div>
-          <span className='inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-1 text-xs font-medium text-emerald-700'>
-            <IconProgress className='h-3 w-3' />
-            +24% vs mes anterior
-          </span>
+          {tendencia !== null && (
+            <span className='inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-1 text-xs font-medium text-emerald-700'>
+              <IconProgress className='h-3 w-3' />
+              {tendencia >= 0 ? "+" : ""}
+              {tendencia}% vs mes anterior
+            </span>
+          )}
         </div>
 
-        <div className='mt-6 flex h-56 items-end justify-between gap-2 rounded-xl bg-slate-50 p-4'>
-          {barrasProgreso.map((barra) => (
-            <div key={barra.mes} className='flex flex-1 flex-col items-center gap-2'>
-              <div className='text-xs font-semibold text-slate-700'>{barra.valor}</div>
-              <div
-                className={`w-full max-w-[3rem] rounded-t-lg ${
-                  barra.activa ? 'bg-indigo-600' : 'bg-indigo-200'
-                }`}
-                style={{ height: `${(barra.valor / 160) * 100}%` }}
-              />
-              <span className='text-xs font-medium text-slate-500'>{barra.mes}</span>
-            </div>
-          ))}
-        </div>
+        <GraficaProgreso barras={barras} />
 
         <div className='mt-4 grid grid-cols-1 gap-3 sm:grid-cols-3'>
           <div className='rounded-xl bg-slate-50 p-3'>
             <p className='text-xs text-slate-500'>Período con mayor ganancia</p>
-            <p className='text-sm font-semibold text-slate-900'>Marzo · +140 EduCoins</p>
+            <p className='text-sm font-semibold text-slate-900'>
+              {mejorMes.mes} · +{mejorMes.valor} EduCoins
+            </p>
           </div>
           <div className='rounded-xl bg-slate-50 p-3'>
             <p className='text-xs text-slate-500'>Promedio mensual</p>
-            <p className='text-sm font-semibold text-slate-900'>102 EduCoins</p>
+            <p className='text-sm font-semibold text-slate-900'>
+              {promedio} EduCoins
+            </p>
           </div>
           <div className='rounded-xl bg-slate-50 p-3'>
             <p className='text-xs text-slate-500'>Total acumulado</p>

@@ -9,47 +9,32 @@ import {
   EstadoError,
   EstadoVacio,
   MENSAJE_ERROR_GENERICO,
-  IconBookOpen,
-  IconClock,
-  IconCalendar,
-  IconCoin,
   IconArrowRight,
+  IconBookOpen,
 } from '@/components/ui';
 import { listarPublicadas } from '@/features/estudiante/api/actividades-estudiante';
+import { listarEstadosEntregas } from '@/features/estudiante/api/entregas';
 import {
   listarInscripciones,
   type Inscripcion,
 } from '@/features/estudiante/api/inscripciones';
 import {
-  BadgeModoCalificacion,
-  explicacionModoCalificacion,
-} from '@/features/estudiante/componentes/badge-modo-calificacion';
+  FiltrosActividades,
+  TarjetaActividad,
+  filtrarActividades,
+  type EstadosEntregas,
+  type FiltroEstadoActividad,
+} from '@/features/estudiante/componentes/actividades-filtros';
 import type { ActividadResumen } from '@/features/estudiante/contrato/cuestionario';
 import { ApiError } from '@/lib/api-client';
+
+/** Actividades visibles por materia antes de ir a la vista completa. */
+const ACTIVIDADES_EN_RESUMEN = 3;
 
 interface ClaseConActividades {
   inscripcion: Inscripcion;
   actividades: ActividadResumen[];
-}
-
-function agrupar(
-  inscripciones: Inscripcion[],
-  listas: { data: ActividadResumen[] }[],
-): ClaseConActividades[] {
-  return inscripciones.map((inscripcion, indice) => ({
-    inscripcion,
-    actividades: listas[indice]?.data ?? [],
-  }));
-}
-
-function formatearFecha(fecha: string | null): string {
-  if (fecha === null) return '';
-
-  return new Date(fecha).toLocaleDateString('es-ES', {
-    day: 'numeric',
-    month: 'short',
-    year: 'numeric',
-  });
+  estados: EstadosEntregas;
 }
 
 export default function ActividadesEstudiantePage() {
@@ -58,6 +43,9 @@ export default function ActividadesEstudiantePage() {
   const [cargando, setCargando] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [recarga, setRecarga] = useState(0);
+  const [filtroEstado, setFiltroEstado] =
+    useState<FiltroEstadoActividad>('todas');
+  const [filtroMateria, setFiltroMateria] = useState('todas');
 
   useEffect(() => {
     let vigente = true;
@@ -71,19 +59,36 @@ export default function ActividadesEstudiantePage() {
           return;
         }
 
-        const listas = await Promise.all(
-          inscripciones.map((inscripcion) =>
-            listarPublicadas(inscripcion.id, 1, 50),
+        const [listas, estados] = await Promise.all([
+          Promise.all(
+            inscripciones.map((inscripcion) =>
+              listarPublicadas(inscripcion.id, 1, 50),
+            ),
           ),
-        );
+          Promise.all(
+            inscripciones.map((inscripcion) =>
+              listarEstadosEntregas(inscripcion.id),
+            ),
+          ),
+        ]);
 
-        if (vigente) setClases(agrupar(inscripciones, listas));
+        if (vigente) {
+          setClases(
+            inscripciones.map((inscripcion, indice) => ({
+              inscripcion,
+              actividades: listas[indice]?.data ?? [],
+              estados: estados[indice] ?? {},
+            })),
+          );
+        }
       } catch (e) {
         if (vigente) {
           setError(e instanceof ApiError ? e.message : MENSAJE_ERROR_GENERICO);
         }
       } finally {
-        if (vigente) setCargando(false);
+        if (vigente) {
+          setCargando(false);
+        }
       }
     }
 
@@ -121,6 +126,28 @@ export default function ActividadesEstudiantePage() {
     0,
   );
 
+  const materias = clases.map(({ inscripcion }) => ({
+    id: inscripcion.id,
+    nombre: inscripcion.clase.nombre,
+  }));
+
+  const visibles = clases
+    .filter(
+      ({ inscripcion }) =>
+        filtroMateria === 'todas' || inscripcion.id === filtroMateria,
+    )
+    .map((clase) => ({
+      ...clase,
+      filtradas: filtrarActividades(
+        clase.actividades,
+        clase.estados,
+        filtroEstado,
+      ),
+    }))
+    .filter(
+      ({ filtradas }) => filtroEstado === 'todas' || filtradas.length > 0,
+    );
+
   return (
     <div className='space-y-6'>
       <div className='flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between'>
@@ -132,7 +159,8 @@ export default function ActividadesEstudiantePage() {
             Mis Actividades
           </h1>
           <p className='mt-1 max-w-2xl text-sm text-slate-500'>
-            Actividades publicadas de las clases en las que estás inscrito. Resuélvelas antes del cierre para ganar EduCoins.
+            Actividades publicadas de las clases en las que estás inscrito. Filtra por
+            estado o materia, y entra a una materia para verlas todas.
           </p>
         </div>
         <span className='inline-flex items-center gap-1.5 self-start rounded-full bg-indigo-50 px-3 py-1.5 text-sm font-medium text-indigo-700'>
@@ -141,7 +169,7 @@ export default function ActividadesEstudiantePage() {
         </span>
       </div>
 
-      {clases.length === 0 && (
+      {clases.length === 0 ? (
         <EstadoVacio
           titulo='Aún no estás en ninguna clase'
           descripcion='Pide el código a tu profesor y únete desde el panel.'
@@ -150,80 +178,79 @@ export default function ActividadesEstudiantePage() {
             alHacerClic: () => router.push('/student'),
           }}
         />
-      )}
+      ) : (
+        <>
+          <FiltrosActividades
+            estado={filtroEstado}
+            alCambiarEstado={setFiltroEstado}
+            materias={materias}
+            materia={filtroMateria}
+            alCambiarMateria={setFiltroMateria}
+          />
 
-      {clases.map(({ inscripcion, actividades }) => (
-        <section
-          key={inscripcion.id}
-          className='rounded-2xl border border-slate-200 bg-white p-5 shadow-sm'
-        >
-          <div className='mb-4 flex items-center gap-2'>
-            <span className='rounded-lg bg-indigo-100 p-1.5 text-indigo-600'>
-              <IconBookOpen className='h-4 w-4' />
-            </span>
-            <h2 className='text-base font-semibold text-slate-900'>
-              {inscripcion.clase.nombre}
-            </h2>
-            <span className='ml-auto rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-600'>
-              {actividades.length} activid{actividades.length === 1 ? 'ad' : 'ades'}
-            </span>
-          </div>
-
-          {actividades.length === 0 ? (
-            <p className='rounded-xl bg-slate-50 p-4 text-sm text-slate-500'>
-              Aún no hay actividades publicadas en esta clase.
-            </p>
-          ) : (
-            <ul className='grid grid-cols-1 gap-3 md:grid-cols-2'>
-              {actividades.map((actividad) => (
-                <li
-                  key={actividad.id}
-                  className='group flex flex-col justify-between rounded-xl border border-slate-100 bg-slate-50/50 p-4 transition-colors hover:bg-slate-50'
-                >
-                  <div>
-                    <div className='flex items-center justify-between gap-2'>
-                      <span className='rounded-md bg-indigo-50 px-2 py-0.5 text-xs font-medium text-indigo-700'>
-                        {inscripcion.clase.nombre}
-                      </span>
-                      <span className='inline-flex items-center gap-1 rounded-full bg-amber-50 px-2 py-0.5 text-xs font-semibold text-amber-700'>
-                        <IconCoin className='h-3 w-3' />
-                        hasta {actividad.recompensaMonedas} monedas
-                      </span>
-                    </div>
-                    <h3 className='mt-2 flex flex-wrap items-center gap-2 text-sm font-semibold text-slate-900'>
-                      {actividad.titulo}
-                      <BadgeModoCalificacion modo={actividad.modoCalificacion} />
-                    </h3>
-                    <p className='mt-1 text-xs text-slate-500'>
-                      {explicacionModoCalificacion(actividad.modoCalificacion)}
-                    </p>
-                    <p className='mt-1 inline-flex items-center gap-1 text-xs text-slate-500'>
-                      {actividad.cierraEn !== null ? (
-                        <>
-                          <IconClock className='h-3 w-3 text-red-500' />
-                          Cierra el {formatearFecha(actividad.cierraEn)}
-                        </>
-                      ) : (
-                        <>
-                          <IconCalendar className='h-3 w-3' />
-                          Publicada el {formatearFecha(actividad.publicadaEn)}
-                        </>
-                      )}
-                    </p>
-                  </div>
-                  <Link
-                    href={`/student/actividades/${actividad.id}`}
-                    className='mt-4 inline-flex items-center gap-1 self-start rounded-lg bg-indigo-600 px-3 py-2 text-xs font-medium text-white hover:bg-indigo-700'
-                  >
-                    Ver actividad
-                    <IconArrowRight className='h-3 w-3' />
-                  </Link>
-                </li>
-              ))}
-            </ul>
+          {visibles.length === 0 && (
+            <EstadoVacio
+              titulo='Sin actividades para este filtro'
+              descripcion='Prueba con otro estado o cambia de materia.'
+            />
           )}
-        </section>
-      ))}
+
+          {visibles.map(({ inscripcion, estados, filtradas }) => (
+            <section
+              key={inscripcion.id}
+              className='rounded-2xl border border-slate-200 bg-white p-5 shadow-sm'
+            >
+              <div className='mb-4 flex flex-wrap items-center gap-2'>
+                <span className='rounded-lg bg-indigo-100 p-1.5 text-indigo-600'>
+                  <IconBookOpen className='h-4 w-4' />
+                </span>
+                <h2 className='text-base font-semibold text-slate-900'>
+                  {inscripcion.clase.nombre}
+                </h2>
+                <span className='rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-600'>
+                  {filtradas.length} activid{filtradas.length === 1 ? 'ad' : 'ades'}
+                </span>
+                <Link
+                  href={`/student/actividades/materia/${inscripcion.id}`}
+                  className='ml-auto inline-flex items-center gap-1 text-sm font-medium text-indigo-600 hover:text-indigo-700'
+                >
+                  Ver materia
+                  <IconArrowRight className='h-3 w-3' />
+                </Link>
+              </div>
+
+              {filtradas.length === 0 ? (
+                <p className='rounded-xl bg-slate-50 p-4 text-sm text-slate-500'>
+                  Aún no hay actividades publicadas en esta clase.
+                </p>
+              ) : (
+                <ul className='grid grid-cols-1 gap-3 md:grid-cols-2'>
+                  {filtradas
+                    .slice(0, ACTIVIDADES_EN_RESUMEN)
+                    .map((actividad) => (
+                      <TarjetaActividad
+                        key={actividad.id}
+                        actividad={actividad}
+                        claseNombre={inscripcion.clase.nombre}
+                        estado={estados[actividad.id]}
+                      />
+                    ))}
+                </ul>
+              )}
+
+              {filtradas.length > ACTIVIDADES_EN_RESUMEN && (
+                <Link
+                  href={`/student/actividades/materia/${inscripcion.id}`}
+                  className='mt-3 inline-flex items-center gap-1 text-sm font-medium text-indigo-600 hover:text-indigo-700'
+                >
+                  Ver las {filtradas.length} actividades de esta materia
+                  <IconArrowRight className='h-3 w-3' />
+                </Link>
+              )}
+            </section>
+          ))}
+        </>
+      )}
     </div>
   );
 }

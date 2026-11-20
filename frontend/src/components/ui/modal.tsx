@@ -50,13 +50,21 @@ export function Modal({ abierto, titulo, alCerrar, children, acciones }: PropsMo
   const idTitulo = useId();
   const refDialogo = useRef<HTMLDivElement>(null);
 
-  // Al abrir: foco dentro del diálogo + Escape para cerrar.
+  // Enfoca el diálogo SOLO al abrir. Si el foco se moviera en cada render,
+  // cualquier callback inline (`alCerrar`) nuevo robaría el foco de los
+  // inputs del formulario y el cursor saltaría al escribir.
   useEffect(() => {
     if (!abierto) {
       return;
     }
-
     refDialogo.current?.focus();
+  }, [abierto]);
+
+  // Escape: se re-suscribe cuando cambia `alCerrar`, pero sin tocar el foco.
+  useEffect(() => {
+    if (!abierto) {
+      return;
+    }
 
     function manejarTecla(evento: KeyboardEvent): void {
       if (evento.key === "Escape") {

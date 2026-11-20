@@ -57,6 +57,7 @@ import {
   RespuestasParcialesSchema,
   RespuestasSchema,
   type Entrega,
+  type EstadoEntrega,
   type Respuesta,
   type ResultadoPregunta,
 } from "../contrato/entregas";
@@ -236,6 +237,38 @@ function aEntrega(backend: EntregaBackend): Entrega {
     retroalimentacion: backend.feedback ?? null,
     resultado: aResultado(backend.respuestas),
   };
+}
+
+/**
+ * Fila de `GET /enrollments/:inscripcionId/submissions` (backend nuevo,
+ * solo estado): lo mínimo para que "Mis Actividades" marque resueltas y
+ * pendientes sin pedir la entrega de cada actividad.
+ */
+interface EntregaEstadoBackend {
+  actividadId: string;
+  estado: EstadoEntrega;
+  entregadoEn: string | null;
+}
+
+/**
+ * Lista el estado de las entregas del estudiante en una inscripción.
+ *
+ * @param inscripcionId Inscripción (`enrollments.id`) de la clase.
+ * @returns Mapa `actividadId → estado` para consultar en la vista.
+ * @throws {ApiError} 404 si la inscripción no es del estudiante.
+ */
+export async function listarEstadosEntregas(
+  inscripcionId: string,
+): Promise<Record<string, EstadoEntrega>> {
+  const filas = await apiPlano.get<EntregaEstadoBackend[]>(
+    `enrollments/${encodeURIComponent(inscripcionId)}/submissions`,
+  );
+
+  const estados: Record<string, EstadoEntrega> = {};
+  for (const fila of filas) {
+    estados[String(fila.actividadId)] = fila.estado;
+  }
+  return estados;
 }
 
 /**

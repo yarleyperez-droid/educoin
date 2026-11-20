@@ -295,7 +295,7 @@ test("Hito: entrega bajo umbral → el profesor aprueba → 120 monedas → canj
   await expect(tarjetaBono).toBeVisible();
   await tarjetaBono.getByRole("button", { name: "Canjear" }).click();
 
-  const confirmacion = page.getByRole("region", { name: "Confirmar canje" });
+  const confirmacion = page.getByRole("dialog", { name: "Confirmar canje" });
   await expect(confirmacion).toBeVisible();
   await expect(confirmacion).toContainText(`${COSTO_BONO} monedas`);
   await expect(

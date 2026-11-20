@@ -48,6 +48,7 @@ import type {
   EntregaCreadaRespuestaDto,
   EntregaColaDto,
   EntregaDetalleProfesorDto,
+  EntregaEstudianteFilaDto,
   EntregaRespuestaDto,
   ListadoEntregasDto,
 } from './dto/entrega-respuesta.dto';
@@ -919,6 +920,54 @@ export class SubmissionsService {
       preguntas: actividad.questions as Pregunta[],
       cierraEn: actividad.closes_at,
     };
+  }
+
+  /**
+   * GET /enrollments/:inscripcionId/submissions — estado de las entregas
+   * del estudiante en UNA de sus inscripciones, para que la vista de
+   * actividades marque cuáles ya resolvió y cuáles siguen pendientes.
+   *
+   * Solo la inscripción propia: si no existe, es de otro estudiante o no
+   * está activa → el 404 estándar (anti-enumeración), igual que el resto
+   * del módulo. No expone respuestas ni veredictos.
+   *
+   * @param inscripcionId Inscripción (`enrollments.id`) de la ruta.
+   * @param usuario Estudiante autenticado.
+   * @returns Lista plana de `{ actividadId, estado, entregadoEn }`.
+   */
+  async misEntregas(
+    inscripcionId: string,
+    usuario: UsuarioAutenticado,
+  ): Promise<EntregaEstudianteFilaDto[]> {
+    const idInscripcion = this.aBigInt(inscripcionId);
+
+    const inscripcion = await this.prisma.enrollments.findFirst({
+      where: {
+        id: idInscripcion,
+        student_id: BigInt(usuario.id),
+        status: 'active',
+      },
+      select: { id: true },
+    });
+    if (inscripcion === null) {
+      throw new NotFoundException(MENSAJE_RECURSO_NO_ENCONTRADO);
+    }
+
+    const filas = await this.prisma.submissions.findMany({
+      where: { enrollment_id: idInscripcion },
+      select: {
+        activity_id: true,
+        status: true,
+        submitted_at: true,
+      },
+      orderBy: { submitted_at: 'desc' },
+    });
+
+    return filas.map((fila) => ({
+      actividadId: fila.activity_id.toString(),
+      estado: fila.status,
+      entregadoEn: fila.submitted_at?.toISOString() ?? null,
+    }));
   }
 
   /**
