@@ -345,8 +345,9 @@ Crea un `ExceptionFilter` en `common/filters` que traduzca:
   Convención **vigente** (no "prevista"):
   `main` (solo Tech Lead, protegida) → `develop` → `feature/...` (p. ej. `feature/devX-nombre-tarea`
   o `sN_hX_Y_descripcion`).
-- **Prohibido commit directo a `main` o `develop`.** Los cambios entran a `develop` mediante PR,
-  y a `main` solo mediante PR desde `develop` (revisión del Tech Lead).
+- **Prohibido commit/push directo a `main`** (protegida, solo Tech Lead). `develop` es la rama de
+  integración: se puede commitear y pushear directamente; a `main` solo llega mediante PR desde
+  `develop` (revisión del Tech Lead).
 - Commits en formato *Conventional Commits*: `feat(submissions): guardar respuestas JSONB`, `fix(redemptions): …`, `docs: …`.
 - No hagas `git push`, `merge`, `rebase` ni `reset --hard` salvo que el usuario lo pida explícitamente.
 - Nunca subas `.env`, secretos, llaves ni volcados de datos reales.
