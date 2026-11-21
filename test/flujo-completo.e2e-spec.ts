@@ -188,7 +188,9 @@ describe('Flujo completo EduCoin: actividad hasta canje (e2e)', () => {
       .send({ itemId });
 
     expect(canje.status).toBe(201);
-    expect(canje.body.estado).toBe('completed');
+    // H7.2 / PRO-447: el flujo instantáneo se retiró; toda solicitud nace
+    // `pending` y espera la resolución del profesor.
+    expect(canje.body.estado).toBe('pending');
     expect(canje.body.costoMonedas).toBe(COSTO_CANJE);
     expect(canje.body.itemId).toBe(itemId);
 
