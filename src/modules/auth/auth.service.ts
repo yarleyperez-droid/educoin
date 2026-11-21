@@ -1,7 +1,7 @@
 import { Injectable, UnauthorizedException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
-import { verify } from 'argon2';
+import { hash, verify } from 'argon2';
 import type { user_role } from '../../generated/prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import type { UsuarioAutenticado } from '../../common/interfaces/usuario-autenticado';
@@ -147,6 +147,56 @@ export class AuthService {
     return this.buscarUsuarioActivoPorId(id);
   }
 
+  async cambiarContrasena(
+    id: string,
+    contrasenaActual: string,
+    contrasenaNueva: string,
+  ): Promise<void> {
+    let idNumerico: bigint;
+
+    try {
+      idNumerico = BigInt(id);
+    } catch {
+      throw new UnauthorizedException('No autenticado o sesión expirada.');
+    }
+
+    const usuario = await this.prisma.users.findFirst({
+      where: {
+        id: idNumerico,
+        is_active: true,
+      },
+      select: {
+        id: true,
+        password_hash: true,
+      },
+    });
+
+    if (!usuario) {
+      throw new UnauthorizedException('No autenticado o sesión expirada.');
+    }
+
+    let contrasenaValida: boolean;
+
+    try {
+      contrasenaValida = await verify(usuario.password_hash, contrasenaActual);
+    } catch {
+      contrasenaValida = false;
+    }
+
+    if (!contrasenaValida) {
+      throw new UnauthorizedException('La contraseña actual es incorrecta.');
+    }
+
+    const nuevoHash = await hash(contrasenaNueva);
+
+    await this.prisma.users.update({
+      where: { id: usuario.id },
+      data: {
+        password_hash: nuevoHash,
+        must_change_password: false,
+      },
+    });
+  }
   private async buscarUsuarioActivoPorId(
     id: string,
   ): Promise<UsuarioRespuestaDto> {

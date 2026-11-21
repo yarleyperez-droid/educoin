@@ -7,10 +7,17 @@ export const PERTENECE_A_KEY = 'perteneceA';
  * AutorizacionService (src/modules/autorizacion). Los nombres son de
  * dominio en español; cada uno mapea a la tabla real de la BD:
  * clase→classes, inscripcion→enrollments, actividad→activities,
+ * actividadVisible→activities (vista del estudiante inscrito),
  * entrega→submissions, item→redeemable_items, canje→redemptions.
  */
 export type TipoRecurso =
-  'clase' | 'inscripcion' | 'actividad' | 'entrega' | 'item' | 'canje';
+  | 'clase'
+  | 'inscripcion'
+  | 'actividad'
+  | 'actividadVisible'
+  | 'entrega'
+  | 'item'
+  | 'canje';
 
 export interface ReglaPertenencia {
   /** Tipo de recurso cuya pertenencia se verifica. */

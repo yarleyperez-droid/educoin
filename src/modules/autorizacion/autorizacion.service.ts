@@ -14,6 +14,7 @@ const TIPOS_RECURSO: readonly TipoRecurso[] = [
   'clase',
   'inscripcion',
   'actividad',
+  'actividadVisible',
   'entrega',
   'item',
   'canje',
@@ -31,6 +32,11 @@ const TIPOS_RECURSO: readonly TipoRecurso[] = [
  * - inscripcion:  student → su student_id.        teacher → la clase de la
  *                  inscripción es suya (via classes.teacher_id).
  * - actividad:    teacher → la clase de la actividad es suya. student → nunca.
+ * - actividadVisible: teacher → la clase de la actividad es suya (dueño,
+ *                  cualquier estado). student → inscripción ACTIVA en la
+ *                  clase de la actividad PUBLICADA (draft/deleted → 404):
+ *                  es la puerta de la vista sanitizada sin respuestas
+ *                  correctas (AGENTS.md §9.5).
  * - entrega:      student → su inscripción.        teacher → la clase de la
  *                  inscripción de la entrega es suya.
  * - item:         teacher → la clase del ítem es suya. student → nunca.
@@ -114,6 +120,36 @@ export class AutorizacionService {
               select: { id: true },
             })) !== null
           : false;
+
+      case 'actividadVisible':
+        if (usuario.role === 'teacher') {
+          return (
+            (await this.prisma.activities.findFirst({
+              where: { id: idRecurso, classes: { teacher_id: idUsuario } },
+              select: { id: true },
+            })) !== null
+          );
+        }
+        if (usuario.role === 'student') {
+          // Existencia + published + inscripción activa en la MISMA
+          // consulta: el estudiante solo llega a ver actividades
+          // publicadas de clases donde está inscrito (AGENTS.md §9.5).
+          return (
+            (await this.prisma.activities.findFirst({
+              where: {
+                id: idRecurso,
+                status: 'published',
+                classes: {
+                  enrollments: {
+                    some: { student_id: idUsuario, status: 'active' },
+                  },
+                },
+              },
+              select: { id: true },
+            })) !== null
+          );
+        }
+        return false;
 
       case 'entrega':
         if (usuario.role === 'student') {

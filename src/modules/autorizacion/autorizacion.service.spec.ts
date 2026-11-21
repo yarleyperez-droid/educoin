@@ -139,6 +139,68 @@ describe('AutorizacionService', () => {
     });
   });
 
+  describe('regla: actividadVisible', () => {
+    it('permite al profesor dueño (misma regla que actividad)', async () => {
+      prisma.activities.findFirst.mockResolvedValue({ id: BigInt(1) });
+
+      await expect(
+        service.verificarPertenencia('actividadVisible', '1', PROFESOR),
+      ).resolves.toBeUndefined();
+      expect(prisma.activities.findFirst).toHaveBeenCalledWith({
+        where: { id: BigInt(1), classes: { teacher_id: BigInt(2) } },
+        select: { id: true },
+      });
+    });
+
+    it('permite al estudiante con inscripción ACTIVA en la clase de la actividad PUBLICADA', async () => {
+      prisma.activities.findFirst.mockResolvedValue({ id: BigInt(1) });
+
+      await expect(
+        service.verificarPertenencia('actividadVisible', '1', ESTUDIANTE),
+      ).resolves.toBeUndefined();
+      expect(prisma.activities.findFirst).toHaveBeenCalledWith({
+        where: {
+          id: BigInt(1),
+          status: 'published',
+          classes: {
+            enrollments: { some: { student_id: BigInt(3), status: 'active' } },
+          },
+        },
+        select: { id: true },
+      });
+    });
+
+    it('rechaza con 404 al estudiante no inscrito (o con inscripción no activa)', async () => {
+      prisma.activities.findFirst.mockResolvedValue(null);
+
+      await expect(
+        service.verificarPertenencia('actividadVisible', '1', ESTUDIANTE),
+      ).rejects.toThrow(new NotFoundException(MENSAJE_RECURSO_NO_ENCONTRADO));
+    });
+
+    it('rechaza con 404 actividades draft/deleted para el estudiante (solo published)', async () => {
+      // La consulta misma exige status 'published': una draft no devuelve
+      // fila aunque el estudiante esté bien inscrito.
+      prisma.activities.findFirst.mockResolvedValue(null);
+
+      await expect(
+        service.verificarPertenencia('actividadVisible', '1', ESTUDIANTE),
+      ).rejects.toThrow(new NotFoundException(MENSAJE_RECURSO_NO_ENCONTRADO));
+      const consulta = prisma.activities.findFirst.mock.calls[0][0] as {
+        where: { status: string };
+      };
+      expect(consulta.where.status).toBe('published');
+    });
+
+    it('rechaza con 404 sin consultar la BD al profesor de otra clase', async () => {
+      prisma.activities.findFirst.mockResolvedValue(null);
+
+      await expect(
+        service.verificarPertenencia('actividadVisible', '1', PROFESOR),
+      ).rejects.toThrow(new NotFoundException(MENSAJE_RECURSO_NO_ENCONTRADO));
+    });
+  });
+
   describe('regla: entrega', () => {
     it('permite al estudiante dueño vía su inscripción', async () => {
       prisma.submissions.findFirst.mockResolvedValue({ id: BigInt(1) });

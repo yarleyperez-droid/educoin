@@ -29,6 +29,13 @@
  * - **Aislamiento:** cada test corre en su propio `BrowserContext` (cookies
  *   limpias); además `login.spec.ts` limpia cookies en `test.beforeEach`
  *   (plan §4).
+ *
+ * - **`workers: 1`:** los specs comparten la **misma BD Docker y el mismo
+ *   seed** (actividad 1, inscripción 1, usuarios est.perez/prof.lopez):
+ *   correr en paralelo hace que los fixtures se pisen entre specs (una
+ *   corrida borra la entrega que otra está verificando) y agota el
+ *   throttler de login (5 intentos/min por IP). La suite es una cadena
+ *   serial de flujos reales, no una matriz independiente.
  */
 
 import { defineConfig, devices } from "@playwright/test";
@@ -36,6 +43,7 @@ import { defineConfig, devices } from "@playwright/test";
 export default defineConfig({
   testDir: "./e2e",
   timeout: 30_000,
+  workers: 1,
   use: {
     baseURL: "http://localhost:3001",
   },

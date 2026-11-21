@@ -6,9 +6,10 @@
  * true` (columna real `users.must_change_password`; nombre del backend
  * desde T5.4.3), el middleware (T5.3.2 ampliado en T5.4.2) no deja navegar a
  * ningún otro sitio hasta completar el cambio aquí. La vista consume la capa
- * `@/features/auth/api/auth`, cuyo `cambiarContrasena` sigue siendo **mock
- * documentado** porque H2.2 (endpoint real de cambio) no existe todavía
- * (PRO-381 integró solo login/logout de H2.1).
+ * `@/features/auth/api/auth`, cuyo `cambiarContrasena` habla con el
+ * endpoint real de H2.2 (`POST auth/cambiar-contrasena`) y refresca la
+ * sesión después (PRO-381 integró login/logout; el cambio quedó integrado
+ * con H2.2).
  *
  * Responsabilidades de esta vista:
  * - Renderizar **el mismo DOM en servidor y cliente** (formulario siempre
@@ -23,10 +24,12 @@
  * - Validar en cliente (sin llamar a la capa si falla): campos no vacíos,
  *   nueva contraseña de al menos 8 caracteres, nueva distinta de la actual y
  *   confirmación coincidente.
- * - Estado de carga: botón deshabilitado con el texto "Guardando…" mientras
- *   hay una petición en curso.
- * - Errores de envío en un área `role="alert"` con **solo** `error.message`
- *   de `ApiError`, **conservando lo escrito** en los tres campos.
+ * - Estado de carga: mientras hay una petición en curso el botón se
+ *   sustituye por `<EstadoCarga />` del kit UI (H5.2, `role="status"` +
+ *   `aria-live`), con los campos deshabilitados.
+ * - Errores de envío en el **toast accesible** del kit UI (H5.2): variante
+ *   `error` + `aria-live`, con **solo** el mensaje legible de `ApiError`
+ *   (`mensajeDeErrorApi`), **conservando lo escrito** en los tres campos.
  * - Éxito → navegación **completa** con
  *   `window.location.assign(rutaPorRol(...))` (con la sesión actualizada, el
  *   middleware ya no lo bloquea porque la cookie quedó con el flag en
@@ -45,9 +48,9 @@
  * - El frontend no es barrera de seguridad (AGENTS.md §9): el bloqueo real
  *   lo impone el backend (H2.1/H2.2); este guard de Next es UX.
  *
- * **Límite del mock (plan §7):** hasta que exista H2.2 el cambio vive solo
- * en la cookie del navegador: al volver a hacer login, el backend (que sigue
- * con `must_change_password = true` en la BD) volverá a exigir el cambio.
+ * **Contrato con H2.2:** el cambio vive en la BD (`password_hash` nuevo y
+ * `must_change_password = false`); la capa refresca la sesión después, así
+ * que al volver a entrar (o a hacer login) el backend ya no exige el cambio.
  */
 
 "use client";
@@ -56,11 +59,16 @@ import { useRouter } from "next/navigation";
 import { useEffect, useState, type FormEvent } from "react";
 
 import {
+  EstadoCarga,
+  LockupEducoin,
+  mensajeDeErrorApi,
+  useToast,
+} from "@/components/ui";
+import {
   cambiarContrasena,
   leerSesionActual,
   rutaPorRol,
 } from "@/features/auth/api/auth";
-import { ApiError } from "@/lib/api-client";
 
 /** Mensaje de validación cuando falta algún campo del formulario. */
 const MENSAJE_CAMPOS_INCOMPLETOS =
@@ -78,10 +86,6 @@ const MENSAJE_NUEVA_IGUAL_A_ACTUAL =
 const MENSAJE_CONFIRMACION_DIFIERE =
   "La confirmación no coincide con la nueva contraseña.";
 
-/** Mensaje genérico para errores inesperados que no son `ApiError`. */
-const MENSAJE_ERROR_GENERICO =
-  "Ocurrió un error inesperado. Intenta de nuevo.";
-
 /**
  * Formulario de cambio obligatorio de contraseña.
  *
@@ -95,19 +99,22 @@ const MENSAJE_ERROR_GENERICO =
  * - **Vacío / validación:** `errorCampo` con el primer problema detectado
  *   (vacío, < 8, igual a actual, confirmación distinta); no se llama a la
  *   capa de auth.
- * - **Carga de envío:** `cargando` deshabilita el botón y muestra
- *   "Guardando…".
- * - **Error de envío:** `errorEnvio` en un área `role="alert"` con solo el
- *   mensaje de `ApiError` (o uno genérico), conservando lo escrito.
+ * - **Carga de envío:** `cargando` sustituye el botón por
+ *   `<EstadoCarga mensaje="Guardando…" />`; los campos quedan deshabilitados.
+ * - **Error de envío:** toast `error` con `mensajeDeErrorApi(error)`,
+ *   conservando lo escrito. Las validaciones de campo siguen en el área
+ *   `role="alert"` en línea.
  *
  * El renderizado **no depende de la sesión** (formulario siempre visible) para
  * evitar el hydration mismatch: el servidor prerenderiza sin `document`, pero
  * el middleware ya redirige a `/login` cuando no hay sesión.
  *
- * @returns Formulario de cambio centrado sobre el fondo neutro del layout.
+ * @returns Formulario de cambio centrado sobre el fondo slate de las vistas
+ * de autenticación (mismo shell que `/login`).
  */
 export default function CambiarContrasenaPage() {
   const router = useRouter();
+  const { mostrar } = useToast();
 
   /**
    * Sesión vigente, leída una sola vez al crear el estado.
@@ -125,7 +132,6 @@ export default function CambiarContrasenaPage() {
   const [confirmacion, setConfirmacion] = useState("");
   const [cargando, setCargando] = useState(false);
   const [errorCampo, setErrorCampo] = useState<string | null>(null);
-  const [errorEnvio, setErrorEnvio] = useState<string | null>(null);
 
   /**
    * Redirige a `/login` cuando no hay una sesión válida.
@@ -144,10 +150,11 @@ export default function CambiarContrasenaPage() {
    * Procesa el envío del formulario.
    *
    * Flujo: valida en cliente (sin llamar a la capa) → llama a
-   * `cambiarContrasena` → redirige al panel del rol con `rutaPorRol`.
-   * Cualquier `ApiError` se muestra tal cual (`error.message`); los errores
-   * ajenos a la API se traducen a un mensaje genérico (sin filtrar detalles
-   * internos). Los campos no se limpian: se conserva lo escrito para corregir.
+   * `cambiarContrasena` → redirige al panel del rol con `rutaPorRol`. Si
+   * falla, `mensajeDeErrorApi` extrae el mensaje legible (`ApiError.message`)
+   * o devuelve el genérico (sin filtrar detalles internos) y se anuncia con
+   * el toast `error` del kit UI (H5.2). Los campos no se limpian: se conserva
+   * lo escrito para corregir.
    *
    * La redirección de éxito usa `window.location.assign` (navegación completa)
    * en vez de `router.push` para evitar que Next reutilice un redirect 307
@@ -159,7 +166,6 @@ export default function CambiarContrasenaPage() {
     evento: FormEvent<HTMLFormElement>,
   ): Promise<void> {
     evento.preventDefault();
-    setErrorEnvio(null);
 
     if (
       contrasenaActual.trim() === "" ||
@@ -196,111 +202,121 @@ export default function CambiarContrasenaPage() {
 
       window.location.assign(rutaPorRol(sesionActualizada.role));
     } catch (error) {
-      if (error instanceof ApiError) {
-        setErrorEnvio(error.message);
-      } else {
-        setErrorEnvio(MENSAJE_ERROR_GENERICO);
-      }
+      mostrar(mensajeDeErrorApi(error), "error");
     } finally {
       setCargando(false);
     }
   }
 
   return (
-    <main className="flex min-h-screen flex-col items-center justify-center bg-neutral-50 p-4 sm:p-8">
-      <div className="w-full max-w-sm rounded-lg border border-neutral-200 bg-white p-6 shadow-sm sm:p-8">
-        <h1 className="text-center text-2xl font-bold text-neutral-900">
-          EduCoins
-        </h1>
-        <p className="mt-1 text-center text-sm text-neutral-500">
-          Cambia tu contraseña para continuar.
-        </p>
+    <main className="flex min-h-screen flex-col items-center justify-center bg-slate-50 p-4 sm:p-8">
+      <div className="w-full max-w-md">
+        {/* Marca (mismo bloque que la vista de login). */}
+        <div className="mb-6 flex items-center justify-center gap-2">
+          <LockupEducoin className="h-10 w-auto" />
+          <span className="rounded-full bg-indigo-50 px-2 py-0.5 text-xs font-semibold text-indigo-700">
+            Campus Beta
+          </span>
+        </div>
 
-        <form onSubmit={manejarEnvio} noValidate className="mt-6 space-y-4">
-          <div>
-            <label
-              htmlFor="contrasena-actual"
-              className="block text-sm font-medium text-neutral-700"
-            >
-              Contraseña actual
-            </label>
-            <input
-              id="contrasena-actual"
-              name="contrasena-actual"
-              type="password"
-              autoComplete="current-password"
-              value={contrasenaActual}
-              onChange={(e) => setContrasenaActual(e.target.value)}
-              disabled={cargando}
-              aria-invalid={errorCampo !== null}
-              aria-describedby={errorCampo !== null ? "error-campo" : undefined}
-              className="mt-1 w-full rounded-md border border-neutral-300 px-3 py-2 text-sm text-neutral-900 placeholder-neutral-400 focus:border-neutral-500 focus:outline-none focus:ring-2 focus:ring-neutral-300 disabled:cursor-not-allowed disabled:opacity-60"
-            />
-          </div>
+        <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm sm:p-8">
+          <h1 className="text-2xl font-bold text-slate-900">
+            Renueva tu contraseña
+          </h1>
+          <p className="mt-1 text-sm text-slate-500">
+            Es tu primer ingreso. Elige una contraseña nueva de al menos 8
+            caracteres para entrar a tu panel.
+          </p>
 
-          <div>
-            <label
-              htmlFor="contrasena-nueva"
-              className="block text-sm font-medium text-neutral-700"
-            >
-              Nueva contraseña
-            </label>
-            <input
-              id="contrasena-nueva"
-              name="contrasena-nueva"
-              type="password"
-              autoComplete="new-password"
-              value={contrasenaNueva}
-              onChange={(e) => setContrasenaNueva(e.target.value)}
-              disabled={cargando}
-              aria-invalid={errorCampo !== null}
-              aria-describedby={errorCampo !== null ? "error-campo" : undefined}
-              className="mt-1 w-full rounded-md border border-neutral-300 px-3 py-2 text-sm text-neutral-900 placeholder-neutral-400 focus:border-neutral-500 focus:outline-none focus:ring-2 focus:ring-neutral-300 disabled:cursor-not-allowed disabled:opacity-60"
-            />
-          </div>
+          <form onSubmit={manejarEnvio} noValidate className="mt-6 space-y-4">
+            <div>
+              <label
+                htmlFor="contrasena-actual"
+                className="block text-sm font-medium text-slate-700"
+              >
+                Contraseña actual
+              </label>
+              <input
+                id="contrasena-actual"
+                name="contrasena-actual"
+                type="password"
+                autoComplete="current-password"
+                value={contrasenaActual}
+                onChange={(e) => setContrasenaActual(e.target.value)}
+                disabled={cargando}
+                aria-invalid={errorCampo !== null}
+                aria-describedby={
+                  errorCampo !== null ? "error-campo" : undefined
+                }
+                className="mt-1 w-full rounded-lg border border-slate-300 bg-slate-50 px-3 py-2 text-sm text-slate-900 placeholder-slate-400 focus:border-indigo-500 focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-200 disabled:cursor-not-allowed disabled:opacity-60"
+              />
+            </div>
 
-          <div>
-            <label
-              htmlFor="confirmacion"
-              className="block text-sm font-medium text-neutral-700"
-            >
-              Confirmar la nueva contraseña
-            </label>
-            <input
-              id="confirmacion"
-              name="confirmacion"
-              type="password"
-              autoComplete="new-password"
-              value={confirmacion}
-              onChange={(e) => setConfirmacion(e.target.value)}
-              disabled={cargando}
-              aria-invalid={errorCampo !== null}
-              aria-describedby={errorCampo !== null ? "error-campo" : undefined}
-              className="mt-1 w-full rounded-md border border-neutral-300 px-3 py-2 text-sm text-neutral-900 placeholder-neutral-400 focus:border-neutral-500 focus:outline-none focus:ring-2 focus:ring-neutral-300 disabled:cursor-not-allowed disabled:opacity-60"
-            />
-          </div>
+            <div>
+              <label
+                htmlFor="contrasena-nueva"
+                className="block text-sm font-medium text-slate-700"
+              >
+                Nueva contraseña
+              </label>
+              <input
+                id="contrasena-nueva"
+                name="contrasena-nueva"
+                type="password"
+                autoComplete="new-password"
+                value={contrasenaNueva}
+                onChange={(e) => setContrasenaNueva(e.target.value)}
+                disabled={cargando}
+                aria-invalid={errorCampo !== null}
+                aria-describedby={
+                  errorCampo !== null ? "error-campo" : undefined
+                }
+                className="mt-1 w-full rounded-lg border border-slate-300 bg-slate-50 px-3 py-2 text-sm text-slate-900 placeholder-slate-400 focus:border-indigo-500 focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-200 disabled:cursor-not-allowed disabled:opacity-60"
+              />
+              <p className="mt-1 text-xs text-slate-500">Mínimo 8 caracteres.</p>
+            </div>
 
-          {errorCampo !== null && (
-            <p id="error-campo" role="alert" className="text-sm text-red-700">
-              {errorCampo}
-            </p>
-          )}
+            <div>
+              <label
+                htmlFor="confirmacion"
+                className="block text-sm font-medium text-slate-700"
+              >
+                Confirmar la nueva contraseña
+              </label>
+              <input
+                id="confirmacion"
+                name="confirmacion"
+                type="password"
+                autoComplete="new-password"
+                value={confirmacion}
+                onChange={(e) => setConfirmacion(e.target.value)}
+                disabled={cargando}
+                aria-invalid={errorCampo !== null}
+                aria-describedby={
+                  errorCampo !== null ? "error-campo" : undefined
+                }
+                className="mt-1 w-full rounded-lg border border-slate-300 bg-slate-50 px-3 py-2 text-sm text-slate-900 placeholder-slate-400 focus:border-indigo-500 focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-200 disabled:cursor-not-allowed disabled:opacity-60"
+              />
+            </div>
 
-          {errorEnvio !== null && (
-            <p id="error-envio" role="alert" className="text-sm text-red-700">
-              {errorEnvio}
-            </p>
-          )}
+            {errorCampo !== null && (
+              <p id="error-campo" role="alert" className="text-sm text-red-700">
+                {errorCampo}
+              </p>
+            )}
 
-          <button
-            type="submit"
-            disabled={cargando}
-            aria-busy={cargando}
-            className="w-full rounded-md bg-neutral-900 px-4 py-2 text-sm font-medium text-white hover:bg-neutral-700 focus:outline-none focus:ring-2 focus:ring-neutral-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60"
-          >
-            {cargando ? "Guardando…" : "Cambiar contraseña"}
-          </button>
-        </form>
+            {cargando ? (
+              <EstadoCarga mensaje="Guardando tu contraseña…" />
+            ) : (
+              <button
+                type="submit"
+                className="w-full rounded-lg bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-indigo-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2"
+              >
+                Cambiar contraseña
+              </button>
+            )}
+          </form>
+        </div>
       </div>
     </main>
   );

@@ -329,4 +329,65 @@ describe('AuthService', () => {
       );
     });
   });
+  describe('cambiarContrasena', () => {
+    it('cambia la contraseña y desactiva el cambio obligatorio', async () => {
+      const usuario = await crearUsuarioDePrueba();
+      prisma.users.findFirst.mockResolvedValue(usuario);
+      prisma.users.update.mockResolvedValue({});
+
+      await authService.cambiarContrasena(
+        '1',
+        CONTRASENA_VALIDA,
+        'NuevaClaveSegura123',
+      );
+
+      expect(prisma.users.findFirst).toHaveBeenCalledWith({
+        where: {
+          id: BigInt(1),
+          is_active: true,
+        },
+        select: {
+          id: true,
+          password_hash: true,
+        },
+      });
+
+      expect(prisma.users.update).toHaveBeenCalledWith({
+        where: { id: BigInt(1) },
+        data: {
+          password_hash: expect.any(String),
+          must_change_password: false,
+        },
+      });
+    });
+
+    it('rechaza una contraseña actual incorrecta', async () => {
+      const usuario = await crearUsuarioDePrueba();
+      prisma.users.findFirst.mockResolvedValue(usuario);
+
+      await expect(
+        authService.cambiarContrasena(
+          '1',
+          'ContraseñaIncorrecta123',
+          'NuevaClaveSegura123',
+        ),
+      ).rejects.toBeInstanceOf(UnauthorizedException);
+
+      expect(prisma.users.update).not.toHaveBeenCalled();
+    });
+
+    it('rechaza un usuario inexistente', async () => {
+      prisma.users.findFirst.mockResolvedValue(null);
+
+      await expect(
+        authService.cambiarContrasena(
+          '1',
+          CONTRASENA_VALIDA,
+          'NuevaClaveSegura123',
+        ),
+      ).rejects.toBeInstanceOf(UnauthorizedException);
+
+      expect(prisma.users.update).not.toHaveBeenCalled();
+    });
+  });
 });

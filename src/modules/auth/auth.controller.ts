@@ -10,9 +10,19 @@ import {
   UnauthorizedException,
   UseGuards,
 } from '@nestjs/common';
+import { PermitirCambioContrasena } from '../../common/decorators/permitir-cambio-contrasena.decorator';
 import { ConfigService } from '@nestjs/config';
 import { AuthGuard } from '@nestjs/passport';
 import { SkipThrottle } from '@nestjs/throttler';
+import {
+  ApiBadRequestResponse,
+  ApiBearerAuth,
+  ApiCreatedResponse,
+  ApiNoContentResponse,
+  ApiOkResponse,
+  ApiTooManyRequestsResponse,
+  ApiUnauthorizedResponse,
+} from '@nestjs/swagger';
 import type { Request, Response } from 'express';
 import { UsuarioActual } from '../../common/decorators/usuario-actual.decorator';
 import { Publico } from '../../common/decorators/publico.decorator';
@@ -30,7 +40,8 @@ import {
   THROTTLER_REFRESH,
 } from './guards/auth-throttler.guard';
 import { IniciarSesionDto } from './dto/iniciar-sesion.dto';
-import type {
+import { CambiarContrasenaDto } from './dto/cambiar-contrasena.dto';
+import {
   SesionRespuestaDto,
   UsuarioRespuestaDto,
 } from './dto/sesion-respuesta.dto';
@@ -43,6 +54,10 @@ import type {
  * - POST /logout  → PÚBLICO; 204 y expira la cookie (debe funcionar incluso
  *                   con el access token vencido para poder cerrar sesión).
  * - GET  /perfil  → protegido por los guards GLOBALES (JWT + roles).
+ *
+ * Documentación OpenAPI (H1.3 / PRO-267): login/refresh/logout son públicos
+ * (sin bearer en la spec); /perfil declara el security bearer y el 401. Las
+ * respuestas de sesión se documentan con `SesionRespuestaDto`.
  */
 @Controller('auth')
 export class AuthController {
@@ -57,6 +72,21 @@ export class AuthController {
   @Publico()
   @SkipThrottle({ [THROTTLER_REFRESH]: true })
   @UseGuards(AuthThrottlerGuard, AuthGuard('local'))
+  @ApiCreatedResponse({
+    type: SesionRespuestaDto,
+    description:
+      'Sesión iniciada: access token en el cuerpo y refresh token en la cookie httpOnly.',
+  })
+  @ApiBadRequestResponse({
+    description: 'Credenciales con formato inválido (400).',
+  })
+  @ApiUnauthorizedResponse({
+    description:
+      'Credenciales erróneas o cuenta inactiva (401, mensaje genérico).',
+  })
+  @ApiTooManyRequestsResponse({
+    description: 'Rate limit de login: 5 intentos por minuto por IP (429).',
+  })
   @Post('login')
   async iniciarSesion(
     @Body() _credenciales: IniciarSesionDto,
@@ -69,6 +99,17 @@ export class AuthController {
   @Publico()
   @SkipThrottle({ [THROTTLER_LOGIN]: true })
   @UseGuards(AuthThrottlerGuard)
+  @ApiCreatedResponse({
+    type: SesionRespuestaDto,
+    description:
+      'Nueva sesión: access token nuevo y refresh token rotado en la cookie.',
+  })
+  @ApiUnauthorizedResponse({
+    description: 'Sin cookie refresh, o token inválido/expirado (401).',
+  })
+  @ApiTooManyRequestsResponse({
+    description: 'Rate limit de refresh: 5 intentos por minuto por IP (429).',
+  })
   @Post('refresh')
   async refrescarSesion(
     @Req() request: Request,
@@ -88,6 +129,9 @@ export class AuthController {
   }
 
   @Publico()
+  @ApiNoContentResponse({
+    description: 'Sesión cerrada y cookie de refresh expirada (204).',
+  })
   @Post('logout')
   @HttpCode(HttpStatus.NO_CONTENT)
   cerrarSesion(@Res({ passthrough: true }) respuesta: Response): void {
@@ -98,14 +142,39 @@ export class AuthController {
   }
 
   // Protegido automáticamente por los guards globales (APP_GUARD) registrados
-  // en AuthModule: JWT con caducidad + RolesGuard.
+  // en AuthModule: JWT con caducidad + RolesGuard. Declara el security bearer
+  // de la spec (H1.3) porque es el único endpoint de auth que lo exige.
+  @ApiBearerAuth()
+  @ApiOkResponse({
+    type: UsuarioRespuestaDto,
+    description: 'Perfil del usuario autenticado (sin password_hash).',
+  })
+  @ApiUnauthorizedResponse({
+    description: 'Sin token, token inválido o expirado (401).',
+  })
   @Get('perfil')
   async obtenerPerfil(
     @UsuarioActual() usuario: UsuarioAutenticado,
   ): Promise<UsuarioRespuestaDto> {
     return this.authService.obtenerPerfil(usuario.id);
   }
-
+  @PermitirCambioContrasena()
+  @Post('cambiar-contrasena')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @ApiBearerAuth()
+  @ApiUnauthorizedResponse({
+    description: 'Sesión inválida o contraseña actual incorrecta.',
+  })
+  async cambiarContrasena(
+    @UsuarioActual() usuario: UsuarioAutenticado,
+    @Body() dto: CambiarContrasenaDto,
+  ): Promise<void> {
+    await this.authService.cambiarContrasena(
+      usuario.id,
+      dto.contrasenaActual,
+      dto.contrasenaNueva,
+    );
+  }
   private armarSesion(
     sesion: SesionInterna,
     respuesta: Response,

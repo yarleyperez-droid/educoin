@@ -13,7 +13,13 @@ const esquemaEnv = z.object({
   JWT_ACCESS_EXPIRES_IN: z.string().trim().min(1).default('15m'),
   JWT_REFRESH_EXPIRES_IN: z.string().trim().min(1).default('7d'),
   FRONTEND_URL: z.url().default('http://localhost:3001'),
-  UPLOAD_MAX_BYTES: z.coerce.number().int().positive().optional(),
+  // Tamaño máximo por archivo adjunto (AGENTS.md §9.6). El límite real
+  // lo aplican multer (protección de la petición) y el Service (regla
+  // de negocio con mensaje en español); 10 MB por defecto.
+  UPLOAD_MAX_BYTES: z.coerce.number().int().positive().default(10_485_760),
+  // Carpeta raíz del almacén de archivos en disco (gitignored): dentro
+  // de ella la ruta es {actividadId}/{inscripcionId}/{uuid}.{ext}.
+  UPLOAD_DIR: z.string().trim().min(1).default('.data/uploads'),
   NEXT_PUBLIC_API_URL: z.string().trim().min(1).optional(),
 });
 

@@ -504,11 +504,16 @@ describe('Clases (e2e, datos del seed)', () => {
         .query({ q: 'matema', limit: 99 })
         .set('Authorization', `Bearer ${tokenEstudiante}`);
       expect(limitGrande.status).toBe(400);
+    });
 
-      const sinQ = await httpServer
+    it('sin q lista todas las clases visibles para el rol (200 paginado)', async () => {
+      const respuesta = await httpServer
         .get('/api/v1/classes')
-        .set('Authorization', `Bearer ${tokenEstudiante}`);
-      expect(sinQ.status).toBe(400);
+        .set('Authorization', `Bearer ${tokenProfesor}`);
+
+      expect(respuesta.status).toBe(200);
+      expect(Array.isArray(respuesta.body.data)).toBe(true);
+      expect(respuesta.body.meta).toMatchObject({ page: 1, limit: 20 });
     });
 
     it('sin token la búsqueda no pasa del guard JWT (401)', async () => {

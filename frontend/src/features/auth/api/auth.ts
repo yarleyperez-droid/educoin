@@ -13,9 +13,10 @@
  *   middleware (T5.3.2) y las vistas puedan leerla.
  * - `cerrarSesion` invoca **`POST auth/logout` real** (204) y limpia el
  *   estado local (cookie + token en memoria), siempre sin lanzar.
- * - `cambiarContrasena` (T5.4.2) sigue siendo **MOCK documentado**: H2.2
- *   (endpoint de cambio de contraseña) no existe en ninguna rama; ver su
- *   docstring para el alcance exacto del andamio.
+ * - `cambiarContrasena` (T5.4.2 / H2.2) habla con **`POST
+ *   auth/cambiar-contrasena` real** (204) y luego refresca la sesión
+ *   (`POST auth/refresh`) para que el access token y la cookie legible
+ *   salgan con `debeCambiarContrasena: false`; ver su docstring.
  * - `leerSesionActual` lee la sesión vigente desde la cookie para que las
  *   vistas sigan sin conocer cookies ni tokens.
  *
@@ -71,18 +72,17 @@ export interface CredencialesLogin {
 }
 
 /**
- * Datos del cambio de contraseña (T5.4.2, PRO-379).
+ * Datos del cambio de contraseña (T5.4.2 / H2.2).
  *
- * Las contraseñas viajan en texto plano solo dentro de esta capa/mock y no
- * se normalizan ni se recortan.
+ * Viajan en texto plano solo dentro de esta capa (HTTPS hacia `POST
+ * auth/cambiar-contrasena`); no se normalizan ni se recortan.
  */
 export interface CambioContrasena {
   /**
    * Contraseña actual del usuario de la sesión vigente.
    *
-   * Con H2.2 viajará por HTTPS hacia el endpoint real de cambio y el backend
-   * la verificará contra `password_hash` (argon2); nunca se devuelve
-   * (AGENTS.md §9.3).
+   * El backend la verifica contra `password_hash` (argon2) y jamás la
+   * devuelve (AGENTS.md §9.3).
    */
   actual: string;
 
@@ -146,7 +146,7 @@ const MENSAJE_SESION_INVALIDA =
   "No hay una sesión activa. Inicia sesión para continuar.";
 
 /**
- * Mensaje cuando la contraseña actual no llega (regla defensiva del mock).
+ * Mensaje cuando la contraseña actual no llega (guarda defensiva de UX).
  *
  * Texto literal exigido por plan §2 de T5.4.2. Con H2.2 el backend será el
  * que verifique la contraseña real.
@@ -371,40 +371,82 @@ export async function cerrarSesion(): Promise<void> {
 }
 
 /**
+ * Refresca la sesión tras un cambio de contraseña exitoso (`204`).
+ *
+ * El access token en memoria y la cookie legible aún traen
+ * `debeCambiarContrasena: true` (el flag se firma al hacer login): sin un
+ * `POST auth/refresh` el guard del backend seguiría bloqueando todo el panel
+ * ("Debes cambiar tu contraseña inicial antes de continuar.") y el middleware
+ * seguiría devolviendo a `/cambiar-contrasena`. El refresh canjea la cookie
+ * `httpOnly` por un access token nuevo firmado con
+ * `must_change_password = false` (ya leído de la BD) y devuelve el
+ * `usuario` fresco, con el que se reescribe la cookie legible.
+ *
+ * Si el refresh falla (red caída o cookie de refresh vencida), el cambio en
+ * la BD **sí** quedó hecho, así que de todos modos se marca la cookie local
+ * con `debeCambiarContrasena: false` (para no dejar al usuario atascado en
+ * `/cambiar-contrasena`) y se limpia el access token en memoria: la
+ * siguiente petición del panel reintentará el refresh y, si tampoco llega,
+ * la vista mostrará el error y podrá volver a entrar con la contraseña nueva.
+ *
+ * @param sesionPrevia Sesión leída antes del cambio (respaldo local).
+ * @returns La sesión vigente con `debeCambiarContrasena: false`.
+ */
+async function refrescarSesionTrasCambio(
+  sesionPrevia: Sesion,
+): Promise<Sesion> {
+  try {
+    const refresco = await api.post<SesionBackend>("auth/refresh", undefined);
+    const sesionActualizada = aSesion(refresco.data.usuario);
+
+    setAccessToken(refresco.data.accessToken);
+    escribirCookieSimulada(sesionActualizada);
+
+    return sesionActualizada;
+  } catch {
+    const sesionLocal: Sesion = {
+      ...sesionPrevia,
+      debeCambiarContrasena: false,
+    };
+
+    escribirCookieSimulada(sesionLocal);
+    setAccessToken(null);
+
+    return sesionLocal;
+  }
+}
+
+/**
  * Cambia la contraseña del usuario de la sesión vigente (cambio obligatorio).
  *
- * **MOCK temporal: H2.2 (endpoint real de cambio de contraseña) no existe en
- * ninguna rama.** T5.4.3 (PRO-381) integró login/logout reales, pero el
- * cambio de contraseña **no puede** hablar con el backend todavía. Contrato
- * previsto para H2.2: `POST auth/change-password` recibe la contraseña actual
- * y la nueva; el backend verifica la actual contra `password_hash`, aplica
- * sus reglas de seguridad, guarda la nueva hasheada y pone
- * `users.must_change_password = false`; el frontend entonces refrescará la
- * sesión con el flag en `false`. Si el Swagger de H2.2 publica otra forma, se
- * ajusta solo el mapeo interno; esta firma y las vistas no cambian.
+ * **H2.2 real:** `POST auth/cambiar-contrasena` (204 sin cuerpo) recibe
+ * `{ contrasenaActual, contrasenaNueva }`; el backend verifica la actual
+ * contra `password_hash` (argon2), guarda la nueva hasheada y pone
+ * `users.must_change_password = false`. Acto seguido la sesión se refresca
+ * con {@link refrescarSesionTrasCambio} para que el access token y la cookie
+ * legible salgan con el flag en `false` (si no, el `JwtAuthGuard` seguiría
+ * bloqueando el panel).
  *
- * **Alcance del mock hoy** (andamio de UX, no seguridad):
+ * Flujo:
  * 1. Lee la sesión vigente ({@link leerSesionActual}); sin sesión válida →
  *    `ApiError` 401.
- * 2. Contraseña actual vacía → `ApiError` 400 (la vista ya lo valida; esta
- *    guarda es defensiva). **El mock NO verifica la contraseña real contra
- *    la BD**: no hay endpoint con el que hacerlo.
- * 3. Reglas de UX de la nueva contraseña: `nueva.length >= 8` y
- *    `nueva !== actual`; si no se cumplen → `ApiError` 422 con mensaje claro
- *    en español.
- * 4. Éxito: reescribe la cookie de sesión con `debeCambiarContrasena: false`
- *    ({@link escribirCookieSimulada}) y devuelve la `Sesion` actualizada, de
- *    modo que el middleware deje de bloquear el panel.
- *
- * **Límite del mock:** el cambio vive solo en la cookie del navegador: al
- * volver a hacer login, el backend (que sigue con
- * `must_change_password = true` en la BD) volverá a exigir el cambio. Ese
- * flujo se cierra cuando exista H2.2.
+ * 2. Guardas de UX previas (la vista ya las valida; aquí son defensivas):
+ *    contraseña actual vacía → `ApiError` 400; `nueva.length < 8` o
+ *    `nueva === actual` → `ApiError` 422 con mensaje en español. El backend
+ *    también valida (`MinLength(8)`, hasta 128), pero estas guardas evitan
+ *    la ida y vuelta con mensajes genéricos.
+ * 3. `POST auth/cambiar-contrasena`. Un `401` del backend (p. ej. "La
+ *    contraseña actual es incorrecta." o sesión vencida) se propaga como
+ *    `ApiError` con su mensaje; un `401` por token vencido dispara el refresh
+ *    normal de `api-client` y la petición se reintenta una sola vez.
+ * 4. Éxito → refresh de sesión y cookie legible con
+ *    `debeCambiarContrasena: false`.
  *
  * @param datos Contraseña actual y nueva contraseña.
  * @returns La sesión actualizada, con `debeCambiarContrasena: false`.
- * @throws {ApiError} 401 sin sesión válida; 400 si falta la contraseña
- *   actual; 422 si la nueva contraseña incumple las reglas de UX.
+ * @throws {ApiError} 401 sin sesión válida o con credenciales rechazadas por
+ *   el backend; 400 si falta la contraseña actual; 422 si la nueva
+ *   contraseña incumple las reglas de UX.
  */
 export async function cambiarContrasena(
   datos: CambioContrasena,
@@ -427,14 +469,12 @@ export async function cambiarContrasena(
     throw new ApiError(MENSAJE_NUEVA_IGUAL_A_ACTUAL, 422);
   }
 
-  const sesionActualizada: Sesion = {
-    ...sesion,
-    debeCambiarContrasena: false,
-  };
+  await api.post<null>("auth/cambiar-contrasena", {
+    contrasenaActual: datos.actual,
+    contrasenaNueva: datos.nueva,
+  });
 
-  escribirCookieSimulada(sesionActualizada);
-
-  return sesionActualizada;
+  return refrescarSesionTrasCambio(sesion);
 }
 
 /**

@@ -60,7 +60,7 @@ así que el guard de pertenencia nunca corre sin usuario autenticado.
 
 ## 4. Reglas por recurso y rol
 
-Los 6 tipos con regla implementada (nombres de dominio en español;
+Los 7 tipos con regla implementada (nombres de dominio en español;
 columnas reales de la BD entre paréntesis):
 
 | Tipo en `@PerteneceA` | Tabla real | teacher | student | admin |
@@ -68,12 +68,21 @@ columnas reales de la BD entre paréntesis):
 | `'clase'` | `classes` | suya (`classes.teacher_id = usuario.id`) | nunca | ✓ |
 | `'inscripcion'` | `enrollments` | la clase de la inscripción es suya (`enrollments → classes.teacher_id`) | suya (`enrollments.student_id`) | ✓ |
 | `'actividad'` | `activities` | la clase de la actividad es suya (`activities → classes.teacher_id`) | nunca | ✓ |
+| `'actividadVisible'` | `activities` | la clase de la actividad es suya (dueño, cualquier estado) | inscripción **activa** en la clase de una actividad **published** (`activities.status='published' AND classes.enrollments.some(student_id, status='active')`) | ✓ |
 | `'entrega'` | `submissions` | la clase de la inscripción de la entrega es suya (`submissions → enrollments → classes.teacher_id`) | suya vía inscripción (`submissions.enrollments.student_id`) | ✓ |
 | `'item'` | `redeemable_items` | la clase del ítem es suya (`redeemable_items → classes.teacher_id`) | nunca | ✓ |
 | `'canje'` | `redemptions` | la clase de la inscripción del canje es suya (`redemptions → enrollments → classes.teacher_id`) | suyo vía inscripción (`redemptions.enrollments.student_id`) | ✓ |
 
 Los "nunca" del rol student (clase, actividad, item) son de modelo:
 esos recursos no tienen dueño estudiante; ni consultan la BD.
+
+`'actividadVisible'` es la puerta de la **vista del estudiante** del
+módulo de actividades (`GET /activities/:id` con DTO por rol): el
+estudiante solo llega a actividades publicadas de clases donde tiene
+inscripción activa, y el Service le devuelve el JSONB sanitizado sin
+`options[].is_correct` ni `expected_answer` (AGENTS.md §9.5). Las
+cerradas (`closes_at` pasado) sí pasan la regla: es
+`fn_validate_submission` quien bloquea la entrega al cerrar.
 
 ## 5. Cómo usarlo en un endpoint nuevo
 
@@ -126,7 +135,7 @@ dejarse propagar: el filtro global la traduce igual que en la capa HTTP.
 
 - **Unitarias**: `src/common/guards/pertenencia.guard.spec.ts` (delegación,
   401 sin usuario, 404 sin parámetro) y
-  `src/modules/autorizacion/autorizacion.service.spec.ts` (las 6 reglas +
+  `src/modules/autorizacion/autorizacion.service.spec.ts` (las 7 reglas +
   casos transversales: admin bypass, id no numérico, tipo desconocido).
 - **E2E**: `test/pertenencia.e2e-spec.ts` — ejercita el guard completo
   contra la BD real con los datos del seed usando un controlador de
@@ -141,6 +150,9 @@ dejarse propagar: el filtro global la traduce igual que en la capa HTTP.
 - **Admin pasa siempre** (rol global, sin recursos propios).
 - Arrancamos con las **6 reglas del MVP**; los tipos se listan en
   `TIPOS_RECURSO` y un tipo no registrado responde 404 (nunca "deja pasar").
+  La séptima (`actividadVisible`, 2026-10) habilita la lectura del
+  estudiante sobre actividades publicadas de sus clases con DTO
+  sanitizado (sin respuestas correctas).
 - La pertenencia verifica **existencia + propiedad en una sola consulta**
   `findFirst` con filtro de relación; la BD sigue siendo la red de
   seguridad final (triggers de organización/inscripción, AGENTS.md §6).
